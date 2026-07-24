@@ -1,0 +1,16 @@
+vision_offboard_controller:
+  ros__parameters:
+    simulation_mode: false
+    enable_offboard: false
+    enable_auto_arm: false
+    target_altitude: 2.0
+    altitude_kp: 0.8
+    max_vertical_velocity: 0.5
+    max_horizontal_velocity: 0.3
+    vision_timeout: 0.3
+    takeoff_tolerance: 0.15
+    takeoff_timeout: 25.0
+    px4_status_timeout: 1.5
+    local_position_timeout: 0.5
+    vehicle_local_position_topic: /fmu/out/vehicle_local_position
+    vehicle_status_topic: /fmu/out/vehicle_status

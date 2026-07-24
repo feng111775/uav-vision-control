@@ -13,6 +13,10 @@ class VehicleStatusListener(Node):
 
     def __init__(self):
         super().__init__('vehicle_status_listener')
+        self.declare_parameter(
+            'vehicle_status_topic',
+            '/fmu/out/vehicle_status',
+        )
 
         # PX4通过DDS发布状态时使用的QoS配置。
         px4_qos = QoSProfile(
@@ -22,16 +26,16 @@ class VehicleStatusListener(Node):
             depth=1,
         )
 
-        # 注意：你的PX4状态话题带有_v1后缀。
+        # PX4状态topic由vehicle_status_topic参数配置。
         self.status_subscription = self.create_subscription(
             VehicleStatus,
-            '/fmu/out/vehicle_status_v1',
+            self.get_parameter('vehicle_status_topic').value,
             self.status_callback,
             px4_qos,
         )
 
         self.get_logger().info(
-            '状态监听节点已启动，正在等待 /fmu/out/vehicle_status_v1'
+            '状态监听节点已启动，当前通过vehicle_status_topic参数配置PX4状态topic'
         )
 
     def status_callback(self, message):

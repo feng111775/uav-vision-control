@@ -291,6 +291,16 @@ class VisionOffboardController(Node):
         self.declare_parameter('px4_status_timeout', 1.5)
         self.declare_parameter('local_position_timeout', 0.5)
 
+        self.declare_parameter(
+            'vehicle_local_position_topic',
+            '/fmu/out/vehicle_local_position'
+        )
+
+        self.declare_parameter(
+            'vehicle_status_topic',
+            '/fmu/out/vehicle_status'
+        )
+
         names = ('simulation_mode', 'enable_offboard', 'enable_auto_arm',
                  'target_altitude', 'altitude_kp', 'max_vertical_velocity',
                  'vision_timeout', 'max_horizontal_velocity',
@@ -322,10 +332,12 @@ class VisionOffboardController(Node):
             TwistStamped, '/control/vision_velocity',
             self.vision_callback, 10)
         self.position_subscription = self.create_subscription(
-            VehicleLocalPosition, '/fmu/out/vehicle_local_position_v1',
+            VehicleLocalPosition,
+            self.get_parameter('vehicle_local_position_topic').value,
             self.position_callback, px4_qos)
         self.status_subscription = self.create_subscription(
-            VehicleStatus, '/fmu/out/vehicle_status_v1',
+            VehicleStatus,
+            self.get_parameter('vehicle_status_topic').value,
             self.status_callback, px4_qos)
         self.timer = self.create_timer(0.1, self.timer_callback)
         self.last_logged_state = None

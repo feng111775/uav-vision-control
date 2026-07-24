@@ -1,3 +1,10 @@
+"""PX4 Offboard基础通信测试节点。
+
+该节点用于PX4 ROS 2通信测试，用于验证OffboardControlMode、
+TrajectorySetpoint和VehicleCommand消息是否能够发送到PX4。
+该节点不是正式无人机视觉控制节点。
+"""
+
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile
