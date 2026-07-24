@@ -115,6 +115,8 @@ class GazeboRedTargetDetectorNode(Node):
         super().__init__('gazebo_red_target_detector_node')
         defaults = {
             'image_topic': '/camera/down/image_raw',
+            'detection_topic': '/vision/h7/detection',
+            'debug_image_topic': '/vision/gazebo/debug_image',
             'min_area': 100.0,
             'confidence': 90.0,
             'morphology_kernel': 5,
@@ -131,14 +133,17 @@ class GazeboRedTargetDetectorNode(Node):
 
         self.detector = RedTargetDetector(**{
             name: self.get_parameter(name).value
-            for name in defaults if name not in ('image_topic', 'debug')
+            for name in defaults if name not in (
+                'image_topic', 'detection_topic', 'debug_image_topic',
+                'debug')
         })
         self.debug = bool(self.get_parameter('debug').value)
         self.bridge = CvBridge()
         self.publisher = self.create_publisher(
-            Float32MultiArray, '/vision/h7/detection', 10)
+            Float32MultiArray,
+            self.get_parameter('detection_topic').value, 10)
         self.debug_publisher = self.create_publisher(
-            Image, '/vision/gazebo/debug_image', 10)
+            Image, self.get_parameter('debug_image_topic').value, 10)
         self.subscription = self.create_subscription(
             Image, self.get_parameter('image_topic').value,
             self.image_callback, 10)

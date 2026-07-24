@@ -4,6 +4,7 @@ import math
 
 from geometry_msgs.msg import TwistStamped
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
 
@@ -131,6 +132,11 @@ class VisualServoNode(Node):
         self.declare_parameter('stale_timeout', 0.3)
         self.declare_parameter('sign_x', -1.0)
         self.declare_parameter('sign_y', -1.0)
+        self.declare_parameter(
+            'filtered_detection_topic',
+            '/vision/h7/filtered_detection')
+        self.declare_parameter(
+            'vision_velocity_topic', '/control/vision_velocity')
 
         names = ('center_x', 'center_y', 'kp_x', 'kp_y',
                  'deadband_x', 'deadband_y', 'max_velocity',
@@ -138,10 +144,11 @@ class VisualServoNode(Node):
         values = {name: self.get_parameter(name).value for name in names}
         self.controller = VisualServoController(**values)
         self.publisher = self.create_publisher(
-            TwistStamped, '/control/vision_velocity', 10)
+            TwistStamped,
+            self.get_parameter('vision_velocity_topic').value, 10)
         self.subscription = self.create_subscription(
             Float32MultiArray,
-            '/vision/h7/filtered_detection',
+            self.get_parameter('filtered_detection_topic').value,
             self.detection_callback,
             10,
         )
@@ -198,7 +205,7 @@ def main(args=None):
     node = VisualServoNode()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.destroy_node()

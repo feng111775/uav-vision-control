@@ -3,6 +3,7 @@
 import math
 
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
 
@@ -111,6 +112,11 @@ class TargetFilterNode(Node):
         self.declare_parameter('min_confidence', 50.0)
         self.declare_parameter('confirm_frames', 3)
         self.declare_parameter('lost_frames', 3)
+        self.declare_parameter(
+            'detection_topic', '/vision/h7/detection')
+        self.declare_parameter(
+            'filtered_detection_topic',
+            '/vision/h7/filtered_detection')
 
         self.filter = TargetFilter(
             alpha=self.get_parameter('alpha').value,
@@ -119,10 +125,11 @@ class TargetFilterNode(Node):
             lost_frames=self.get_parameter('lost_frames').value,
         )
         self.publisher = self.create_publisher(
-            Float32MultiArray, '/vision/h7/filtered_detection', 10)
+            Float32MultiArray,
+            self.get_parameter('filtered_detection_topic').value, 10)
         self.subscription = self.create_subscription(
             Float32MultiArray,
-            '/vision/h7/detection',
+            self.get_parameter('detection_topic').value,
             self.detection_callback,
             10,
         )
@@ -152,7 +159,7 @@ def main(args=None):
     node = TargetFilterNode()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.destroy_node()

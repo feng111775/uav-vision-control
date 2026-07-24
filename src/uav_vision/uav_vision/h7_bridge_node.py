@@ -16,11 +16,14 @@ class H7BridgeNode(Node):
         super().__init__('h7_bridge_node')
         self.declare_parameter('port', '/dev/ttyACM0')
         self.declare_parameter('baudrate', 115200)
+        self.declare_parameter(
+            'detection_topic', '/vision/h7/detection')
         self.port = self.get_parameter('port').value
         self.baudrate = self.get_parameter('baudrate').value
+        self.detection_topic = self.get_parameter('detection_topic').value
 
         self.publisher = self.create_publisher(
-            Float32MultiArray, '/vision/h7/detection', 10)
+            Float32MultiArray, self.detection_topic, 10)
         self.serial_port = None
 
         # 短超时保证串口无数据时不会长期阻塞ROS 2执行器。

@@ -290,16 +290,21 @@ class VisionOffboardController(Node):
         self.declare_parameter('takeoff_timeout', 25.0)
         self.declare_parameter('px4_status_timeout', 1.5)
         self.declare_parameter('local_position_timeout', 0.5)
-
+        self.declare_parameter(
+            'vision_velocity_topic', '/control/vision_velocity')
+        self.declare_parameter(
+            'offboard_control_mode_topic',
+            '/fmu/in/offboard_control_mode')
+        self.declare_parameter(
+            'trajectory_setpoint_topic',
+            '/fmu/in/trajectory_setpoint')
+        self.declare_parameter(
+            'vehicle_command_topic', '/fmu/in/vehicle_command')
         self.declare_parameter(
             'vehicle_local_position_topic',
-            '/fmu/out/vehicle_local_position'
-        )
-
+            '/fmu/out/vehicle_local_position_v1')
         self.declare_parameter(
-            'vehicle_status_topic',
-            '/fmu/out/vehicle_status'
-        )
+            'vehicle_status_topic', '/fmu/out/vehicle_status_v1')
 
         names = ('simulation_mode', 'enable_offboard', 'enable_auto_arm',
                  'target_altitude', 'altitude_kp', 'max_vertical_velocity',
@@ -323,13 +328,19 @@ class VisionOffboardController(Node):
             depth=1,
         )
         self.offboard_publisher = self.create_publisher(
-            OffboardControlMode, '/fmu/in/offboard_control_mode', px4_qos)
+            OffboardControlMode,
+            self.get_parameter('offboard_control_mode_topic').value,
+            px4_qos)
         self.trajectory_publisher = self.create_publisher(
-            TrajectorySetpoint, '/fmu/in/trajectory_setpoint', px4_qos)
+            TrajectorySetpoint,
+            self.get_parameter('trajectory_setpoint_topic').value,
+            px4_qos)
         self.command_publisher = self.create_publisher(
-            VehicleCommand, '/fmu/in/vehicle_command', px4_qos)
+            VehicleCommand,
+            self.get_parameter('vehicle_command_topic').value, px4_qos)
         self.vision_subscription = self.create_subscription(
-            TwistStamped, '/control/vision_velocity',
+            TwistStamped,
+            self.get_parameter('vision_velocity_topic').value,
             self.vision_callback, 10)
         self.position_subscription = self.create_subscription(
             VehicleLocalPosition,

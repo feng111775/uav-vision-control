@@ -12,8 +12,11 @@ class FakeH7Node(Node):
 
     def __init__(self):
         super().__init__('fake_h7_node')
+        self.declare_parameter(
+            'detection_topic', '/vision/h7/detection')
         self.publisher = self.create_publisher(
-            Float32MultiArray, '/vision/h7/detection', 10)
+            Float32MultiArray,
+            self.get_parameter('detection_topic').value, 10)
         self.sample_index = 0
         self.timer = self.create_timer(0.1, self.publish_detection)
         self.get_logger().info('H7Plus模拟数据节点已启动，发布频率10 Hz')
