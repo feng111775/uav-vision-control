@@ -1,0 +1,229 @@
+# 系统架构说明
+
+## 1. 当前系统架构
+
+本工程由 OpenMV 端视觉程序、ROS 2 视觉处理包和 PX4 控制包组成。
+
+```text
+OpenMV H7 Plus
+  │ USB CDC文本协议
+  ↓
+h7_bridge_node
+  │ /vision/h7/detection
+  ↓
+target_filter_node
+  │ /vision/h7/filtered_detection
+  ↓
+visual_servo_node
+  │ /control/vision_velocity
+  ↓
+vision_offboard_controller
+  │ /fmu/in/*
+  ↓
+PX4
+```
+
+Gazebo 仿真使用 `gazebo_red_target_detector_node` 替代
+`h7_bridge_node`，无硬件测试可以使用 `fake_h7_node`。这三个节点均发布
+`/vision/h7/detection`，同一时间只能选择一个作为原始视觉数据源。
+
+目录职责：
+
+```text
+openmv_h7plus/       OpenMV Cam H7 Plus端程序
+src/uav_vision/      视觉输入、目标滤波和视觉伺服
+src/uav_control/     PX4状态诊断和Offboard控制
+docs/                架构、开发和部署文档
+```
+
+当前没有独立的任务规划层。任务管理器、通用轨迹生成器和航点执行器尚未实现。
+
+## 2. ROS 2节点关系
+
+### `uav_vision`
+
+| 节点 | 输入 | 输出 | 职责 |
+| --- | --- | --- | --- |
+| `h7_bridge_node` | H7Plus USB串口 | `/vision/h7/detection` | 解析并校验OpenMV文本协议 |
+| `fake_h7_node` | 无 | `/vision/h7/detection` | 发布模拟检测数据 |
+| `gazebo_red_target_detector_node` | `/camera/down/image_raw` | `/vision/h7/detection`、`/vision/gazebo/debug_image` | 检测Gazebo图像中的红色目标 |
+| `target_filter_node` | `/vision/h7/detection` | `/vision/h7/filtered_detection` | 目标确认、丢失判断和指数滤波 |
+| `visual_servo_node` | `/vision/h7/filtered_detection` | `/control/vision_velocity` | 将像素偏差转换为FLU机体水平速度 |
+
+检测数据使用 `std_msgs/msg/Float32MultiArray`，字段顺序为：
+
+```text
+[valid, cx, cy, width, height, area, confidence]
+```
+
+`visual_servo_node` 输出 `geometry_msgs/msg/TwistStamped`，坐标系为
+`base_link`，仅使用水平线速度。
+
+### `uav_control`
+
+| 节点 | 输入 | 输出 | 职责 |
+| --- | --- | --- | --- |
+| `vision_offboard_controller` | `/control/vision_velocity`、PX4位置和状态 | PX4 Offboard心跳、轨迹设定值和命令 | 正式视觉Offboard控制节点 |
+| `vehicle_status_listener` | 可配置的PX4状态topic | 日志 | 只读状态诊断 |
+| `offboard_control` | 无 | PX4控制topic | PX4 ROS 2基础通信测试节点 |
+
+`offboard_control` 与 `vision_offboard_controller` 会发布相同的 PX4 控制
+topic，不得同时运行。正式系统只应启动 `vision_offboard_controller`。
+
+## 3. PX4通信关系
+
+`vision_offboard_controller` 订阅：
+
+| Topic | 类型 | 用途 |
+| --- | --- | --- |
+| `/fmu/out/vehicle_local_position` | `px4_msgs/msg/VehicleLocalPosition` | 本地位置、heading和有效性 |
+| `/fmu/out/vehicle_status` | `px4_msgs/msg/VehicleStatus` | 解锁、导航模式和failsafe |
+
+这两个 topic 可以分别通过以下参数覆盖：
+
+```text
+vehicle_local_position_topic
+vehicle_status_topic
+```
+
+控制器发布：
+
+| Topic | 类型 | 用途 |
+| --- | --- | --- |
+| `/fmu/in/offboard_control_mode` | `px4_msgs/msg/OffboardControlMode` | Offboard控制模式心跳 |
+| `/fmu/in/trajectory_setpoint` | `px4_msgs/msg/TrajectorySetpoint` | NED速度设定值 |
+| `/fmu/in/vehicle_command` | `px4_msgs/msg/VehicleCommand` | 模式切换和仿真自动解锁 |
+
+坐标约定：
+
+- ROS视觉速度使用FLU：X向前、Y向左、Z向上。
+- PX4本地控制使用NED：X向北、Y向东、Z向下。
+- 控制器根据PX4 heading将FLU水平速度转换为NED速度。
+
+ROS 2与PX4之间还需要独立运行的uXRCE-DDS通信链：
+
+```text
+ROS 2节点
+  ↕ DDS
+Micro XRCE-DDS Agent
+  ↕ Serial或UDP
+PX4 uxrce_dds_client
+```
+
+该Agent和PX4端通信参数不由当前launch文件启动或配置。
+
+## 4. 各文件职责
+
+### OpenMV
+
+| 文件 | 职责 |
+| --- | --- |
+| `openmv_h7plus/main.py` | 相机检测和协议发送主循环 |
+| `openmv_h7plus/camera_config.py` | CSI相机初始化 |
+| `openmv_h7plus/detector.py` | LAB红色色块检测 |
+| `openmv_h7plus/thresholds.py` | 现场颜色阈值 |
+| `openmv_h7plus/protocol.py` | USB CDC文本协议 |
+
+### 视觉包
+
+| 文件 | 职责 |
+| --- | --- |
+| `h7_bridge_node.py` | H7Plus串口桥 |
+| `fake_h7_node.py` | 模拟检测输入 |
+| `gazebo_red_target_detector_node.py` | Gazebo红色目标检测 |
+| `target_filter_node.py` | 目标滤波状态机 |
+| `visual_servo_node.py` | 像素误差到水平速度转换 |
+| `gazebo_vision.launch.py` | Gazebo视觉链启动 |
+| `gazebo_vision.yaml` | Gazebo检测、滤波和伺服参数 |
+
+### 控制包
+
+| 文件 | 职责 |
+| --- | --- |
+| `vision_offboard_controller.py` | 正式视觉Offboard状态机和PX4接口 |
+| `vehicle_status_listener.py` | PX4状态只读诊断 |
+| `offboard_control.py` | PX4基础通信测试 |
+| `uav_control.launch.py` | 只启动正式控制器 |
+| `control.yaml` | 正式控制器默认参数 |
+
+### 构建和测试
+
+| 文件或目录 | 职责 |
+| --- | --- |
+| `package.xml` | ROS 2包依赖和元数据 |
+| `setup.py` | Python包、节点入口、launch和配置安装 |
+| `setup.cfg` | ROS 2 Python脚本安装路径 |
+| `test/` | 协议、滤波、视觉伺服和控制状态机测试 |
+
+## 5. 当前版本能力
+
+已经具备：
+
+- OpenMV H7 Plus红色目标检测；
+- H7Plus串口协议解析和断线重连；
+- Gazebo红色目标检测；
+- 无硬件模拟视觉输入；
+- 目标置信度过滤、帧确认和指数平滑；
+- 基于像素误差的视觉伺服速度；
+- 视觉输入超时零速度保护；
+- FLU到NED水平速度转换；
+- PX4本地位置和状态检查；
+- Offboard预流、模式请求和仿真自动解锁；
+- 起飞至固定本地NED高度；
+- 水平、垂直速度限制；
+- PX4状态、位置和起飞超时保护；
+- SITL视觉Offboard基础验证。
+
+当前不具备：
+
+- 通用任务规划；
+- 航点序列；
+- 通用位置轨迹生成；
+- 自动任务降落；
+- ROS命令ACK和重试；
+- 完整真机启动链；
+- 真机人工授权和接管接口；
+- 明确的最终failsafe动作。
+
+当前 `vision_offboard_controller` 在状态机入口要求
+`simulation_mode=true`，因此不能通过简单修改YAML直接用于真机自主飞行。
+
+## 6. 比赛后续扩展位置
+
+建议在 `src/uav_control/uav_control/` 中增加独立任务层：
+
+```text
+mission_manager.py
+trajectory_generator.py
+```
+
+推荐职责：
+
+```text
+mission_manager
+  │ 比赛规则、任务阶段、航点和动作
+  ↓
+trajectory_generator
+  │ 连续位置、速度、yaw参考
+  ↓
+控制接口/仲裁器
+  ↓
+vision_offboard_controller或后续通用控制节点
+  ↓
+PX4
+```
+
+比赛规则变化应主要发生在任务层，不应把题目流程直接写入PX4通信、坐标转换或
+安全状态机。
+
+扩展时需要先定义：
+
+- 任务命令接口；
+- 航点序列接口；
+- 位置、速度和yaw参考接口；
+- 启动、暂停、恢复、取消和降落接口；
+- 任务进度与失败原因反馈；
+- 任务轨迹、视觉伺服和failsafe之间的优先级。
+
+无论如何扩展，都应保持单一PX4控制发布者，避免多个节点同时向
+`/fmu/in/*`发送互相冲突的设定值。

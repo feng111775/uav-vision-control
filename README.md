@@ -1,10 +1,10 @@
-# UAV Vision Control
+# UAV Vision Control v0.4
 
 ## 1. 项目简介
 
-本工程实现无人机视觉目标检测、目标数据滤波、视觉伺服速度生成以及 PX4
-Offboard 控制。工程同时包含 OpenMV Cam H7 Plus 端程序和 ROS 2 Python
-节点，可使用以下两类视觉输入：
+本工程是一个 ROS 2 UAV Control Framework，当前实现无人机视觉目标检测、目标
+数据滤波、视觉伺服速度生成以及 PX4 Offboard 控制。工程同时包含 OpenMV Cam
+H7 Plus 端程序和 ROS 2 Python 节点，可使用以下两类视觉输入：
 
 - 真实硬件：OpenMV H7 Plus 检测红色色块，通过 USB CDC 串口发送检测结果。
 - Gazebo 仿真：ROS-Gazebo 图像桥接后，在 ROS 2 侧检测红色目标。
@@ -16,10 +16,17 @@ Offboard 控制。工程同时包含 OpenMV Cam H7 Plus 端程序和 ROS 2 Pytho
 
 ```text
 uav-vision-control/
-├── openmv_h7plus/       # OpenMV H7 Plus MicroPython 程序
+├── docs/
+│   ├── architecture.md       # 当前架构、节点与扩展边界
+│   └── developer_notes.md    # 开发约束和比赛任务扩展说明
+├── openmv_h7plus/            # OpenMV H7 Plus MicroPython 程序
 └── src/
-    ├── uav_vision/      # 视觉输入、滤波和视觉伺服 ROS 2 包
-    └── uav_control/     # PX4 状态监听及 Offboard 控制 ROS 2 包
+    ├── uav_vision/           # 视觉输入、滤波和视觉伺服 ROS 2 包
+    └── uav_control/          # PX4 状态监听及 Offboard 控制 ROS 2 包
+        ├── config/
+        │   └── control.yaml
+        └── launch/
+            └── uav_control.launch.py
 ```
 
 ## 2. 系统架构
@@ -104,7 +111,7 @@ Gazebo 相机
 
 | 可执行节点 | 作用 | 说明 |
 | --- | --- | --- |
-| `vehicle_status_listener` | 订阅并打印 PX4 解锁、导航和 failsafe 状态 | 当前固定订阅 `/fmu/out/vehicle_status_v1` |
+| `vehicle_status_listener` | 订阅并打印 PX4 解锁、导航和 failsafe 状态 | 通过 `vehicle_status_topic` 参数配置，默认 `/fmu/out/vehicle_status` |
 | `offboard_control` | 发布固定位置目标及 PX4 命令 | 示例节点会请求 Offboard、解锁，并在约 15 秒后请求降落 |
 | `vision_offboard_controller` | 接收视觉速度和 PX4 状态，发布速度模式 Offboard 心跳、速度设定值及必要命令 | PX4 状态 topic 可通过参数配置；默认不启用 Offboard 和自动解锁 |
 
@@ -130,14 +137,6 @@ Gazebo 相机
 | `vehicle_local_position_topic` | `/fmu/out/vehicle_local_position` |
 | `vehicle_status_topic` | `/fmu/out/vehicle_status` |
 
-如果当前 PX4 消息桥使用 `_v1` 后缀，可在启动节点时覆盖：
-
-```bash
-ros2 run uav_control vision_offboard_controller --ros-args \
-  -p vehicle_local_position_topic:=/fmu/out/vehicle_local_position_v1 \
-  -p vehicle_status_topic:=/fmu/out/vehicle_status_v1
-```
-
 可通过以下命令检查实际 topic：
 
 ```bash
@@ -159,6 +158,33 @@ source install/setup.bash
 
 将 `<ros_distro>` 替换为当前安装的 ROS 2 发行版名称。每个新终端都需要重新
 加载 ROS 2 和本工作空间环境。
+
+当前推荐的控制节点启动方式：
+
+```bash
+source install/setup.bash
+ros2 launch uav_control uav_control.launch.py
+```
+
+该 launch：
+
+- 只启动正式控制节点 `vision_offboard_controller`；
+- 自动加载 `src/uav_control/config/control.yaml`；
+- 不启动通信测试节点 `offboard_control`；
+- 不启动只读诊断节点 `vehicle_status_listener`。
+
+`control.yaml` 默认设置：
+
+```yaml
+simulation_mode: false
+enable_offboard: false
+enable_auto_arm: false
+vehicle_local_position_topic: /fmu/out/vehicle_local_position
+vehicle_status_topic: /fmu/out/vehicle_status
+```
+
+因此，使用默认配置启动不会自动进入 Offboard 或自动解锁。高度、速度、超时和
+PX4 topic 参数均应优先通过该 YAML 配置，不要直接修改控制代码中的默认值。
 
 运行测试：
 
@@ -253,15 +279,68 @@ source install/setup.bash
 ros2 run uav_control vehicle_status_listener
 ```
 
-该节点当前使用 `_v1` 状态 topic；应先确认它与所运行 PX4 版本一致。
+该节点通过 `vehicle_status_topic` 参数选择 PX4 状态 topic，默认订阅：
 
-## 8. 后续开发说明
+```text
+/fmu/out/vehicle_status
+```
+
+需要覆盖时可执行：
+
+```bash
+ros2 run uav_control vehicle_status_listener --ros-args \
+  -p vehicle_status_topic:=/实际/PX4状态topic
+```
+
+## 8. 当前能力与边界
+
+### 当前版本支持
+
+- ROS 2 与 PX4 的 uXRCE-DDS topic 通信；
+- PX4 Offboard 控制框架；
+- `/control/vision_velocity` 视觉速度控制接口；
+- OpenMV H7Plus、模拟数据和 Gazebo 视觉输入；
+- 视觉目标滤波与输入超时保护；
+- FLU 到 NED 的速度转换；
+- Offboard 预流、固定高度起飞和视觉速度控制；
+- PX4 状态、本地位置和 failsafe 检查；
+- PX4 SITL 验证。
+
+### 当前未实现
+
+- `mission_manager`；
+- `trajectory_generator`；
+- 通用航点任务；
+- 通用位置或速度轨迹规划；
+- 自动任务降落；
+- 完整真机自主飞行流程。
+
+当前自动 Offboard 流程主要用于 PX4 SITL 验证。不要通过在真机设置
+`simulation_mode=true` 绕过仿真限制。
+
+Pixhawk 真机部署仍需进一步完成：
+
+- uXRCE-DDS client 与 Micro XRCE-DDS Agent 通信验证；
+- PX4与ROS 2 `px4_msgs` 版本匹配；
+- 飞控、串口、Offboard和failsafe参数检查；
+- 本地位置和heading来源验证；
+- 无桨台架、人工接管和异常链路安全测试。
+
+## 9. 开发文档
+
+- [`docs/architecture.md`](docs/architecture.md)：当前系统架构、ROS 2节点关系、
+  PX4通信关系、文件职责和比赛扩展位置。
+- [`docs/developer_notes.md`](docs/developer_notes.md)：核心文件修改约束、比赛任务
+  开发位置、新任务接口和分级测试流程。
+
+当前仓库还没有独立任务规划层。比赛任务逻辑不应直接继续堆入
+`vision_offboard_controller.py`；后续应在稳定接口基础上增加
+`mission_manager.py` 和 `trajectory_generator.py`，并保持单一PX4控制发布者。
+
+## 10. 后续开发说明
 
 - 将 ROS 2 发行版、PX4 版本、`px4_msgs` 分支和 Gazebo 版本固定到可复现的
   开发环境配置中。
-- 为 `uav_control` 增加 launch 文件和 YAML 参数文件，统一仿真、台架和实机
-  配置。
-- 统一所有 PX4 状态节点的 topic 参数化方式，避免默认名称与 `_v1` 后缀并存。
 - 根据真实相机安装方向、视场角和飞行高度标定视觉伺服比例、符号、死区及限速。
 - 补充串口协议版本、消息时间戳和链路状态诊断，区分目标丢失、数据超时与设备
   断开。
