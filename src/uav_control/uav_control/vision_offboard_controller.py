@@ -446,6 +446,13 @@ class VisionOffboardController(Node):
 
     def timer_callback(self):
         """以10 Hz推进状态机并发布心跳与速度。."""
+        if not self.logic.enable_offboard:
+            if self.last_logged_state is None:
+                self.get_logger().info(
+                    'enable_offboard=false：仅监视输入，不发布PX4控制消息')
+                self.last_logged_state = self.logic.state
+            return
+
         north, east, down, request_mode, request_arm = self.logic.step(
             self.now_seconds())
         self.publish_offboard_mode()

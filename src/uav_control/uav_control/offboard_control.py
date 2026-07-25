@@ -130,6 +130,13 @@ class OffboardControl(Node):
 
     def timer_callback(self):
         """持续发送控制设定值，并依次切换模式和解锁."""
+        if not self.enable_offboard:
+            if self.setpoint_counter == 0:
+                self.get_logger().info(
+                    'enable_offboard=false：诊断模式，不发布PX4控制消息')
+                self.setpoint_counter = 1
+            return
+
         self.publish_offboard_control_mode()
         self.publish_trajectory_setpoint()
 
