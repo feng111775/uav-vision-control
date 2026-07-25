@@ -2,6 +2,7 @@
 build/
 install/
 log/
+.colcon/
 
 # PX4 消息依赖，单独下载
 src/px4_msgs/
@@ -13,10 +14,26 @@ __pycache__/
 .coverage
 htmlcov/
 
+# 本机 SITL rosbag、ULog、截图与分析产物（体积可达数 GB）
+test_results/
+*.db3
+*.mcap
+*.ulg
+*.bag
+*.active
+flight_telemetry*.csv
+
+# 外部工具、源码树和编译产物
+*.AppImage
+PX4-Autopilot/
+Micro-XRCE-DDS-Agent/
+
 # 编辑器文件
 .vscode/
 .idea/
 *.swp
+*.tmp
+*~
 
 # 系统文件
 .DS_Store

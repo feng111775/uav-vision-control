@@ -1,27 +1,41 @@
-"""PX4 Offboard基础通信测试节点。
+"""
+PX4 Offboard基础通信测试节点.
 
 该节点用于PX4 ROS 2通信测试，用于验证OffboardControlMode、
 TrajectorySetpoint和VehicleCommand消息是否能够发送到PX4。
-该节点不是正式无人机视觉控制节点。
+该节点不是正式无人机视觉控制节点.
 """
-
-import rclpy
-from rclpy.node import Node
-from rclpy.qos import QoSProfile
-from rclpy.qos import ReliabilityPolicy
-from rclpy.qos import DurabilityPolicy
-from rclpy.qos import HistoryPolicy
-from px4_msgs.msg import VehicleCommand
 
 from px4_msgs.msg import OffboardControlMode
 from px4_msgs.msg import TrajectorySetpoint
+from px4_msgs.msg import VehicleCommand
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy
+from rclpy.qos import HistoryPolicy
+from rclpy.qos import QoSProfile
+from rclpy.qos import ReliabilityPolicy
 
 
 class OffboardControl(Node):
-    """持续发送Offboard心跳和固定位置目标，但暂不切换模式和解锁。"""
+    """持续发送Offboard心跳和固定位置目标，但暂不切换模式和解锁."""
 
     def __init__(self):
         super().__init__('offboard_control')
+        self.declare_parameter('enable_offboard', False)
+        self.declare_parameter('enable_auto_arm', False)
+        self.declare_parameter(
+            'offboard_control_mode_topic',
+            '/fmu/in/offboard_control_mode')
+        self.declare_parameter(
+            'trajectory_setpoint_topic',
+            '/fmu/in/trajectory_setpoint')
+        self.declare_parameter(
+            'vehicle_command_topic', '/fmu/in/vehicle_command')
+        self.enable_offboard = bool(
+            self.get_parameter('enable_offboard').value)
+        self.enable_auto_arm = bool(
+            self.get_parameter('enable_auto_arm').value)
 
         px4_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -33,13 +47,13 @@ class OffboardControl(Node):
         # 告诉PX4我们使用哪一种控制方式。
         self.offboard_mode_publisher = self.create_publisher(
             OffboardControlMode,
-            '/fmu/in/offboard_control_mode',
+            self.get_parameter('offboard_control_mode_topic').value,
             px4_qos,
         )
 
         self.vehicle_command_publisher = self.create_publisher(
             VehicleCommand,
-            '/fmu/in/vehicle_command',
+            self.get_parameter('vehicle_command_topic').value,
             px4_qos,
         )
 
@@ -48,7 +62,7 @@ class OffboardControl(Node):
         # 向PX4发送期望位置。
         self.trajectory_publisher = self.create_publisher(
             TrajectorySetpoint,
-            '/fmu/in/trajectory_setpoint',
+            self.get_parameter('trajectory_setpoint_topic').value,
             px4_qos,
         )
 
@@ -60,11 +74,11 @@ class OffboardControl(Node):
         )
 
     def get_timestamp(self):
-        """生成PX4消息需要的微秒时间戳。"""
+        """生成PX4消息需要的微秒时间戳."""
         return self.get_clock().now().nanoseconds // 1000
 
     def publish_offboard_control_mode(self):
-        """声明采用位置控制模式。"""
+        """声明采用位置控制模式."""
         message = OffboardControlMode()
 
         message.timestamp = self.get_timestamp()
@@ -77,7 +91,7 @@ class OffboardControl(Node):
         self.offboard_mode_publisher.publish(message)
 
     def publish_trajectory_setpoint(self):
-        """发送起点上方2米的位置目标。"""
+        """发送起点上方2米的位置目标."""
         message = TrajectorySetpoint()
 
         message.timestamp = self.get_timestamp()
@@ -97,7 +111,7 @@ class OffboardControl(Node):
         self.trajectory_publisher.publish(message)
 
     def publish_vehicle_command(self, command, param1=0.0, param2=0.0):
-        """向PX4发送飞控命令。"""
+        """向PX4发送飞控命令."""
         message = VehicleCommand()
 
         message.timestamp = self.get_timestamp()
@@ -113,37 +127,45 @@ class OffboardControl(Node):
         message.from_external = True
 
         self.vehicle_command_publisher.publish(message)
-    
+
     def timer_callback(self):
-        """持续发送控制设定值，并依次切换模式和解锁。"""
+        """持续发送控制设定值，并依次切换模式和解锁."""
+        if not self.enable_offboard:
+            if self.setpoint_counter == 0:
+                self.get_logger().info(
+                    'enable_offboard=false：诊断模式，不发布PX4控制消息')
+                self.setpoint_counter = 1
+            return
+
         self.publish_offboard_control_mode()
         self.publish_trajectory_setpoint()
 
         # 运行约1秒后请求进入Offboard模式。
-        if self.setpoint_counter == 10:
+        if self.enable_offboard and self.setpoint_counter == 10:
             self.publish_vehicle_command(
                 VehicleCommand.VEHICLE_CMD_DO_SET_MODE,
                 param1=1.0,
                 param2=6.0,
-        )
-        self.get_logger().info('已请求切换到Offboard模式')
+            )
+            self.get_logger().info('已请求切换到Offboard模式')
 
         # 再等待约1秒，然后发送解锁命令。
-        if self.setpoint_counter == 20:
+        if (self.enable_offboard and self.enable_auto_arm
+                and self.setpoint_counter == 20):
             self.publish_vehicle_command(
                 VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM,
                 param1=1.0,
-        )
+            )
             self.get_logger().info('已发送解锁命令，仿真无人机将飞往2米高度')
 
         if self.setpoint_counter < 151:
             self.setpoint_counter += 1
 
         # 节点运行约15秒后，命令PX4自动降落。
-        if self.setpoint_counter == 150:
+        if self.enable_offboard and self.setpoint_counter == 150:
             self.publish_vehicle_command(
                 VehicleCommand.VEHICLE_CMD_NAV_LAND,
-        )
+            )
             self.get_logger().info('已发送自动降落命令')
 
 

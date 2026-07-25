@@ -19,6 +19,35 @@ def test_center_target_outputs_zero():
     assert controller.process(detection(), 1.0) == ZERO_VELOCITY
 
 
+def test_front_camera_centers_laterally_and_approaches():
+    """前视目标有效时应前进，且只用横向像素误差修正左右。"""
+    controller = VisualServoController(
+        camera_mode='front', front_approach_velocity=0.12)
+    forward, left = controller.process(
+        detection(cx=200.0, cy=200.0), 1.0)
+    assert forward == pytest.approx(0.12)
+    assert left < 0.0
+
+
+def test_front_vertical_pixel_error_does_not_reverse_approach():
+    """前视目标位于图像上方或下方都不得导致倒飞。"""
+    controller = VisualServoController(camera_mode='front')
+    upper = controller.process(detection(cy=60.0), 1.0)
+    lower = controller.process(detection(cy=190.0), 1.1)
+    assert upper[0] > 0.0
+    assert lower[0] > 0.0
+
+
+def test_switching_to_down_restores_two_axis_centering():
+    """切到下视后继续使用二维像素误差居中。"""
+    controller = VisualServoController(camera_mode='front')
+    controller.set_camera_mode('down')
+    forward, left = controller.process(
+        detection(cx=200.0, cy=160.0), 1.0)
+    assert forward < 0.0
+    assert left < 0.0
+
+
 @pytest.mark.parametrize(('cx', 'cy', 'x_sign', 'y_sign'), [
     (160.0, 80.0, 1, 0),   # 图像上方：向前。
     (160.0, 160.0, -1, 0),  # 图像下方：向后。

@@ -1,23 +1,28 @@
-gazebo_red_target_detector_node:
+pi_camera_vision_node:
   ros__parameters:
-    use_sim_time: true
-    image_topic: /camera/down/image_raw
-    detection_topic: /vision/h7/detection
-    debug_image_topic: /vision/gazebo/debug_image
+    source_type: video
+    source: ""
+    device: 0
+    loop: false
+    width: 640
+    height: 480
+    fps: 15.0
+    rotation: 0
+    flip_horizontal: false
+    flip_vertical: false
     min_area: 100.0
-    confidence: 90.0
     morphology_kernel: 5
     red1_h_min: 0
     red1_h_max: 10
     red2_h_min: 170
     red2_h_max: 179
     saturation_min: 100
-    value_min: 70
-    debug: true
+    value_min: 80
+    detection_topic: /vision/h7/detection
+    display: false
 
 target_filter_node:
   ros__parameters:
-    use_sim_time: true
     alpha: 0.35
     min_confidence: 50.0
     confirm_frames: 3
@@ -27,9 +32,8 @@ target_filter_node:
 
 visual_servo_node:
   ros__parameters:
-    use_sim_time: true
-    center_x: 160.0
-    center_y: 120.0
+    center_x: 320.0
+    center_y: 240.0
     kp_x: 0.002
     kp_y: 0.002
     deadband_x: 10.0
@@ -40,7 +44,3 @@ visual_servo_node:
     sign_y: -1.0
     filtered_detection_topic: /vision/h7/filtered_detection
     vision_velocity_topic: /control/vision_velocity
-
-parameter_bridge:
-  ros__parameters:
-    use_sim_time: true

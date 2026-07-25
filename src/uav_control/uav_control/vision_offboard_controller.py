@@ -273,10 +273,10 @@ class VisionOffboardLogic:
 
 
 class VisionOffboardController(Node):
-    """以10 Hz发布PX4速度模式心跳和安全速度设定值。."""
+    """以20 Hz发布PX4速度模式心跳和安全速度设定值。."""
 
     def __init__(self):
-        """创建参数、PX4接口和10 Hz控制定时器。."""
+        """创建参数、PX4接口和20 Hz控制定时器。."""
         super().__init__('vision_offboard_controller')
         self.declare_parameter('simulation_mode', False)
         self.declare_parameter('enable_offboard', False)
@@ -290,16 +290,21 @@ class VisionOffboardController(Node):
         self.declare_parameter('takeoff_timeout', 25.0)
         self.declare_parameter('px4_status_timeout', 1.5)
         self.declare_parameter('local_position_timeout', 0.5)
-
+        self.declare_parameter(
+            'vision_velocity_topic', '/control/vision_velocity')
+        self.declare_parameter(
+            'offboard_control_mode_topic',
+            '/fmu/in/offboard_control_mode')
+        self.declare_parameter(
+            'trajectory_setpoint_topic',
+            '/fmu/in/trajectory_setpoint')
+        self.declare_parameter(
+            'vehicle_command_topic', '/fmu/in/vehicle_command')
         self.declare_parameter(
             'vehicle_local_position_topic',
-            '/fmu/out/vehicle_local_position'
-        )
-
+            '/fmu/out/vehicle_local_position_v1')
         self.declare_parameter(
-            'vehicle_status_topic',
-            '/fmu/out/vehicle_status'
-        )
+            'vehicle_status_topic', '/fmu/out/vehicle_status_v1')
 
         names = ('simulation_mode', 'enable_offboard', 'enable_auto_arm',
                  'target_altitude', 'altitude_kp', 'max_vertical_velocity',
@@ -323,13 +328,19 @@ class VisionOffboardController(Node):
             depth=1,
         )
         self.offboard_publisher = self.create_publisher(
-            OffboardControlMode, '/fmu/in/offboard_control_mode', px4_qos)
+            OffboardControlMode,
+            self.get_parameter('offboard_control_mode_topic').value,
+            px4_qos)
         self.trajectory_publisher = self.create_publisher(
-            TrajectorySetpoint, '/fmu/in/trajectory_setpoint', px4_qos)
+            TrajectorySetpoint,
+            self.get_parameter('trajectory_setpoint_topic').value,
+            px4_qos)
         self.command_publisher = self.create_publisher(
-            VehicleCommand, '/fmu/in/vehicle_command', px4_qos)
+            VehicleCommand,
+            self.get_parameter('vehicle_command_topic').value, px4_qos)
         self.vision_subscription = self.create_subscription(
-            TwistStamped, '/control/vision_velocity',
+            TwistStamped,
+            self.get_parameter('vision_velocity_topic').value,
             self.vision_callback, 10)
         self.position_subscription = self.create_subscription(
             VehicleLocalPosition,
@@ -339,8 +350,11 @@ class VisionOffboardController(Node):
             VehicleStatus,
             self.get_parameter('vehicle_status_topic').value,
             self.status_callback, px4_qos)
-        self.timer = self.create_timer(0.1, self.timer_callback)
+        # PX4 的 Offboard 丢失保护要求心跳持续到达。双路图像渲染和检测
+        # 会产生短时调度抖动，20 Hz 为默认超时保留充足余量。
+        self.timer = self.create_timer(0.05, self.timer_callback)
         self.last_logged_state = None
+        self.land_requested = False
         self.sitl_heading_warning_emitted = False
         self.get_logger().info(
             '视觉Offboard控制器已安全启动：simulation=%s offboard=%s auto_arm=%s'
@@ -434,9 +448,29 @@ class VisionOffboardController(Node):
         self.command_publisher.publish(message)
 
     def timer_callback(self):
-        """以10 Hz推进状态机并发布心跳与速度。."""
+        """以20 Hz推进状态机并发布心跳与速度。."""
+        if not self.logic.enable_offboard:
+            if self.last_logged_state is None:
+                self.get_logger().info(
+                    'enable_offboard=false：仅监视输入，不发布PX4控制消息')
+                self.last_logged_state = self.logic.state
+            return
+
         north, east, down, request_mode, request_arm = self.logic.step(
             self.now_seconds())
+        if self.logic.state == self.logic.FAILSAFE:
+            if not self.land_requested and self.logic.armed:
+                self.publish_command(VehicleCommand.VEHICLE_CMD_NAV_LAND)
+                self.land_requested = True
+                self.get_logger().error(
+                    'FAILSAFE：已请求PX4正常降落并停止Offboard输出')
+            if self.logic.state != self.last_logged_state:
+                self.get_logger().error(
+                    '控制状态：FAILSAFE，原因：%s'
+                    % self.logic.failsafe_reason)
+                self.last_logged_state = self.logic.state
+            return
+
         self.publish_offboard_mode()
         self.publish_setpoint(north, east, down)
 
@@ -455,12 +489,7 @@ class VisionOffboardController(Node):
             self.get_logger().warning('已发送仅限SITL的自动解锁命令')
 
         if self.logic.state != self.last_logged_state:
-            if self.logic.state == self.logic.FAILSAFE:
-                self.get_logger().error(
-                    '控制状态：FAILSAFE，原因：%s'
-                    % self.logic.failsafe_reason)
-            else:
-                self.get_logger().info('控制状态：%s' % self.logic.state)
+            self.get_logger().info('控制状态：%s' % self.logic.state)
             self.last_logged_state = self.logic.state
 
         if self.logic.state == self.logic.TAKEOFF:

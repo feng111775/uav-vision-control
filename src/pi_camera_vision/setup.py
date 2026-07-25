@@ -2,7 +2,8 @@ from glob import glob
 
 from setuptools import find_packages, setup
 
-package_name = 'uav_vision'
+
+package_name = 'pi_camera_vision'
 
 setup(
     name=package_name,
@@ -20,18 +21,12 @@ setup(
     zip_safe=True,
     maintainer='xixi',
     maintainer_email='xixi@todo.todo',
-    description='H7Plus vision data bridge and test publisher.',
+    description='CSI/USB/file red-target vision with an H7-compatible topic.',
     license='Apache-2.0',
     entry_points={
         'console_scripts': [
-            'h7_bridge_node = uav_vision.h7_bridge_node:main',
-            'fake_h7_node = uav_vision.fake_h7_node:main',
-            'target_filter_node = uav_vision.target_filter_node:main',
-            'visual_servo_node = uav_vision.visual_servo_node:main',
-            'camera_selector_node = '
-            'uav_vision.camera_selector_node:main',
-            'gazebo_red_target_detector_node = '
-            'uav_vision.gazebo_red_target_detector_node:main',
+            'pi_camera_vision_node = pi_camera_vision.vision_node:main',
+            'offline_test = pi_camera_vision.offline_test:main',
         ],
     },
 )
