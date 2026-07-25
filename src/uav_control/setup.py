@@ -15,7 +15,7 @@ setup(
         ('share/' + package_name + '/config', glob('config/*.yaml')),
         ('share/' + package_name + '/launch', glob('launch/*.launch.py')),
     ],
-    install_requires=['setuptools'],
+    install_requires=['setuptools', 'matplotlib'],
     tests_require=['pytest'],
     zip_safe=True,
     maintainer='xixi',
@@ -34,6 +34,22 @@ setup(
             'offboard_control = uav_control.offboard_control:main',
             'vision_offboard_controller = '
             'uav_control.vision_offboard_controller:main',
+            'mission_manager_node = '
+            'uav_control.mission_manager_node:main',
+            'fake_position_node = '
+            'uav_control.fake_position_node:main',
+            'trajectory_bridge_node = '
+            'uav_control.trajectory_bridge_node:main',
+            'mission_offboard_controller = '
+            'uav_control.mission_offboard_controller:main',
+            'px4_position_bridge_node = '
+            'uav_control.px4_position_bridge_node:main',
+            'mission_visualizer = '
+            'uav_control.mission_visualizer:main',
+            'animal_detector_sim_node = '
+            'uav_control.animal_detector_sim_node:main',
+            'animal_statistics_node = '
+            'uav_control.animal_statistics_node:main',
         ],
     },
 )
