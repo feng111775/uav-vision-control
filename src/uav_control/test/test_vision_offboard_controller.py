@@ -3,6 +3,7 @@
 import math
 from unittest.mock import Mock
 
+from px4_msgs.msg import VehicleCommand
 import pytest
 
 from uav_control.offboard_control import OffboardControl
@@ -254,6 +255,32 @@ def test_disabled_vision_controller_publishes_zero_control_messages():
     assert controller.publish_offboard_mode.call_count == 0
     assert controller.publish_setpoint.call_count == 0
     assert controller.publish_command.call_count == 0
+
+
+def test_failsafe_requests_land_once_and_stops_offboard_output():
+    """活动控制故障后只请求一次正常降落，并停止争用Offboard。."""
+    controller = object.__new__(VisionOffboardController)
+    controller.logic = VisionOffboardLogic(
+        simulation_mode=True, enable_offboard=True)
+    controller.logic.state = controller.logic.FAILSAFE
+    controller.logic.armed = True
+    controller.logic.failsafe_reason = '测试故障'
+    controller.last_logged_state = None
+    controller.land_requested = False
+    controller.get_logger = Mock(return_value=Mock())
+    controller.now_seconds = Mock(return_value=1.0)
+    controller.publish_offboard_mode = Mock()
+    controller.publish_setpoint = Mock()
+    controller.publish_command = Mock()
+
+    controller.timer_callback()
+    controller.timer_callback()
+
+    controller.publish_command.assert_called_once()
+    assert (controller.publish_command.call_args.args[0]
+            == VehicleCommand.VEHICLE_CMD_NAV_LAND)
+    assert controller.publish_offboard_mode.call_count == 0
+    assert controller.publish_setpoint.call_count == 0
 
 
 def test_disabled_offboard_example_publishes_zero_control_messages():

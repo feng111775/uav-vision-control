@@ -1,350 +1,423 @@
-# UAV Vision Control v0.4
+# UAV Vision Control
 
-## 1. 项目简介
+ROS 2 无人机视觉控制工程，包含 Raspberry Pi/OpenMV 视觉输入、目标检测与滤波、
+视觉伺服，以及经过 PX4 SITL 实飞验证的前视/下视双摄闭环。
 
-本工程是一个 ROS 2 UAV Control Framework，当前实现无人机视觉目标检测、目标
-数据滤波、视觉伺服速度生成以及 PX4 Offboard 控制。工程同时包含 OpenMV Cam
-H7 Plus 端程序和 ROS 2 Python 节点，可使用以下两类视觉输入：
+> 安全说明：自动解锁只允许用于本机 PX4 SITL。所有正式启动入口默认
+> `enable_offboard=false`、`enable_auto_arm=false`。真实飞行前必须重新完成
+> 硬件、坐标、参数、人工接管和 failsafe 验证。
 
-- 真实硬件：OpenMV H7 Plus 检测红色色块，通过 USB CDC 串口发送检测结果。
-- Gazebo 仿真：ROS-Gazebo 图像桥接后，在 ROS 2 侧检测红色目标。
+## 已验证状态
 
-两类输入统一发布为 `/vision/h7/detection`，后续滤波、视觉伺服和飞控链路共用
-同一接口。
+最终验证环境：
 
-目录结构如下：
+- Ubuntu 24.04
+- ROS 2 Jazzy
+- PX4 v1.17.0 (`d6f12ad1c4`)
+- Gazebo Sim 8.11.0
+- Micro XRCE-DDS Agent UDP 8888
+- QGroundControl AppImage
+
+使用 `red_target` 世界和 `gz_x500_downward_camera` 机型，实际完成：
 
 ```text
-uav-vision-control/
+WAITING → PRESTREAM → TAKEOFF → VISION_CONTROL
+→ SEARCH/front → DOWN_ACQUIRE/front → ALIGN/down
+→ LAND → DISARM
+```
+
+最终一轮没有发生 PX4 failsafe，最大高度 2.023 m，下视中心误差从
+117.3 px 收敛到 3.5 px，最后由 PX4 正常检测落地并自动上锁。
+
+![最终验证汇总](docs/verification/final_summary.png)
+
+详细指标与轨迹见 [SITL 验证记录](docs/verification/README.md)。
+
+## 目录
+
+```text
+.
 ├── docs/
-│   ├── architecture.md       # 当前架构、节点与扩展边界
-│   └── developer_notes.md    # 开发约束和比赛任务扩展说明
-├── openmv_h7plus/            # OpenMV H7 Plus MicroPython 程序
+│   ├── architecture.md
+│   ├── developer_notes.md
+│   └── verification/             # 小型验证图片和指标
+├── openmv_h7plus/                # OpenMV H7 Plus 程序
+├── simulation/
+│   ├── px4_overlay/              # 保留 PX4 原始相对路径的模型、世界和 airframe
+│   └── scripts/                  # 安全安装 overlay 的脚本
 └── src/
-    ├── uav_vision/           # 视觉输入、滤波和视觉伺服 ROS 2 包
-    └── uav_control/          # PX4 状态监听及 Offboard 控制 ROS 2 包
-        ├── config/
-        │   └── control.yaml
-        └── launch/
-            └── uav_control.launch.py
+    ├── pi_camera_vision/         # Raspberry Pi/USB/图片/视频视觉输入
+    ├── uav_vision/               # 双摄检测、选择、滤波和视觉伺服
+    └── uav_control/              # PX4 状态和正式 Offboard 控制器
 ```
 
-## 2. 系统架构
+## 控制链
 
-真实硬件链路：
+双摄 SITL：
 
 ```text
-OpenMV H7 Plus
-  └─ USB CDC: TARGET,valid,cx,cy,width,height,area,confidence
-       └─ h7_bridge_node
-            └─ /vision/h7/detection
-                 └─ target_filter_node
-                      └─ /vision/h7/filtered_detection
-                           └─ visual_servo_node
-                                └─ /control/vision_velocity
-                                     └─ vision_offboard_controller
-                                          └─ PX4 /fmu/in/*
+Gazebo front camera ─→ front detector ─┐
+                                      ├→ camera_selector_node
+Gazebo down camera  ─→ down detector ─┘        │
+                                               ▼
+                                     target_filter_node
+                                               │
+                                               ▼
+                                      visual_servo_node
+                                         (ROS FLU)
+                                               │
+                                               ▼
+                              vision_offboard_controller
+                                         (PX4 NED)
+                                               │
+                                               ▼
+                                            PX4 SITL
 ```
 
-Gazebo 仿真链路：
+相机选择状态：
 
-```text
-Gazebo 相机
-  └─ ros_gz_bridge: /camera/down/image_raw
-       └─ gazebo_red_target_detector_node
-            └─ /vision/h7/detection
-                 └─ target_filter_node
-                      └─ visual_servo_node
-                           └─ vision_offboard_controller
-                                └─ PX4 SITL
-```
+- `SEARCH`：前视相机居中并以受限速度接近目标。
+- `DOWN_ACQUIRE`：前视目标达到面积或尺寸阈值后，等待下视连续有效帧。
+- `ALIGN`：只使用下视检测进行二维目标对准。
+- 检测或相机来源超时后立即输出零水平速度。
 
-真实 H7Plus 桥接节点与 Gazebo 检测节点是同一原始检测 topic 的两个替代数据源，
-不应同时运行。
+`vision_offboard_controller` 是正式且唯一的 PX4 控制发布者。它负责：
 
-坐标约定：
+- `WAITING → PRESTREAM → TAKEOFF → VISION_CONTROL`；
+- ROS FLU 机体速度到 PX4 NED 的航向旋转；
+- 20 Hz Offboard 心跳和速度设定值；
+- 高度闭环、水平与垂直限速；
+- PX4 状态、本地位置、视觉输入超时保护；
+- FAILSAFE 时单次请求正常降落并停止 Offboard 输出。
 
-- 视觉伺服输出使用 ROS `base_link` 的 FLU 坐标系：X 向前、Y 向左、Z 向上。
-- PX4 本地控制使用 NED 坐标系：X 向北、Y 向东、Z 向下。
-- `vision_offboard_controller` 根据 PX4 heading 将机体水平速度转换为 NED
-  速度设定值。
+`src/uav_control/uav_control/offboard_control.py` 仅为早期通信测试节点，不得作为
+正式飞行入口，也没有被双摄 launch 启动。
 
-## 3. 软件环境
+## 团队分工与代码边界
 
-工程依赖 ROS 2 的 `ament_python`/`colcon` 构建体系。具体 ROS 2、PX4 和
-`px4_msgs` 版本应保持消息定义兼容。
+- 视觉与算法位于 `uav_vision`：相机检测、选择器、滤波和视觉伺服。
+- 飞控接口与安全状态机位于 `uav_control`。
+- `vision_offboard_controller.py` 是当前唯一正式联调入口。
+- `offboard_control.py` 仅保留为旧通信测试程序。
+- `main` 由团队共同维护；个人开发必须使用独立分支和 Pull Request。
+- 不应把比赛任务规划继续堆入底层飞控接口；任务完成判定应由后续独立任务层实现。
 
-主要依赖：
+## 主要话题
 
-- ROS 2、Python 3、`colcon`
-- ROS 2 包：`rclpy`、`std_msgs`、`geometry_msgs`、`sensor_msgs`
-- PX4 ROS 2 消息包：`px4_msgs`
-- 视觉组件：OpenCV、NumPy、`cv_bridge`
-- Gazebo 联调：`ros_gz_bridge`、`rosgraph_msgs`、`launch_ros`
-- H7Plus 联调：PySerial
-- OpenMV Cam H7 Plus：OpenMV 固件 5.0 / MicroPython 1.28
+| 话题 | 类型 | 说明 |
+| --- | --- | --- |
+| `/camera/front/image_raw` | `sensor_msgs/msg/Image` | 前视 Gazebo 图像 |
+| `/camera/down/image_raw` | `sensor_msgs/msg/Image` | 下视 Gazebo 图像 |
+| `/vision/front/detection` | `std_msgs/msg/Float32MultiArray` | 前视检测 |
+| `/vision/down/detection` | `std_msgs/msg/Float32MultiArray` | 下视检测 |
+| `/vision/selected_camera` | `std_msgs/msg/String` | `front` 或 `down` |
+| `/vision/selected_detection` | `std_msgs/msg/Float32MultiArray` | 唯一选中检测 |
+| `/control/vision_velocity` | `geometry_msgs/msg/TwistStamped` | FLU 水平速度 |
+| `/fmu/out/vehicle_local_position_v1` | `px4_msgs/msg/VehicleLocalPosition` | PX4 本地位置 |
+| `/fmu/out/vehicle_status_v1` | `px4_msgs/msg/VehicleStatus` | PX4 状态 |
+| `/fmu/in/offboard_control_mode` | `px4_msgs/msg/OffboardControlMode` | Offboard 心跳 |
+| `/fmu/in/trajectory_setpoint` | `px4_msgs/msg/TrajectorySetpoint` | NED 速度设定值 |
+| `/fmu/in/vehicle_command` | `px4_msgs/msg/VehicleCommand` | 模式/解锁/降落命令 |
 
-使用真实飞控或 PX4 SITL 时，还需要启动与当前 PX4 版本匹配的 ROS 2/DDS
-通信链路，并确认 `/fmu/in/*` 和 `/fmu/out/*` topic 已建立。
-
-## 4. ROS 2 节点说明
-
-### `uav_vision`
-
-| 可执行节点 | 作用 | 主要输入 | 主要输出 |
-| --- | --- | --- | --- |
-| `h7_bridge_node` | 读取并校验 H7Plus 串口协议；断线后周期重连 | USB 串口，默认 `/dev/ttyACM0`、115200 | `/vision/h7/detection` |
-| `fake_h7_node` | 以 10 Hz 发布模拟目标数据，用于无硬件测试 | 无 | `/vision/h7/detection` |
-| `gazebo_red_target_detector_node` | 从 Gazebo 相机图像检测红色目标 | `/camera/down/image_raw`（可配置） | `/vision/h7/detection`、`/vision/gazebo/debug_image` |
-| `target_filter_node` | 置信度判定、帧确认、丢失判定和平滑滤波 | `/vision/h7/detection` | `/vision/h7/filtered_detection` |
-| `visual_servo_node` | 将像素偏差转换为 `base_link` 水平速度；输入超时发布零速度 | `/vision/h7/filtered_detection` | `/control/vision_velocity` |
-
-检测消息使用 `std_msgs/msg/Float32MultiArray`，数据顺序为：
+检测数组格式：
 
 ```text
 [valid, cx, cy, width, height, area, confidence]
 ```
 
-`valid` 为 0 或 1，`confidence` 范围为 0～100。
-
-### `uav_control`
-
-| 可执行节点 | 作用 | 说明 |
-| --- | --- | --- |
-| `vehicle_status_listener` | 订阅并打印 PX4 解锁、导航和 failsafe 状态 | 通过 `vehicle_status_topic` 参数配置，默认 `/fmu/out/vehicle_status` |
-| `offboard_control` | 发布固定位置目标及 PX4 命令 | 示例节点会请求 Offboard、解锁，并在约 15 秒后请求降落 |
-| `vision_offboard_controller` | 接收视觉速度和 PX4 状态，发布速度模式 Offboard 心跳、速度设定值及必要命令 | PX4 状态 topic 可通过参数配置；默认不启用 Offboard 和自动解锁 |
-
-`vision_offboard_controller` 包含 `WAITING`、`PRESTREAM`、`TAKEOFF`、
-`VISION_CONTROL` 和 `FAILSAFE` 状态。自动解锁只允许在
-`simulation_mode=true`、`enable_offboard=true` 和
-`enable_auto_arm=true` 同时设置时执行。
-
-## 5. PX4 通信 topic 说明
-
-| 方向 | Topic | 消息类型 | 用途 |
-| --- | --- | --- | --- |
-| ROS 2 → PX4 | `/fmu/in/offboard_control_mode` | `px4_msgs/msg/OffboardControlMode` | Offboard 控制模式心跳 |
-| ROS 2 → PX4 | `/fmu/in/trajectory_setpoint` | `px4_msgs/msg/TrajectorySetpoint` | 位置或速度设定值 |
-| ROS 2 → PX4 | `/fmu/in/vehicle_command` | `px4_msgs/msg/VehicleCommand` | 模式切换、解锁、降落等命令 |
-| PX4 → ROS 2 | `/fmu/out/vehicle_local_position` | `px4_msgs/msg/VehicleLocalPosition` | 本地位置、航向及有效性 |
-| PX4 → ROS 2 | `/fmu/out/vehicle_status` | `px4_msgs/msg/VehicleStatus` | 解锁、导航模式和 failsafe 状态 |
-
-`vision_offboard_controller` 的 PX4 输出 topic 参数：
-
-| 参数 | 默认值 |
-| --- | --- |
-| `vehicle_local_position_topic` | `/fmu/out/vehicle_local_position` |
-| `vehicle_status_topic` | `/fmu/out/vehicle_status` |
-
-可通过以下命令检查实际 topic：
+## 构建
 
 ```bash
-ros2 topic list | grep '^/fmu/'
-ros2 topic info /fmu/out/vehicle_status
-```
-
-## 6. 编译方法
-
-在工程根目录执行：
-
-```bash
-cd ~/uav-vision-control
-source /opt/ros/<ros_distro>/setup.bash
+cd /path/to/uav-vision-control
+source /opt/ros/jazzy/setup.bash
 rosdep install --from-paths src --ignore-src -r -y
 colcon build --symlink-install
 source install/setup.bash
 ```
 
-将 `<ros_distro>` 替换为当前安装的 ROS 2 发行版名称。每个新终端都需要重新
-加载 ROS 2 和本工作空间环境。
+仓库默认忽略 `src/px4_msgs`。需要检出与 PX4 v1.17 匹配的 `px4_msgs`，
+或从兼容的已构建工作空间加载它。
 
-当前推荐的控制节点启动方式：
+## 安装 PX4 双摄仿真资源
 
-```bash
-source install/setup.bash
-ros2 launch uav_control uav_control.launch.py
-```
-
-该 launch：
-
-- 只启动正式控制节点 `vision_offboard_controller`；
-- 自动加载 `src/uav_control/config/control.yaml`；
-- 不启动通信测试节点 `offboard_control`；
-- 不启动只读诊断节点 `vehicle_status_listener`。
-
-`control.yaml` 默认设置：
-
-```yaml
-simulation_mode: false
-enable_offboard: false
-enable_auto_arm: false
-vehicle_local_position_topic: /fmu/out/vehicle_local_position
-vehicle_status_topic: /fmu/out/vehicle_status
-```
-
-因此，使用默认配置启动不会自动进入 Offboard 或自动解锁。高度、速度、超时和
-PX4 topic 参数均应优先通过该 YAML 配置，不要直接修改控制代码中的默认值。
-
-运行测试：
+仓库保留了最终飞行实际使用的 PX4 资源，而不是旧的
+`x500_dual_camera/dual_camera_red_target` 组合。
 
 ```bash
-cd ~/uav-vision-control
-source /opt/ros/<ros_distro>/setup.bash
+./simulation/scripts/install_px4_overlay.sh \
+  /absolute/path/to/PX4-Autopilot
+```
+
+脚本安装：
+
+- `Tools/simulation/gz/models/x500_downward_camera`
+- `Tools/simulation/gz/worlds/red_target.sdf`
+- `ROMFS/.../airframes/4022_gz_x500_downward_camera`
+- airframe 的 CMake 列表项（不存在时才添加）
+
+安装后构建 PX4 SITL：
+
+```bash
+cd /absolute/path/to/PX4-Autopilot
+make px4_sitl_default
+```
+
+## 安全启动顺序
+
+### 1. DDS Agent
+
+```bash
+MicroXRCEAgent udp4 -p 8888
+```
+
+### 2. PX4 SITL 与 Gazebo GUI
+
+```bash
+cd /absolute/path/to/PX4-Autopilot
+PX4_GZ_WORLD=red_target make px4_sitl gz_x500_downward_camera
+```
+
+### 3. QGroundControl
+
+```bash
+~/QGroundControl-x86_64.AppImage
+```
+
+等待 PX4 控制台出现 `Ready for takeoff!`。不得通过强制
+解锁或关闭关键安全检查绕过预检。
+
+### 4. 默认安全监视
+
+```bash
+cd /path/to/uav-vision-control
+source /opt/ros/jazzy/setup.bash
 source install/setup.bash
-colcon test
+ros2 launch uav_vision dual_camera_simulation.launch.py
+```
+
+默认不会发布 PX4 控制、不会切换 Offboard、不会解锁。
+
+### 5. SITL 自动闭环
+
+仅在确认连接对象是本机 SITL、`pre_flight_checks_pass=true` 且
+`failsafe=false` 后：
+
+```bash
+ros2 launch uav_vision dual_camera_simulation.launch.py \
+  selector_mode:=auto \
+  enable_offboard:=true \
+  enable_auto_arm:=true
+```
+
+当前控制器在目标对准后保持目标高度。完成验证后应通过 PX4/QGC 请求正常 LAND，
+待 `Landing detected` 和自动上锁后再停止 launch、PX4、Gazebo 与 Agent。
+
+## 图像窗口
+
+```bash
+ros2 run rqt_image_view rqt_image_view /vision/front/debug_image
+ros2 run rqt_image_view rqt_image_view /vision/down/debug_image
+```
+
+两个命令应在不同终端运行。
+
+## 启动前安全检查
+
+正式启用 SITL 自动控制前逐项确认：
+
+```bash
+ls -l /dev/ttyACM* /dev/ttyUSB* 2>/dev/null
+ros2 node list
+ros2 topic echo /fmu/out/vehicle_status_v1 --once
+```
+
+- 没有连接真实 Pixhawk；若存在真实飞控，先隔离它。
+- QGroundControl 只连接本机 SITL。
+- `pre_flight_checks_pass=true`、`failsafe=false`。
+- Gazebo 中只有一架无人机。
+- `/vision_offboard_controller` 只有一个实例。
+- `offboard_control.py` 没有运行。
+- 前视和下视图像都持续更新。
+- 默认观察阶段无人机保持未解锁。
+
+## 参数
+
+以下值来自 `dual_camera_simulation.yaml` 和 launch 实际默认值：
+
+| 参数 | 默认值 | 说明 |
+| --- | ---: | --- |
+| `simulation_mode` | `true`（该 SITL launch 强制覆盖） | 允许 SITL 专用行为 |
+| `enable_offboard` | `false` | 是否发布 PX4 Offboard 控制 |
+| `enable_auto_arm` | `false` | 是否允许 SITL 自动解锁 |
+| `selector_mode` | `auto` | `front`、`down` 或自动选择 |
+| `target_altitude` | `2.0` m | 起飞目标高度 |
+| `max_horizontal_velocity` | `0.3` m/s | PX4 水平速度总限幅 |
+| `max_vertical_velocity` | `0.5` m/s | PX4 垂直速度限幅 |
+| `front_approach_velocity` | `0.12` m/s | 前视有效时接近速度 |
+| `visual_servo.max_velocity` | `0.15` m/s | 视觉伺服单轴限幅 |
+| `vision_timeout` | `0.3` s | 控制器视觉速度超时 |
+| `stale_timeout` | `0.3` s | 视觉伺服检测超时 |
+| `source_timeout` | `0.3` s | 相机选择器来源超时 |
+| `camera_source_timeout` | `0.3` s | 当前相机标签超时 |
+| `px4_status_timeout` | `1.5` s | PX4 状态超时 |
+| `local_position_timeout` | `0.5` s | PX4 本地位置超时 |
+| `front_area_threshold` | `15000` px² | 前视切换面积阈值 |
+| `front_size_threshold` | `140` px | 前视切换边长阈值 |
+| `front_confirm_frames` | `3` | 前视接近连续确认帧 |
+| `down_confirm_frames` | `3` | 下视有效连续确认帧 |
+| `down_hold_frames` | `2` | 下视短时丢失保持帧 |
+| `down_lost_frames` | `5` | 下视返回 SEARCH 的丢失帧 |
+| `switch_cooldown` | `2.0` s | 下视失败后的重试冷却 |
+
+launch 的 `enable_offboard` 和 `enable_auto_arm` 默认值必须保持为 `false`。
+
+## 状态机
+
+飞控状态：
+
+```text
+WAITING → PRESTREAM → TAKEOFF → VISION_CONTROL
+                              └→ FAILSAFE → PX4 LAND
+```
+
+- `WAITING`：等待新鲜且有效的 PX4 状态和本地位置。
+- `PRESTREAM`：发布 20 Hz Offboard 心跳与零速度预流，然后请求 Offboard。
+- `TAKEOFF`：只进行高度闭环，不使用水平视觉速度。
+- `VISION_CONTROL`：保持高度并应用视觉水平速度。
+- `FAILSAFE`：单次请求 PX4 正常 LAND，停止继续发布 Offboard。
+
+相机状态：
+
+```text
+SEARCH/front → DOWN_ACQUIRE/front → ALIGN/down
+```
+
+当前没有任务完成自动判定状态；最终验证在稳定 ALIGN 后由 PX4 控制台请求正常
+LAND。后续若增加自动任务降落，应在独立任务层实现，不能破坏底层安全状态机。
+
+## Raspberry Pi 与 OpenMV
+
+- Raspberry Pi 摄像头流程见
+  [`src/pi_camera_vision/README.md`](src/pi_camera_vision/README.md)。
+- OpenMV H7 Plus 程序与串口协议见
+  [`openmv_h7plus/README.md`](openmv_h7plus/README.md)。
+- H7、Pi Camera 与 Gazebo 检测源不能同时向同一正式检测链发布。
+
+## 测试
+
+```bash
+source /opt/ros/jazzy/setup.bash
+colcon build --packages-select uav_control uav_vision --symlink-install
+source install/setup.bash
+colcon test --packages-select uav_control uav_vision
 colcon test-result --verbose
 ```
 
-## 7. 运行方法
-
-### 7.1 H7Plus 实机视觉链路
-
-先按照 `openmv_h7plus/README.md` 将程序上传到开发板，并确保 OpenMV IDE
-未占用 USB CDC 串口。
-
-分别在终端中运行：
-
-```bash
-source install/setup.bash
-ros2 run uav_vision h7_bridge_node --ros-args \
-  -p port:=/dev/ttyACM0 -p baudrate:=115200
-```
-
-```bash
-source install/setup.bash
-ros2 run uav_vision target_filter_node
-```
-
-```bash
-source install/setup.bash
-ros2 run uav_vision visual_servo_node
-```
-
-无 H7Plus 时，可用以下节点替代 `h7_bridge_node`：
-
-```bash
-source install/setup.bash
-ros2 run uav_vision fake_h7_node
-```
-
-### 7.2 Gazebo 视觉链路
-
-在 Gazebo 相机和 ROS-Gazebo 通信环境已启动后执行：
-
-```bash
-source install/setup.bash
-ros2 launch uav_vision gazebo_vision.launch.py
-```
-
-该 launch 文件启动图像桥、Gazebo 红色目标检测、目标滤波和视觉伺服，不启动
-PX4 控制器，也不会解锁无人机。参数位于
-`src/uav_vision/config/gazebo_vision.yaml`。
-
-### 7.3 PX4 视觉 Offboard 控制
-
-先启动 PX4 SITL、对应的 ROS 2/DDS 通信链路和上述任一视觉链路。确认以下
-topic 持续更新：
-
-```bash
-ros2 topic hz /control/vision_velocity
-ros2 topic hz /fmu/out/vehicle_local_position
-ros2 topic hz /fmu/out/vehicle_status
-```
-
-仅观察控制器输出、不请求 Offboard 或解锁：
-
-```bash
-source install/setup.bash
-ros2 run uav_control vision_offboard_controller
-```
-
-在 PX4 SITL 中显式启用 Offboard 和自动解锁：
-
-```bash
-source install/setup.bash
-ros2 run uav_control vision_offboard_controller --ros-args \
-  -p simulation_mode:=true \
-  -p enable_offboard:=true \
-  -p enable_auto_arm:=true
-```
-
-运行前应确认仿真环境、坐标方向、目标高度、速度限制、PX4 状态反馈和紧急停止
-方式均符合预期。不要将仅为 SITL 设计的自动解锁参数直接用于真实飞行器。
-
-独立状态观察：
-
-```bash
-source install/setup.bash
-ros2 run uav_control vehicle_status_listener
-```
-
-该节点通过 `vehicle_status_topic` 参数选择 PX4 状态 topic，默认订阅：
+最终验证结果：
 
 ```text
-/fmu/out/vehicle_status
+98 tests
+0 errors
+0 failures
+1 skipped (copyright template)
 ```
 
-需要覆盖时可执行：
+## 最终飞行数据
+
+- 最大高度：2.023 m
+- 前视面积：4171 → 34205.5 px²
+- front→down 位置：(-0.112, 3.179, -1.989) m
+- 下视中心误差：117.3 → 3.5 px
+- 最终对准位置：(-0.011, 4.765, -1.995) m
+- 全程：`failsafe=false`
+- 结束：`Landing detected`、`Disarmed by landing`
+
+![XY trajectory](docs/verification/final_xy_trajectory.png)
+
+![Height](docs/verification/final_height.png)
+
+![Visual errors](docs/verification/final_visual_errors.png)
+
+## 真机部署
+
+真机验证尚未完成。不得在真实飞行器上直接启用 `enable_auto_arm=true`。
+
+计划使用 Pixhawk 6C 和 Raspberry Pi 4B 时，必须重新检查：
+
+- PX4 与 `px4_msgs` 版本；
+- XRCE-DDS 或串口连接；
+- FLU/NED 坐标与 heading；
+- 两个相机的安装方向、视场和曝光；
+- 解锁权限、地理围栏、急停与人工接管；
+- 无桨台架、低风险系留和分阶段飞行测试。
+
+## 常见问题
+
+### `No connection to the GCS`
+
+先启动 QGroundControl，确认本机 UDP 14550 没有被其他程序占用，等待 PX4 出现
+`Ready for takeoff!`。
+
+### `pre_flight_checks_pass=false`
+
+读取 PX4 控制台和 QGC 的完整健康错误。检查模型是否正确生成、仿真时间是否推进、
+EKF/传感器是否初始化；不要强制解锁或关闭关键安全检查。
+
+### 没有图像话题
+
+确认机型是 `gz_x500_downward_camera`、世界是 `red_target`，并检查 Gazebo：
 
 ```bash
-ros2 run uav_control vehicle_status_listener --ros-args \
-  -p vehicle_status_topic:=/实际/PX4状态topic
+gz topic -l | grep '/camera/'
+ros2 topic list | grep '/camera/'
 ```
 
-## 8. 当前能力与边界
+### 有图像但没有检测
 
-### 当前版本支持
+查看 `/vision/front/debug_image`、`/vision/down/debug_image`，检查 HSV 阈值、
+最小面积、目标是否进入视场，以及两个 detector 节点是否存在。
 
-- ROS 2 与 PX4 的 uXRCE-DDS topic 通信；
-- PX4 Offboard 控制框架；
-- `/control/vision_velocity` 视觉速度控制接口；
-- OpenMV H7Plus、模拟数据和 Gazebo 视觉输入；
-- 视觉目标滤波与输入超时保护；
-- FLU 到 NED 的速度转换；
-- Offboard 预流、固定高度起飞和视觉速度控制；
-- PX4 状态、本地位置和 failsafe 检查；
-- PX4 SITL 验证。
+### 卡在 `WAITING`
 
-### 当前未实现
+检查 `/fmu/out/vehicle_local_position_v1` 和 `/fmu/out/vehicle_status_v1` 是否持续
+发布，并确认位置、heading 和状态未超时。
 
-- `mission_manager`；
-- `trajectory_generator`；
-- 通用航点任务；
-- 通用位置或速度轨迹规划；
-- 自动任务降落；
-- 完整真机自主飞行流程。
+### `Offboard signal lost`
 
-当前自动 Offboard 流程主要用于 PX4 SITL 验证。不要通过在真机设置
-`simulation_mode=true` 绕过仿真限制。
+确认只有一个控制器，系统负载没有阻塞 ROS executor，20 Hz
+`/fmu/in/offboard_control_mode` 与 `/fmu/in/trajectory_setpoint` 持续发布。
 
-Pixhawk 真机部署仍需进一步完成：
+### 出现多个控制器
 
-- uXRCE-DDS client 与 Micro XRCE-DDS Agent 通信验证；
-- PX4与ROS 2 `px4_msgs` 版本匹配；
-- 飞控、串口、Offboard和failsafe参数检查；
-- 本地位置和heading来源验证；
-- 无桨台架、人工接管和异常链路安全测试。
+停止旧 `offboard_control.py` 和重复 launch。`ros2 topic info
+/fmu/in/vehicle_command --verbose` 应只显示 `vision_offboard_controller` 发布。
 
-## 9. 开发文档
+### 前视不能切换到下视
 
-- [`docs/architecture.md`](docs/architecture.md)：当前系统架构、ROS 2节点关系、
-  PX4通信关系、文件职责和比赛扩展位置。
-- [`docs/developer_notes.md`](docs/developer_notes.md)：核心文件修改约束、比赛任务
-  开发位置、新任务接口和分级测试流程。
+观察前视检测面积/宽高是否达到阈值、连续确认帧是否满足，以及下视目标是否已经
+进入画面。
 
-当前仓库还没有独立任务规划层。比赛任务逻辑不应直接继续堆入
-`vision_offboard_controller.py`；后续应在稳定接口基础上增加
-`mission_manager.py` 和 `trajectory_generator.py`，并保持单一PX4控制发布者。
+### 下视误差不收敛
 
-## 10. 后续开发说明
+立即停止水平控制并正常 LAND。根据实际轨迹检查相机姿态、像素方向、FLU→NED
+变换和目标几何；不能只凭公式盲目改符号。
 
-- 将 ROS 2 发行版、PX4 版本、`px4_msgs` 分支和 Gazebo 版本固定到可复现的
-  开发环境配置中。
-- 根据真实相机安装方向、视场角和飞行高度标定视觉伺服比例、符号、死区及限速。
-- 补充串口协议版本、消息时间戳和链路状态诊断，区分目标丢失、数据超时与设备
-  断开。
-- 在真实飞行前增加硬件在环测试、控制权限隔离、人工接管、地理围栏和降落策略
-  验证。
-- 保持视觉处理逻辑与 ROS 2 接口分离，并为协议解析、滤波、坐标转换、状态机和
-  failsafe 路径持续补充自动化测试。
+## Git 协作
+
+- 不直接在 `main` 上开发。
+- 每位成员使用自己的开发分支。
+- 修改前后检查 `git status` 和 `git diff`。
+- 提交前完成构建和测试。
+- 通过 Pull Request 评审后合并。
+- 不提交 `build/`、`install/`、`log/`、rosbag、ULog、PX4 编译产物或密钥。
+
+## 安全边界
+
+- 自动解锁门同时要求 `simulation_mode=true`、`enable_offboard=true`、
+  `enable_auto_arm=true`。
+- 所有启动参数默认关闭 Offboard 和自动解锁。
+- 不得在真实飞控上设置 `simulation_mode=true`。
+- 不得同时运行第二个 PX4 控制节点。
+- 不得使用 `offboard_control.py` 代替正式控制器。
+- 输入无效、超时或 PX4 failsafe 时停止水平控制；控制故障请求正常降落。
+- 真机飞行仍需完成无桨台架、定位/航向、人工接管、地理围栏和 failsafe 验证。

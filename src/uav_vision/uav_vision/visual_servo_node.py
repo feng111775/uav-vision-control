@@ -7,6 +7,7 @@ import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
+from std_msgs.msg import String
 
 
 VALUE_COUNT = 7
@@ -20,7 +21,8 @@ class VisualServoController:
                  kp_x=0.002, kp_y=0.002,
                  deadband_x=10.0, deadband_y=10.0,
                  max_velocity=0.3, stale_timeout=0.3,
-                 sign_x=-1.0, sign_y=-1.0):
+                 sign_x=-1.0, sign_y=-1.0,
+                 camera_mode='down', front_approach_velocity=0.12):
         parameters = [center_x, center_y, kp_x, kp_y, deadband_x,
                       deadband_y, max_velocity, stale_timeout,
                       sign_x, sign_y]
@@ -34,6 +36,11 @@ class VisualServoController:
             raise ValueError('max_velocity必须大于0')
         if stale_timeout <= 0.0:
             raise ValueError('stale_timeout必须大于0')
+        if camera_mode not in ('front', 'down'):
+            raise ValueError('camera_mode必须是front或down')
+        if (not math.isfinite(float(front_approach_velocity))
+                or front_approach_velocity < 0.0):
+            raise ValueError('front_approach_velocity必须是有限非负数')
 
         self.center_x = float(center_x)
         self.center_y = float(center_y)
@@ -45,6 +52,9 @@ class VisualServoController:
         self.stale_timeout = float(stale_timeout)
         self.sign_x = float(sign_x)
         self.sign_y = float(sign_y)
+        self.camera_mode = camera_mode
+        self.front_approach_velocity = min(
+            float(front_approach_velocity), self.max_velocity)
         self.last_message_time = None
         self.latest_velocity = ZERO_VELOCITY
 
@@ -93,7 +103,11 @@ class VisualServoController:
 
         if abs(error_x) > self.deadband_x:
             left_velocity = self.sign_x * self.kp_x * error_x
-        if abs(error_y) > self.deadband_y:
+        if self.camera_mode == 'front':
+            # 前视图像的纵向像素误差主要受目标高度和俯仰影响，不能用来
+            # 判断目标在机体前方还是后方。有效目标始终以受限速度接近。
+            forward_velocity = self.front_approach_velocity
+        elif abs(error_y) > self.deadband_y:
             forward_velocity = self.sign_y * self.kp_y * error_y
 
         self.latest_velocity = (
@@ -101,6 +115,12 @@ class VisualServoController:
             self._clamp(left_velocity, self.max_velocity),
         )
         return self.latest_velocity
+
+    def set_camera_mode(self, camera_mode):
+        """切换相机控制语义；未知来源立即拒绝。"""
+        if camera_mode not in ('front', 'down'):
+            raise ValueError('camera_mode必须是front或down')
+        self.camera_mode = camera_mode
 
     def velocity_at(self, now_seconds):
         """返回当前速度；输入超时或尚无输入时返回零速度。"""
@@ -132,6 +152,10 @@ class VisualServoNode(Node):
         self.declare_parameter('stale_timeout', 0.3)
         self.declare_parameter('sign_x', -1.0)
         self.declare_parameter('sign_y', -1.0)
+        self.declare_parameter('camera_mode', 'down')
+        self.declare_parameter('front_approach_velocity', 0.12)
+        self.declare_parameter('selected_camera_topic', '')
+        self.declare_parameter('camera_source_timeout', 0.3)
         self.declare_parameter(
             'filtered_detection_topic',
             '/vision/h7/filtered_detection')
@@ -140,7 +164,8 @@ class VisualServoNode(Node):
 
         names = ('center_x', 'center_y', 'kp_x', 'kp_y',
                  'deadband_x', 'deadband_y', 'max_velocity',
-                 'stale_timeout', 'sign_x', 'sign_y')
+                 'stale_timeout', 'sign_x', 'sign_y', 'camera_mode',
+                 'front_approach_velocity')
         values = {name: self.get_parameter(name).value for name in names}
         self.controller = VisualServoController(**values)
         self.publisher = self.create_publisher(
@@ -152,11 +177,36 @@ class VisualServoNode(Node):
             self.detection_callback,
             10,
         )
+        self.camera_source_time = None
+        self.camera_source_timeout = float(
+            self.get_parameter('camera_source_timeout').value)
+        if (not math.isfinite(self.camera_source_timeout)
+                or self.camera_source_timeout <= 0.0):
+            raise ValueError('camera_source_timeout必须是有限正数')
+        selected_camera_topic = self.get_parameter(
+            'selected_camera_topic').value
+        self.camera_subscription = None
+        if selected_camera_topic:
+            self.camera_subscription = self.create_subscription(
+                String, selected_camera_topic, self.camera_callback, 10)
         # 20 Hz安全检查，高于实测15.54 Hz输入且远短于默认超时时间。
         self.stale_timer = self.create_timer(0.05, self.check_stale_input)
         self.get_logger().info(
             '视觉伺服节点已启动：frame=base_link，最大速度=%.2f m/s'
             % self.controller.max_velocity)
+
+    def camera_callback(self, message):
+        """更新当前选择的相机，非法来源不进入控制。"""
+        try:
+            self.controller.set_camera_mode(message.data)
+        except ValueError as error:
+            self.controller.latest_velocity = ZERO_VELOCITY
+            self.get_logger().warning(
+                '非法相机来源，发布零速度：%s' % error,
+                throttle_duration_sec=5.0)
+            self.publish_velocity(*ZERO_VELOCITY)
+            return
+        self.camera_source_time = self.now_seconds()
 
     def now_seconds(self):
         """返回ROS时钟秒数，兼容仿真时间。"""
@@ -177,9 +227,17 @@ class VisualServoNode(Node):
 
     def detection_callback(self, message):
         """处理检测数据，任何异常输入都立即发布零速度。"""
+        now_seconds = self.now_seconds()
+        if (self.camera_subscription is not None
+                and (self.camera_source_time is None
+                     or now_seconds - self.camera_source_time
+                     > self.camera_source_timeout)):
+            self.controller.latest_velocity = ZERO_VELOCITY
+            self.publish_velocity(*ZERO_VELOCITY)
+            return
         try:
             velocity = self.controller.process(
-                message.data, self.now_seconds())
+                message.data, now_seconds)
         except (TypeError, ValueError) as error:
             self.get_logger().warning(
                 '非法视觉检测数据，发布零速度：%s' % error,
@@ -191,7 +249,12 @@ class VisualServoNode(Node):
     def check_stale_input(self):
         """输入超时时定期发布零速度。"""
         now_seconds = self.now_seconds()
-        if self.controller.is_stale(now_seconds):
+        source_stale = (
+            self.camera_subscription is not None
+            and (self.camera_source_time is None
+                 or now_seconds - self.camera_source_time
+                 > self.camera_source_timeout))
+        if self.controller.is_stale(now_seconds) or source_stale:
             self.publish_velocity(*ZERO_VELOCITY)
             self.get_logger().warning(
                 '视觉检测输入超时，发布零速度',

@@ -28,6 +28,8 @@ setup(
             'fake_h7_node = uav_vision.fake_h7_node:main',
             'target_filter_node = uav_vision.target_filter_node:main',
             'visual_servo_node = uav_vision.visual_servo_node:main',
+            'camera_selector_node = '
+            'uav_vision.camera_selector_node:main',
             'gazebo_red_target_detector_node = '
             'uav_vision.gazebo_red_target_detector_node:main',
         ],
