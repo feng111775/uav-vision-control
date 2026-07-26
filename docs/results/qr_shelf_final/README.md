@@ -1,63 +1,70 @@
-# QR shelf 最终验证摘要
+# QR shelf 历史实验与后端基准
 
-本目录只放精选、可复现证据。训练集 160 图、验证 48、测试 48；正式 SVM
-验证 patch precision=0.97297、recall=0.96429、accuracy=0.97266，单 patch
-CPU 分类约 0.002 ms（不含滑窗和解码）。
+本目录保存逐码任务之前的历史训练、相机和 headless SITL 证据，用于解释资产
+修复和后端选择；当前最终验收请看
+`docs/results/qr_shelf_sequential/`。这里的旧固定视角或 headless 结果不能替代
+当前 24 点 GUI 逐码验收。
 
-首轮 held-out 24 图/50 框端到端结果：
+## 获取与检查
 
-| 后端 | 定位成功率 | 内容解码率 | 平均整图延迟 |
-|---|---:|---:|---:|
-| OpenCV | 20% | 20% | 12.33 ms |
-| 模型候选 + OpenCV | 36% | 36% | 1177.77 ms |
+```bash
+git clone -b feature/qr-shelf-sitl \
+  https://github.com/feng111775/uav-vision-control.git \
+  ~/px4_ros2_ws
+cd ~/px4_ros2_ws
+source /opt/ros/jazzy/setup.bash
+rosdep install --from-paths src --ignore-src -r -y
+colcon build --symlink-install
+source ~/px4_ros2_ws/install/setup.bash
+python3 simulation/scripts/benchmark_qr_backend.py --help
+python3 -m pytest -q src/uav_vision/test/test_qr_core.py
+```
 
-这组强增强数据揭示滑窗 SVM 虽提高成功率但不适合作为实时默认；正式默认
-仍建议 `hybrid`（存在权重则模型辅助，否则 OpenCV），后续树莓派/Coral 应
-替换为 nano ONNX/TFLite。没有把 patch precision 冒充 mAP；当前 SVM 不输出
-标准目标检测 mAP50/mAP50-95，因此记为 N/A。
+目录中的 JSON 输入是历史运行指标，PNG 是精选结果图；不发布 ROS 话题。
+OpenCV 负责最终 ID 解码，HOG+SVM 只提供候选区域。历史 50 帧验证读取
+Gazebo `/camera/shelf_validation/image`，没有读取原始二维码 PNG。
 
-已验证：生成、实际训练、核心单测、ROS 构建/测试、静态 launch 安全。
-最新 `colcon test-result --verbose` 为 155 tests、0 errors、0 failures、
-1 skipped（即 154 passed）；干净 QR 7 离线 smoke 在 opencv 与 hybrid
-均正确输出 7。
-未验证：需要 Gazebo/QGC 图形交互的完整起飞—瞄准—降落，以及真机/Coral。
-这些限制不写成成功结果。
+已实现并保留：
 
-## 2026-07-26 headless SITL 复验
+- 0.19 m QR COLLADA 几何和材质方向修复；
+- OpenCV/混合后端延迟与 held-out 数据；
+- 早期 headless 失败和后续修复记录；
+- 小型可提交证据。
 
-真实通过：`qr_shelf_world` headless 加载、MicroXRCE 会话、PX4→ROS 状态
-1.984 Hz、双相机 20 Hz、飞检通过、Offboard 心跳 19.999 Hz、禁用自动解锁
-阶段保持 Disarmed；显式启用后真实 Armed 并达到 2 m。任务在
-`QR_SEARCH` 因 Gazebo 图像未解码二维码超时，正式控制器只发一次 Land；
-PX4 日志确认 `Landing detected` 和 `Disarmed by landing`。
+当前正式逐码成功标准是根 README 所述蛇形 24/24、目标 QR 10、下视切换、
+Land/Disarm、`failsafe=false`，而不是本目录中的单帧定位率。
 
-因此完整任务明确为失败，未执行盘点、激光确认、front→down 正常切换。
-机器可读证据见 `sitl_stage_report.json`。OpenCV 48 张 held-out 整图实测
-平均 35.13 ms、P95 74.82 ms、最坏 95.97 ms、28.47 FPS，见
-`opencv_end_to_end_latency.json`。
+重新运行正式栈的三个终端：
 
-## 2026-07-26 QR 视觉修复与完整 headless SITL
+```bash
+# 终端 1
+cd ~/px4_ros2_ws
+source /opt/ros/jazzy/setup.bash
+source ~/px4_ros2_ws/install/setup.bash
+TARGET_QR_ID=10 ./simulation/scripts/run_qr_sitl_gui.sh
+```
 
-后续复验已经完成此前未通过的完整任务。根因不是 OpenCV 超时，而是 Gazebo
-没有可靠加载 OBJ/MTL 黑色材质，随后生成的几何又因观察面方向发生水平镜像；
-此外残留的 `red_target` server 一度让 PX4 连接到了错误世界。最终资产使用
-内嵌材质的 COLLADA 白模块加黑色背板，按相机观察面修正列方向，并将双相机
-统一为 640×480。二维码仍为 0.19 m，未放大物理尺寸。
+```bash
+# 终端 2
+cd ~/px4_ros2_ws
+source /opt/ros/jazzy/setup.bash
+source ~/px4_ros2_ws/install/setup.bash
+ros2 run rqt_image_view rqt_image_view /vision/qr/debug_image
+```
 
-真实 Gazebo ROS 相机在 2.0 m 距离采集 50 帧：定位 50/50、指定 QR 10
-正确解码 50/50，OpenCV 整帧平均 101.11 ms、P95 105.94 ms、最坏
-111.71 ms。采集读取 `/camera/shelf_validation/image`，没有读取原始 PNG；
-逐帧数据和三张代表帧在 `gazebo_camera_acceptance/`。
+```bash
+# 终端 3
+cd ~/px4_ros2_ws
+source /opt/ros/jazzy/setup.bash
+source ~/px4_ros2_ws/install/setup.bash
+ros2 topic echo /control/qr_mission_state
+```
 
-完整任务由 `qr_shelf_world` 相机、ROS 2 话题和 PX4 SITL 状态自动驱动，
-实际状态时间线为：
+用 `python3 -m json.tool <文件>` 排查损坏 JSON，用 `file *.png` 检查图片。停止：
 
-`WAITING → PRESTREAM → TAKEOFF → QR_SEARCH → QR_INVENTORY →
-TARGET_ACQUIRE → TARGET_APPROACH → LASER_ALIGN → LASER_CONFIRM →
-TRANSIT_TO_LANDING → DOWN_ACQUIRE → ALIGN → LAND → DISARM`
+```bash
+cd ~/px4_ros2_ws
+./simulation/scripts/stop_qr_sitl.sh
+```
 
-PX4 实际进入 Offboard、Armed，达到约 2 m，`failsafe=false`；相机选择器在
-软件激光确认前保持 front，随后真实切到 down；PX4 接受单次 Land，发布
-`landed=true`，最终 `arming_state=1`（Disarmed）。本结果只证明 SITL，
-不代表已经完成树莓派、Coral、Pixhawk、光流/测距、相机标定、拆桨台架或
-系留实飞验证。
+本目录不证明树莓派/Coral/Pixhawk/相机标定/系留或装桨实飞。

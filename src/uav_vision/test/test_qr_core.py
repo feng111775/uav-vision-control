@@ -50,6 +50,46 @@ def test_negative_empty_corrupt_inputs():
     assert detector.detect(np.empty((0, 0), np.uint8)) == []
 
 
+def test_empty_camera_frame_cannot_confirm_expected_qr():
+    inventory = QRInventory(confirm_frames=1)
+    inventory.set_scan_context(0, True, [-1.25, .78, -2.5])
+    observations = HybridQRDetector('opencv').detect(
+        np.empty((0, 0, 3), np.uint8))
+    inventory.update(observations, 1.0)
+    assert inventory.scan_index == 0
+    assert inventory.records == {}
+
+
+def test_camera_frame_without_qr_cannot_confirm():
+    inventory = QRInventory(confirm_frames=1)
+    inventory.set_scan_context(0, True, [-1.25, .78, -2.5])
+    observations = HybridQRDetector('opencv').detect(
+        np.full((480, 640, 3), 127, np.uint8))
+    inventory.update(observations, 1.0)
+    assert observations == []
+    assert inventory.scan_index == 0
+
+
+def test_scan_context_and_position_never_generate_an_observation():
+    inventory = QRInventory(confirm_frames=1)
+    inventory.set_scan_context(
+        scan_index=0, hold=True, scan_position=[-1.25, .78, -2.5])
+    inventory.update([], 1.0)
+    assert inventory.expected_qr_id == 1
+    assert inventory.records == {}
+    assert inventory.scan_index == 0
+
+
+def test_wrong_decoded_id_at_correct_scan_position_cannot_advance():
+    inventory = QRInventory(confirm_frames=1)
+    inventory.set_scan_context(0, True, [-1.25, .78, -2.5])
+    observations = HybridQRDetector('opencv').detect(code(2), 1.0)
+    assert [item.qr_id for item in observations] == [2]
+    inventory.update(observations, 1.0)
+    assert inventory.visible_ids == [2]
+    assert inventory.scan_index == 0
+
+
 def test_crop_clips_edges_and_rejects_outside():
     image = np.zeros((20, 30, 3), np.uint8)
     assert QRDecoder.safe_crop(image, (-4, -3, 10, 10)).size > 0
@@ -134,6 +174,14 @@ def test_image_timeout():
     inventory.update([], 1)
     assert not inventory.image_stale(1.4)
     assert inventory.image_stale(1.6)
+
+
+def test_scan_index_cannot_directly_produce_qr_id():
+    inventory = QRInventory(confirm_frames=1)
+    for index in range(24):
+        inventory.set_scan_context(index, True, [index, 0, 0])
+    assert inventory.scan_index == 0
+    assert inventory.records == {}
 
 
 def test_missing_model_falls_back_to_opencv():

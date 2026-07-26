@@ -57,6 +57,20 @@ def test_timeout_retries_then_failsafe_without_skipping():
     assert mission.scan_index == 0
 
 
+def test_camera_silence_during_confirmation_retries_then_failsafe():
+    mission = QRMission(
+        scan_hold_seconds=.1, scan_timeout=.2, scan_max_retries=0)
+    airborne(mission)
+    mission.update_position(*mission.scan_point())
+    mission.step(.3, 'VISION_CONTROL')
+    mission.step(.41, 'VISION_CONTROL')
+    assert mission.state == mission.QR_SCAN_CONFIRM
+    # No inventory callback follows: a stopped camera cannot confirm.
+    mission.step(.62, 'VISION_CONTROL')
+    assert mission.state == mission.FAILSAFE
+    assert mission.scan_index == 0
+
+
 def test_incomplete_inventory_cannot_enter_target_approach():
     mission = QRMission()
     airborne(mission)
