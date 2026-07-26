@@ -69,6 +69,26 @@ class CameraSelector:
         self.down_lost_count = 0
         self.down_selected_time = None
         self.last_down_failure_time = -math.inf
+        # Standalone selector keeps its legacy behaviour. The ROS mission
+        # state subscription immediately gates this in QR task launches.
+        self.down_enabled = True
+
+    def update_mission_state(self, state):
+        """Allow the down camera only after the QR/laser phase is complete."""
+        if str(state).startswith('{'):
+            import json
+            try:
+                state = json.loads(state).get('state', '')
+            except (json.JSONDecodeError, TypeError):
+                state = ''
+        self.down_enabled = state in (
+            'TRANSIT_TO_LANDING', 'DOWN_ACQUIRE', 'ALIGN', 'LAND',
+            'DISARM')
+        if self.mode == 'auto' and not self.down_enabled and \
+                self.selected_camera == 'down':
+            self.state = self.SEARCH
+            self.selected_camera = 'front'
+            self.front_close_count = 0
 
     @staticmethod
     def validate(values):
@@ -107,7 +127,8 @@ class CameraSelector:
         else:
             self.front_close_count = 0
 
-        if (self.mode == 'auto' and self.state == self.SEARCH
+        if (self.mode == 'auto' and self.down_enabled
+                and self.state == self.SEARCH
                 and self.front_close_count >= self.front_confirm_frames
                 and float(now_seconds) - self.last_down_failure_time
                 >= self.switch_cooldown):
@@ -197,6 +218,7 @@ class CameraSelectorNode(Node):
             'down_detection_topic': '/vision/down/detection',
             'selected_detection_topic': '/vision/selected_detection',
             'selected_camera_topic': '/vision/selected_camera',
+            'mission_state_topic': '/control/qr_mission_state',
             'front_confirm_frames': 3,
             'front_area_threshold': 15000.0,
             'front_size_threshold': 140.0,
@@ -218,6 +240,8 @@ class CameraSelectorNode(Node):
                 'down_hold_frames', 'down_lost_frames', 'source_timeout',
                 'switch_cooldown')
         })
+        if self.selector.mode == 'auto':
+            self.selector.update_mission_state('WAITING')
         publish_rate = float(self.get_parameter('publish_rate').value)
         if not math.isfinite(publish_rate) or publish_rate <= 0.0:
             raise ValueError('publish_rate must be positive and finite')
@@ -236,6 +260,9 @@ class CameraSelectorNode(Node):
             Float32MultiArray,
             self.get_parameter('down_detection_topic').value,
             self.down_callback, 10)
+        self.mission_subscription = self.create_subscription(
+            String, self.get_parameter('mission_state_topic').value,
+            self.mission_callback, 10)
         self.timer = self.create_timer(
             1.0 / publish_rate, self.publish_selected)
         self.last_reported = None
@@ -270,6 +297,11 @@ class CameraSelectorNode(Node):
                 self.selector.update_front(invalid, self.now_seconds())
             else:
                 self.selector.update_down(invalid, self.now_seconds())
+            self.report_state()
+
+    def mission_callback(self, message):
+        """Gate front-to-down switching with the formal mission state."""
+        self.selector.update_mission_state(message.data)
         self.report_state()
 
     def front_callback(self, message):

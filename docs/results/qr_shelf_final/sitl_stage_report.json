@@ -1,0 +1,23 @@
+{
+  "date": "2026-07-26",
+  "world_loaded": true,
+  "world_name": "qr_shelf_world",
+  "headless": true,
+  "micro_xrce_session_established": true,
+  "px4_ros_status_rate_hz": 1.984,
+  "front_camera_rate_hz": 20.0,
+  "front_camera_reached_qr_node": true,
+  "offboard_heartbeat_rate_hz": 19.999,
+  "offboard_without_arm": true,
+  "pre_flight_checks_pass": true,
+  "auto_arm": true,
+  "takeoff_altitude_m": 2.0,
+  "px4_failsafe": false,
+  "decoded_target_from_gazebo": false,
+  "failure_state": "QR_SEARCH",
+  "failure_reason": "No QR decoded from real Gazebo camera before timeout",
+  "failsafe_land_requested_once": true,
+  "px4_landing_detected": true,
+  "px4_final_disarmed": true,
+  "complete_mission": false
+}

@@ -12,6 +12,7 @@ vision_offboard_controller:
     takeoff_timeout: 25.0
     px4_status_timeout: 1.5
     local_position_timeout: 0.5
+    task_mode: legacy
     vision_velocity_topic: /control/vision_velocity
     offboard_control_mode_topic: /fmu/in/offboard_control_mode
     trajectory_setpoint_topic: /fmu/in/trajectory_setpoint

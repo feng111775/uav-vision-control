@@ -1,0 +1,16 @@
+{
+  "test": "move qr shelf outside the real Gazebo front camera view",
+  "formal_runtime": true,
+  "fake_ros_messages": false,
+  "scan_point_reached": true,
+  "states_observed": [
+    "QR_SCAN_MOVE",
+    "QR_SCAN_HOLD",
+    "QR_SCAN_CONFIRM"
+  ],
+  "decoded_confirmations": 0,
+  "retry_count": 2,
+  "final_state": "FAILSAFE",
+  "reason": "QR 1 scan timeout after 2 retries",
+  "conclusion": "aircraft position and scan_index cannot confirm a QR without camera decoding"
+}

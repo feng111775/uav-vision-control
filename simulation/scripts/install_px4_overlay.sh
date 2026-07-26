@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 1 ]]; then
-    echo "Usage: $0 /absolute/path/to/PX4-Autopilot" >&2
+if [[ $# -lt 1 ]] || [[ $# -gt 2 ]]; then
+    echo "Usage: $0 /path/to/PX4-Autopilot [--apply]" >&2
     exit 2
 fi
 
@@ -15,23 +15,34 @@ fi
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 asset_root="$script_dir/../px4_overlay"
+apply="${2:-}"
 
 echo "PX4 target: $px4_root"
 echo "Files to install:"
 find "$asset_root" -type f -printf '  %P\n' | sort
 
-install -D -m 0644 \
-    "$asset_root/Tools/simulation/gz/models/x500_downward_camera/model.config" \
-    "$px4_root/Tools/simulation/gz/models/x500_downward_camera/model.config"
-install -D -m 0644 \
-    "$asset_root/Tools/simulation/gz/models/x500_downward_camera/model.sdf" \
-    "$px4_root/Tools/simulation/gz/models/x500_downward_camera/model.sdf"
-install -D -m 0644 \
-    "$asset_root/Tools/simulation/gz/worlds/red_target.sdf" \
-    "$px4_root/Tools/simulation/gz/worlds/red_target.sdf"
-install -D -m 0755 \
-    "$asset_root/ROMFS/px4fmu_common/init.d-posix/airframes/4022_gz_x500_downward_camera" \
-    "$px4_root/ROMFS/px4fmu_common/init.d-posix/airframes/4022_gz_x500_downward_camera"
+if [[ "$apply" != "--apply" ]]; then
+    echo "DRY RUN only. Re-run with --apply to copy after review."
+    exit 0
+fi
+
+version="$(git -C "$px4_root" describe --tags --always 2>/dev/null || true)"
+if [[ "$version" != *"v1.17"* ]]; then
+    echo "Refusing install: expected PX4 v1.17, found: $version" >&2
+    exit 3
+fi
+
+backup_root="$px4_root/.qr_shelf_overlay_backup/$(date +%Y%m%d_%H%M%S)"
+while IFS= read -r -d '' source; do
+    relative="${source#"$asset_root/"}"
+    target="$px4_root/$relative"
+    if [[ -f "$target" ]]; then
+        install -D -m 0644 "$target" "$backup_root/$relative"
+    fi
+    mode=0644
+    [[ "$relative" == ROMFS/* ]] && mode=0755
+    install -D -m "$mode" "$source" "$target"
+done < <(find "$asset_root" -type f -print0)
 
 cmake_file="$px4_root/ROMFS/px4fmu_common/init.d-posix/airframes/CMakeLists.txt"
 if ! grep -q '4022_gz_x500_downward_camera' "$cmake_file"; then
@@ -41,4 +52,5 @@ if ! grep -q '4022_gz_x500_downward_camera' "$cmake_file"; then
         "$cmake_file"
 fi
 
-echo "Installed verified dual-camera SITL assets into: $px4_root"
+echo "Installed overlay into: $px4_root"
+echo "Replaced files were backed up under: $backup_root"

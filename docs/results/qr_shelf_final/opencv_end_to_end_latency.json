@@ -1,0 +1,10 @@
+{
+  "backend": "opencv",
+  "frames": 48,
+  "decoded_frames": 23,
+  "decode_rate": 0.4791666666666667,
+  "mean_latency_ms": 35.12751302084401,
+  "p95_latency_ms": 74.81582100081141,
+  "worst_latency_ms": 95.96837499975663,
+  "fps": 28.467714164866116
+}

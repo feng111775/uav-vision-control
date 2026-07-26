@@ -1,0 +1,31 @@
+{
+  "precision": 0.972972972972973,
+  "recall": 0.9642857142857143,
+  "accuracy": 0.97265625,
+  "confusion_matrix": [
+    [
+      141,
+      3
+    ],
+    [
+      4,
+      108
+    ]
+  ],
+  "model": "OpenCV linear SVM + HOG (64x64)",
+  "opencv": "4.6.0",
+  "python": "3.12.3",
+  "train_samples": 855,
+  "validation_samples": 256,
+  "train_seconds": 0.044273631000123714,
+  "patch_latency_ms": 0.001982809999390156,
+  "configuration": {
+    "C": 0.8,
+    "kernel": "linear",
+    "input": [
+      64,
+      64
+    ],
+    "hog_bins": 9
+  }
+}

@@ -14,6 +14,9 @@ setup(
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/config', glob('config/*.yaml')),
         ('share/' + package_name + '/launch', glob('launch/*.launch.py')),
+        ('share/' + package_name + '/models', glob('models/*.xml')),
+        ('share/' + package_name + '/training',
+         glob('training/*.py') + glob('training/*.txt')),
     ],
     install_requires=['setuptools'],
     tests_require=['pytest'],
@@ -32,6 +35,7 @@ setup(
             'uav_vision.camera_selector_node:main',
             'gazebo_red_target_detector_node = '
             'uav_vision.gazebo_red_target_detector_node:main',
+            'qr_detector_node = uav_vision.qr_detector_node:main',
         ],
     },
 )

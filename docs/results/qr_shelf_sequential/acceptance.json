@@ -1,0 +1,324 @@
+{
+  "environment": {
+    "ubuntu": "24.04",
+    "ros": "Jazzy",
+    "px4": "v1.17.0",
+    "world": "qr_shelf_world",
+    "gui": true
+  },
+  "sensor_chain": "Gazebo camera -> ros_gz_bridge -> qr_detector_node",
+  "scan_order": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    12,
+    11,
+    10,
+    9,
+    8,
+    7,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    24,
+    23,
+    22,
+    21,
+    20,
+    19
+  ],
+  "confirmations": [
+    {
+      "scan_index": 1,
+      "qr_id": 1,
+      "confirmed_time": 1785071162.5395727,
+      "aircraft_position_ned_m": [
+        -1.25,
+        0.78,
+        -2.5
+      ],
+      "position_tolerance_m": 0.12
+    },
+    {
+      "scan_index": 2,
+      "qr_id": 2,
+      "confirmed_time": 1785071165.4382992,
+      "aircraft_position_ned_m": [
+        -0.75,
+        0.78,
+        -2.5
+      ],
+      "position_tolerance_m": 0.12
+    },
+    {
+      "scan_index": 3,
+      "qr_id": 3,
+      "confirmed_time": 1785071167.9856937,
+      "aircraft_position_ned_m": [
+        -0.25,
+        0.78,
+        -2.5
+      ],
+      "position_tolerance_m": 0.12
+    },
+    {
+      "scan_index": 4,
+      "qr_id": 4,
+      "confirmed_time": 1785071170.4386144,
+      "aircraft_position_ned_m": [
+        0.25,
+        0.78,
+        -2.5
+      ],
+      "position_tolerance_m": 0.12
+    },
+    {
+      "scan_index": 5,
+      "qr_id": 5,
+      "confirmed_time": 1785071172.886695,
+      "aircraft_position_ned_m": [
+        0.75,
+        0.78,
+        -2.5
+      ],
+      "position_tolerance_m": 0.12
+    },
+    {
+      "scan_index": 6,
+      "qr_id": 6,
+      "confirmed_time": 1785071175.6390245,
+      "aircraft_position_ned_m": [
+        1.25,
+        0.78,
+        -2.5
+      ],
+      "position_tolerance_m": 0.12
+    },
+    {
+      "scan_index": 7,
+      "qr_id": 12,
+      "confirmed_time": 1785071178.1378002,
+      "aircraft_position_ned_m": [
+        1.25,
+        0.78,
+        -2.0
+      ],
+      "position_tolerance_m": 0.12
+    },
+    {
+      "scan_index": 8,
+      "qr_id": 11,
+      "confirmed_time": 1785071180.6876,
+      "aircraft_position_ned_m": [
+        0.75,
+        0.78,
+        -2.0
+      ],
+      "position_tolerance_m": 0.12
+    },
+    {
+      "scan_index": 9,
+      "qr_id": 10,
+      "confirmed_time": 1785071183.338549,
+      "aircraft_position_ned_m": [
+        0.25,
+        0.78,
+        -2.0
+      ],
+      "position_tolerance_m": 0.12
+    },
+    {
+      "scan_index": 10,
+      "qr_id": 9,
+      "confirmed_time": 1785071185.738697,
+      "aircraft_position_ned_m": [
+        -0.25,
+        0.78,
+        -2.0
+      ],
+      "position_tolerance_m": 0.12
+    },
+    {
+      "scan_index": 11,
+      "qr_id": 8,
+      "confirmed_time": 1785071188.437905,
+      "aircraft_position_ned_m": [
+        -0.75,
+        0.78,
+        -2.0
+      ],
+      "position_tolerance_m": 0.12
+    },
+    {
+      "scan_index": 12,
+      "qr_id": 7,
+      "confirmed_time": 1785071191.0378141,
+      "aircraft_position_ned_m": [
+        -1.25,
+        0.78,
+        -2.0
+      ],
+      "position_tolerance_m": 0.12
+    },
+    {
+      "scan_index": 13,
+      "qr_id": 13,
+      "confirmed_time": 1785071193.5382912,
+      "aircraft_position_ned_m": [
+        -1.25,
+        0.78,
+        -1.5
+      ],
+      "position_tolerance_m": 0.12
+    },
+    {
+      "scan_index": 14,
+      "qr_id": 14,
+      "confirmed_time": 1785071196.2375572,
+      "aircraft_position_ned_m": [
+        -0.75,
+        0.78,
+        -1.5
+      ],
+      "position_tolerance_m": 0.12
+    },
+    {
+      "scan_index": 15,
+      "qr_id": 15,
+      "confirmed_time": 1785071198.6856534,
+      "aircraft_position_ned_m": [
+        -0.25,
+        0.78,
+        -1.5
+      ],
+      "position_tolerance_m": 0.12
+    },
+    {
+      "scan_index": 16,
+      "qr_id": 16,
+      "confirmed_time": 1785071201.1854641,
+      "aircraft_position_ned_m": [
+        0.25,
+        0.78,
+        -1.5
+      ],
+      "position_tolerance_m": 0.12
+    },
+    {
+      "scan_index": 17,
+      "qr_id": 17,
+      "confirmed_time": 1785071203.6868439,
+      "aircraft_position_ned_m": [
+        0.75,
+        0.78,
+        -1.5
+      ],
+      "position_tolerance_m": 0.12
+    },
+    {
+      "scan_index": 18,
+      "qr_id": 18,
+      "confirmed_time": 1785071206.4383056,
+      "aircraft_position_ned_m": [
+        1.25,
+        0.78,
+        -1.5
+      ],
+      "position_tolerance_m": 0.12
+    },
+    {
+      "scan_index": 19,
+      "qr_id": 24,
+      "confirmed_time": 1785071208.9392858,
+      "aircraft_position_ned_m": [
+        1.25,
+        0.78,
+        -1.0
+      ],
+      "position_tolerance_m": 0.12
+    },
+    {
+      "scan_index": 20,
+      "qr_id": 23,
+      "confirmed_time": 1785071211.5382457,
+      "aircraft_position_ned_m": [
+        0.75,
+        0.78,
+        -1.0
+      ],
+      "position_tolerance_m": 0.12
+    },
+    {
+      "scan_index": 21,
+      "qr_id": 22,
+      "confirmed_time": 1785071214.038379,
+      "aircraft_position_ned_m": [
+        0.25,
+        0.78,
+        -1.0
+      ],
+      "position_tolerance_m": 0.12
+    },
+    {
+      "scan_index": 22,
+      "qr_id": 21,
+      "confirmed_time": 1785071216.5860784,
+      "aircraft_position_ned_m": [
+        -0.25,
+        0.78,
+        -1.0
+      ],
+      "position_tolerance_m": 0.12
+    },
+    {
+      "scan_index": 23,
+      "qr_id": 20,
+      "confirmed_time": 1785071219.2374353,
+      "aircraft_position_ned_m": [
+        -0.75,
+        0.78,
+        -1.0
+      ],
+      "position_tolerance_m": 0.12
+    },
+    {
+      "scan_index": 24,
+      "qr_id": 19,
+      "confirmed_time": 1785071221.8868692,
+      "aircraft_position_ned_m": [
+        -1.25,
+        0.78,
+        -1.0
+      ],
+      "position_tolerance_m": 0.12
+    }
+  ],
+  "inventory_complete": true,
+  "target_qr_id": 10,
+  "post_inventory_states": [
+    "TARGET_ACQUIRE",
+    "TARGET_APPROACH",
+    "LASER_ALIGN",
+    "LASER_CONFIRM",
+    "TRANSIT_TO_LANDING",
+    "DOWN_ACQUIRE",
+    "ALIGN",
+    "LAND",
+    "DISARM"
+  ],
+  "px4_terminal_evidence": [
+    "Landing at current position",
+    "Landing detected",
+    "Disarmed by external command"
+  ],
+  "failsafe": false,
+  "fake_qr_or_camera_inputs": false,
+  "only_px4_controller": "vision_offboard_controller.py",
+  "representative_real_front_image": "front_camera_real.png"
+}

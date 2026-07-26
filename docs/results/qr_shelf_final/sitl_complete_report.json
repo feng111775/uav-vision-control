@@ -1,0 +1,40 @@
+{
+  "date": "2026-07-26",
+  "world": "qr_shelf_world",
+  "target_qr_id": 10,
+  "inputs": {
+    "camera": "Gazebo /camera/front/image and /camera/down/image",
+    "px4": "PX4 v1.17 SITL via Micro XRCE-DDS",
+    "synthetic_detection_injection": false,
+    "manual_transition_calls": false
+  },
+  "timeline_sim_seconds": [
+    {"time": 1785056178.202, "state": "WAITING"},
+    {"time": 1785056178.257, "state": "PRESTREAM"},
+    {"time": 1785056179.457, "state": "TAKEOFF"},
+    {"time": 1785056191.658, "state": "QR_SEARCH"},
+    {"time": 1785056191.710, "state": "QR_INVENTORY"},
+    {"time": 1785056191.758, "state": "TARGET_ACQUIRE"},
+    {"time": 1785056191.810, "state": "TARGET_APPROACH"},
+    {"time": 1785056195.609, "state": "LASER_ALIGN"},
+    {"time": 1785056196.558, "state": "LASER_CONFIRM"},
+    {"time": 1785056196.609, "state": "TRANSIT_TO_LANDING"},
+    {"time": 1785056200.651, "state": "DOWN_ACQUIRE"},
+    {"time": 1785056200.699, "state": "ALIGN"},
+    {"time": 1785056204.199, "state": "LAND"},
+    {"time": 1785056208.799, "state": "DISARM"}
+  ],
+  "camera_switch": {
+    "front_to_down_time": 1785056196.757,
+    "after_laser_confirm": true
+  },
+  "px4_final": {
+    "arming_state": 1,
+    "disarmed": true,
+    "landed": true,
+    "failsafe": false,
+    "pre_flight_checks_pass": true,
+    "peak_altitude_m_approx": 2.0
+  },
+  "result": "passed"
+}
