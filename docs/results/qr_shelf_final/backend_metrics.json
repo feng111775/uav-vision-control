@@ -1,0 +1,18 @@
+{
+  "opencv": {
+    "images": 24,
+    "ground_truth_boxes": 50,
+    "location_success_rate": 0.2,
+    "content_decode_success_rate": 0.2,
+    "false_positive_decodes": 0,
+    "mean_image_latency_ms": 12.325618000015007
+  },
+  "model_hybrid": {
+    "images": 24,
+    "ground_truth_boxes": 50,
+    "location_success_rate": 0.36,
+    "content_decode_success_rate": 0.36,
+    "false_positive_decodes": 1,
+    "mean_image_latency_ms": 1177.7715721250008
+  }
+}

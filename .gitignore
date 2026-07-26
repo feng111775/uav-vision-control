@@ -22,6 +22,26 @@ test_results/
 *.bag
 *.active
 flight_telemetry*.csv
+rosbag*/
+
+# QR shelf generated corpora and training products
+datasets/qr_shelf/
+datasets/**/images/train/
+datasets/**/images/val/
+datasets/**/images/test/
+datasets/**/labels/train/
+datasets/**/labels/val/
+datasets/**/labels/test/
+runs/
+wandb/
+models/qr_detector/*.pt
+models/qr_detector/*.onnx
+models/qr_detector/*_smoke.xml
+models/qr_detector/smoke_*
+*.engine
+*.tflite
+*.edgetpu
+*.cache
 
 # 外部工具、源码树和编译产物
 *.AppImage

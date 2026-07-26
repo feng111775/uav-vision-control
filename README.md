@@ -421,3 +421,20 @@ ros2 topic list | grep '/camera/'
 - 不得使用 `offboard_control.py` 代替正式控制器。
 - 输入无效、超时或 PX4 failsafe 时停止水平控制；控制故障请求正常降落。
 - 真机飞行仍需完成无桨台架、定位/航向、人工接管、地理围栏和 failsafe 验证。
+# 货架二维码盘点（新增）
+
+本分支在原有双摄像头红色目标闭环旁新增二维码任务模式，未替换
+`vision_offboard_controller.py`，`offboard_control.py` 仍不得同时启动。
+快速离线验证：
+
+```bash
+source /opt/ros/jazzy/setup.bash
+colcon build --symlink-install
+source install/setup.bash
+ros2 launch uav_vision qr_shelf_task.launch.py mode:=observe \
+  target_qr_id:=7 detector_backend:=hybrid enable_offboard:=false
+```
+
+数据、训练、安全 SITL 和真实验证边界见
+[`docs/qr_shelf/`](docs/qr_shelf/architecture.md) 及
+[`最终结果`](docs/results/qr_shelf_final/README.md)。
