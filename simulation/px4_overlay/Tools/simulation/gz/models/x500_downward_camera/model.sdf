@@ -30,7 +30,7 @@
         <camera>
           <horizontal_fov>1.0471975512</horizontal_fov>
           <image>
-            <width>320</width><height>240</height><format>R8G8B8</format>
+            <width>640</width><height>480</height><format>R8G8B8</format>
           </image>
           <clip><near>0.05</near><far>40.0</far></clip>
         </camera>
@@ -68,7 +68,7 @@
         <camera>
           <horizontal_fov>1.0471975512</horizontal_fov>
           <image>
-            <width>320</width><height>240</height><format>R8G8B8</format>
+            <width>640</width><height>480</height><format>R8G8B8</format>
           </image>
           <clip><near>0.05</near><far>30.0</far></clip>
         </camera>

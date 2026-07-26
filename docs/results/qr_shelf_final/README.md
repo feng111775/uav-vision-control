@@ -35,3 +35,29 @@ PX4 日志确认 `Landing detected` 和 `Disarmed by landing`。
 机器可读证据见 `sitl_stage_report.json`。OpenCV 48 张 held-out 整图实测
 平均 35.13 ms、P95 74.82 ms、最坏 95.97 ms、28.47 FPS，见
 `opencv_end_to_end_latency.json`。
+
+## 2026-07-26 QR 视觉修复与完整 headless SITL
+
+后续复验已经完成此前未通过的完整任务。根因不是 OpenCV 超时，而是 Gazebo
+没有可靠加载 OBJ/MTL 黑色材质，随后生成的几何又因观察面方向发生水平镜像；
+此外残留的 `red_target` server 一度让 PX4 连接到了错误世界。最终资产使用
+内嵌材质的 COLLADA 白模块加黑色背板，按相机观察面修正列方向，并将双相机
+统一为 640×480。二维码仍为 0.19 m，未放大物理尺寸。
+
+真实 Gazebo ROS 相机在 2.0 m 距离采集 50 帧：定位 50/50、指定 QR 10
+正确解码 50/50，OpenCV 整帧平均 101.11 ms、P95 105.94 ms、最坏
+111.71 ms。采集读取 `/camera/shelf_validation/image`，没有读取原始 PNG；
+逐帧数据和三张代表帧在 `gazebo_camera_acceptance/`。
+
+完整任务由 `qr_shelf_world` 相机、ROS 2 话题和 PX4 SITL 状态自动驱动，
+实际状态时间线为：
+
+`WAITING → PRESTREAM → TAKEOFF → QR_SEARCH → QR_INVENTORY →
+TARGET_ACQUIRE → TARGET_APPROACH → LASER_ALIGN → LASER_CONFIRM →
+TRANSIT_TO_LANDING → DOWN_ACQUIRE → ALIGN → LAND → DISARM`
+
+PX4 实际进入 Offboard、Armed，达到约 2 m，`failsafe=false`；相机选择器在
+软件激光确认前保持 front，随后真实切到 down；PX4 接受单次 Land，发布
+`landed=true`，最终 `arming_state=1`（Disarmed）。本结果只证明 SITL，
+不代表已经完成树莓派、Coral、Pixhawk、光流/测距、相机标定、拆桨台架或
+系留实飞验证。

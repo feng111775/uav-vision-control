@@ -56,6 +56,24 @@ def test_front_confirmation_switches_to_down_then_aligns():
     assert selector.selected(0.06)[0] == 'down'
 
 
+def test_qr_mission_gates_down_switch_until_laser_is_complete():
+    """A close QR must not switch cameras before transit begins."""
+    selector = CameraSelector(
+        front_confirm_frames=1, front_area_threshold=2500.0,
+        down_confirm_frames=1)
+    selector.update_mission_state('LASER_ALIGN')
+    selector.update_front(detection(area=3000.0), 0.0)
+    selector.update_down(detection(area=900.0), 0.01)
+    assert selector.state == selector.SEARCH
+    assert selector.selected_camera == 'front'
+
+    selector.update_mission_state('TRANSIT_TO_LANDING')
+    selector.update_front(detection(area=3000.0), 0.02)
+    selector.update_down(detection(area=900.0), 0.03)
+    assert selector.state == selector.ALIGN
+    assert selector.selected_camera == 'down'
+
+
 def test_down_acquire_keeps_fresh_front_control_until_down_confirmed():
     """DOWN_ACQUIRE must not forward an invalid down stream to control."""
     selector = CameraSelector(

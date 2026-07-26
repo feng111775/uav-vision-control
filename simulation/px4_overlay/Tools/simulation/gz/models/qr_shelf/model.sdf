@@ -1,0 +1,299 @@
+<?xml version="1.0"?>
+<sdf version="1.9"><model name="qr_shelf"><static>true</static>
+  <link name="shelf">
+    <visual name="white_back"><pose>0.015 0 1.5 0 0 0</pose>
+      <geometry><box><size>0.03 3.2 2.6</size></box></geometry>
+      <material><diffuse>0.95 0.95 0.95 1</diffuse></material></visual>
+    <collision name="back_collision"><pose>0.03 0 1.5 0 0 0</pose>
+      <geometry><box><size>0.06 3.2 2.6</size></box></geometry></collision>
+
+        <visual name="qr_01_black">
+          <pose>-0.002 -1.25 2.25 0 0 0</pose>
+          <geometry><box><size>0.004 0.19 0.19</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_01_modules">
+          <pose>-0.005 -1.25 2.25 0 0 0</pose>
+          <geometry><mesh><uri>meshes/qr_01.dae</uri></mesh></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_02_black">
+          <pose>-0.002 -0.75 2.25 0 0 0</pose>
+          <geometry><box><size>0.004 0.19 0.19</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_02_modules">
+          <pose>-0.005 -0.75 2.25 0 0 0</pose>
+          <geometry><mesh><uri>meshes/qr_02.dae</uri></mesh></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_03_black">
+          <pose>-0.002 -0.25 2.25 0 0 0</pose>
+          <geometry><box><size>0.004 0.19 0.19</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_03_modules">
+          <pose>-0.005 -0.25 2.25 0 0 0</pose>
+          <geometry><mesh><uri>meshes/qr_03.dae</uri></mesh></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_04_black">
+          <pose>-0.002 0.25 2.25 0 0 0</pose>
+          <geometry><box><size>0.004 0.19 0.19</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_04_modules">
+          <pose>-0.005 0.25 2.25 0 0 0</pose>
+          <geometry><mesh><uri>meshes/qr_04.dae</uri></mesh></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_05_black">
+          <pose>-0.002 0.75 2.25 0 0 0</pose>
+          <geometry><box><size>0.004 0.19 0.19</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_05_modules">
+          <pose>-0.005 0.75 2.25 0 0 0</pose>
+          <geometry><mesh><uri>meshes/qr_05.dae</uri></mesh></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_06_black">
+          <pose>-0.002 1.25 2.25 0 0 0</pose>
+          <geometry><box><size>0.004 0.19 0.19</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_06_modules">
+          <pose>-0.005 1.25 2.25 0 0 0</pose>
+          <geometry><mesh><uri>meshes/qr_06.dae</uri></mesh></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_07_black">
+          <pose>-0.002 -1.25 1.75 0 0 0</pose>
+          <geometry><box><size>0.004 0.19 0.19</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_07_modules">
+          <pose>-0.005 -1.25 1.75 0 0 0</pose>
+          <geometry><mesh><uri>meshes/qr_07.dae</uri></mesh></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_08_black">
+          <pose>-0.002 -0.75 1.75 0 0 0</pose>
+          <geometry><box><size>0.004 0.19 0.19</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_08_modules">
+          <pose>-0.005 -0.75 1.75 0 0 0</pose>
+          <geometry><mesh><uri>meshes/qr_08.dae</uri></mesh></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_09_black">
+          <pose>-0.002 -0.25 1.75 0 0 0</pose>
+          <geometry><box><size>0.004 0.19 0.19</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_09_modules">
+          <pose>-0.005 -0.25 1.75 0 0 0</pose>
+          <geometry><mesh><uri>meshes/qr_09.dae</uri></mesh></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_10_black">
+          <pose>-0.002 0.25 1.75 0 0 0</pose>
+          <geometry><box><size>0.004 0.19 0.19</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_10_modules">
+          <pose>-0.005 0.25 1.75 0 0 0</pose>
+          <geometry><mesh><uri>meshes/qr_10.dae</uri></mesh></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_11_black">
+          <pose>-0.002 0.75 1.75 0 0 0</pose>
+          <geometry><box><size>0.004 0.19 0.19</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_11_modules">
+          <pose>-0.005 0.75 1.75 0 0 0</pose>
+          <geometry><mesh><uri>meshes/qr_11.dae</uri></mesh></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_12_black">
+          <pose>-0.002 1.25 1.75 0 0 0</pose>
+          <geometry><box><size>0.004 0.19 0.19</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_12_modules">
+          <pose>-0.005 1.25 1.75 0 0 0</pose>
+          <geometry><mesh><uri>meshes/qr_12.dae</uri></mesh></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_13_black">
+          <pose>-0.002 -1.25 1.25 0 0 0</pose>
+          <geometry><box><size>0.004 0.19 0.19</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_13_modules">
+          <pose>-0.005 -1.25 1.25 0 0 0</pose>
+          <geometry><mesh><uri>meshes/qr_13.dae</uri></mesh></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_14_black">
+          <pose>-0.002 -0.75 1.25 0 0 0</pose>
+          <geometry><box><size>0.004 0.19 0.19</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_14_modules">
+          <pose>-0.005 -0.75 1.25 0 0 0</pose>
+          <geometry><mesh><uri>meshes/qr_14.dae</uri></mesh></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_15_black">
+          <pose>-0.002 -0.25 1.25 0 0 0</pose>
+          <geometry><box><size>0.004 0.19 0.19</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_15_modules">
+          <pose>-0.005 -0.25 1.25 0 0 0</pose>
+          <geometry><mesh><uri>meshes/qr_15.dae</uri></mesh></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_16_black">
+          <pose>-0.002 0.25 1.25 0 0 0</pose>
+          <geometry><box><size>0.004 0.19 0.19</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_16_modules">
+          <pose>-0.005 0.25 1.25 0 0 0</pose>
+          <geometry><mesh><uri>meshes/qr_16.dae</uri></mesh></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_17_black">
+          <pose>-0.002 0.75 1.25 0 0 0</pose>
+          <geometry><box><size>0.004 0.19 0.19</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_17_modules">
+          <pose>-0.005 0.75 1.25 0 0 0</pose>
+          <geometry><mesh><uri>meshes/qr_17.dae</uri></mesh></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_18_black">
+          <pose>-0.002 1.25 1.25 0 0 0</pose>
+          <geometry><box><size>0.004 0.19 0.19</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_18_modules">
+          <pose>-0.005 1.25 1.25 0 0 0</pose>
+          <geometry><mesh><uri>meshes/qr_18.dae</uri></mesh></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_19_black">
+          <pose>-0.002 -1.25 0.75 0 0 0</pose>
+          <geometry><box><size>0.004 0.19 0.19</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_19_modules">
+          <pose>-0.005 -1.25 0.75 0 0 0</pose>
+          <geometry><mesh><uri>meshes/qr_19.dae</uri></mesh></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_20_black">
+          <pose>-0.002 -0.75 0.75 0 0 0</pose>
+          <geometry><box><size>0.004 0.19 0.19</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_20_modules">
+          <pose>-0.005 -0.75 0.75 0 0 0</pose>
+          <geometry><mesh><uri>meshes/qr_20.dae</uri></mesh></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_21_black">
+          <pose>-0.002 -0.25 0.75 0 0 0</pose>
+          <geometry><box><size>0.004 0.19 0.19</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_21_modules">
+          <pose>-0.005 -0.25 0.75 0 0 0</pose>
+          <geometry><mesh><uri>meshes/qr_21.dae</uri></mesh></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_22_black">
+          <pose>-0.002 0.25 0.75 0 0 0</pose>
+          <geometry><box><size>0.004 0.19 0.19</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_22_modules">
+          <pose>-0.005 0.25 0.75 0 0 0</pose>
+          <geometry><mesh><uri>meshes/qr_22.dae</uri></mesh></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_23_black">
+          <pose>-0.002 0.75 0.75 0 0 0</pose>
+          <geometry><box><size>0.004 0.19 0.19</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_23_modules">
+          <pose>-0.005 0.75 0.75 0 0 0</pose>
+          <geometry><mesh><uri>meshes/qr_23.dae</uri></mesh></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_24_black">
+          <pose>-0.002 1.25 0.75 0 0 0</pose>
+          <geometry><box><size>0.004 0.19 0.19</size></box></geometry>
+          <material><ambient>0 0 0 1</ambient><diffuse>0 0 0 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+        <visual name="qr_24_modules">
+          <pose>-0.005 1.25 0.75 0 0 0</pose>
+          <geometry><mesh><uri>meshes/qr_24.dae</uri></mesh></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse>
+          <specular>0 0 0 1</specular></material>
+        </visual>
+  </link>
+</model></sdf>

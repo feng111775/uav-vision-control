@@ -1,29 +1,29 @@
 physical_qr_size_m: 0.19
 frame_id: world
-landing_zone: {x: 7.0, y: 0.0, z: 0.0}
-layout: {rows: 4, columns: 6, shelf_origin: [5.0, -1.25, 0.75]}
+landing_zone: {x: 0.2, y: 0.0, z: 0.0}
+layout: {rows: 4, columns: 6, shelf_origin: [1.5, -1.25, 1.0]}
 qr_codes:
-  - {id: 1, row: 1, column: 1, position: [5.0, -1.25, 2.25], rpy: [0, 0, 3.14159]}
-  - {id: 2, row: 1, column: 2, position: [5.0, -0.75, 2.25], rpy: [0, 0, 3.14159]}
-  - {id: 3, row: 1, column: 3, position: [5.0, -0.25, 2.25], rpy: [0, 0, 3.14159]}
-  - {id: 4, row: 1, column: 4, position: [5.0, 0.25, 2.25], rpy: [0, 0, 3.14159]}
-  - {id: 5, row: 1, column: 5, position: [5.0, 0.75, 2.25], rpy: [0, 0, 3.14159]}
-  - {id: 6, row: 1, column: 6, position: [5.0, 1.25, 2.25], rpy: [0, 0, 3.14159]}
-  - {id: 7, row: 2, column: 1, position: [5.0, -1.25, 1.75], rpy: [0, 0, 3.14159]}
-  - {id: 8, row: 2, column: 2, position: [5.0, -0.75, 1.75], rpy: [0, 0, 3.14159]}
-  - {id: 9, row: 2, column: 3, position: [5.0, -0.25, 1.75], rpy: [0, 0, 3.14159]}
-  - {id: 10, row: 2, column: 4, position: [5.0, 0.25, 1.75], rpy: [0, 0, 3.14159]}
-  - {id: 11, row: 2, column: 5, position: [5.0, 0.75, 1.75], rpy: [0, 0, 3.14159]}
-  - {id: 12, row: 2, column: 6, position: [5.0, 1.25, 1.75], rpy: [0, 0, 3.14159]}
-  - {id: 13, row: 3, column: 1, position: [5.0, -1.25, 1.25], rpy: [0, 0, 3.14159]}
-  - {id: 14, row: 3, column: 2, position: [5.0, -0.75, 1.25], rpy: [0, 0, 3.14159]}
-  - {id: 15, row: 3, column: 3, position: [5.0, -0.25, 1.25], rpy: [0, 0, 3.14159]}
-  - {id: 16, row: 3, column: 4, position: [5.0, 0.25, 1.25], rpy: [0, 0, 3.14159]}
-  - {id: 17, row: 3, column: 5, position: [5.0, 0.75, 1.25], rpy: [0, 0, 3.14159]}
-  - {id: 18, row: 3, column: 6, position: [5.0, 1.25, 1.25], rpy: [0, 0, 3.14159]}
-  - {id: 19, row: 4, column: 1, position: [5.0, -1.25, 0.75], rpy: [0, 0, 3.14159]}
-  - {id: 20, row: 4, column: 2, position: [5.0, -0.75, 0.75], rpy: [0, 0, 3.14159]}
-  - {id: 21, row: 4, column: 3, position: [5.0, -0.25, 0.75], rpy: [0, 0, 3.14159]}
-  - {id: 22, row: 4, column: 4, position: [5.0, 0.25, 0.75], rpy: [0, 0, 3.14159]}
-  - {id: 23, row: 4, column: 5, position: [5.0, 0.75, 0.75], rpy: [0, 0, 3.14159]}
-  - {id: 24, row: 4, column: 6, position: [5.0, 1.25, 0.75], rpy: [0, 0, 3.14159]}
+  - {id: 1, row: 1, column: 1, position: [1.5, -1.25, 2.50], rpy: [0, 0, 3.14159]}
+  - {id: 2, row: 1, column: 2, position: [1.5, -0.75, 2.50], rpy: [0, 0, 3.14159]}
+  - {id: 3, row: 1, column: 3, position: [1.5, -0.25, 2.50], rpy: [0, 0, 3.14159]}
+  - {id: 4, row: 1, column: 4, position: [1.5, 0.25, 2.50], rpy: [0, 0, 3.14159]}
+  - {id: 5, row: 1, column: 5, position: [1.5, 0.75, 2.50], rpy: [0, 0, 3.14159]}
+  - {id: 6, row: 1, column: 6, position: [1.5, 1.25, 2.50], rpy: [0, 0, 3.14159]}
+  - {id: 7, row: 2, column: 1, position: [1.5, -1.25, 2.00], rpy: [0, 0, 3.14159]}
+  - {id: 8, row: 2, column: 2, position: [1.5, -0.75, 2.00], rpy: [0, 0, 3.14159]}
+  - {id: 9, row: 2, column: 3, position: [1.5, -0.25, 2.00], rpy: [0, 0, 3.14159]}
+  - {id: 10, row: 2, column: 4, position: [1.5, 0.25, 2.00], rpy: [0, 0, 3.14159]}
+  - {id: 11, row: 2, column: 5, position: [1.5, 0.75, 2.00], rpy: [0, 0, 3.14159]}
+  - {id: 12, row: 2, column: 6, position: [1.5, 1.25, 2.00], rpy: [0, 0, 3.14159]}
+  - {id: 13, row: 3, column: 1, position: [1.5, -1.25, 1.50], rpy: [0, 0, 3.14159]}
+  - {id: 14, row: 3, column: 2, position: [1.5, -0.75, 1.50], rpy: [0, 0, 3.14159]}
+  - {id: 15, row: 3, column: 3, position: [1.5, -0.25, 1.50], rpy: [0, 0, 3.14159]}
+  - {id: 16, row: 3, column: 4, position: [1.5, 0.25, 1.50], rpy: [0, 0, 3.14159]}
+  - {id: 17, row: 3, column: 5, position: [1.5, 0.75, 1.50], rpy: [0, 0, 3.14159]}
+  - {id: 18, row: 3, column: 6, position: [1.5, 1.25, 1.50], rpy: [0, 0, 3.14159]}
+  - {id: 19, row: 4, column: 1, position: [1.5, -1.25, 1.00], rpy: [0, 0, 3.14159]}
+  - {id: 20, row: 4, column: 2, position: [1.5, -0.75, 1.00], rpy: [0, 0, 3.14159]}
+  - {id: 21, row: 4, column: 3, position: [1.5, -0.25, 1.00], rpy: [0, 0, 3.14159]}
+  - {id: 22, row: 4, column: 4, position: [1.5, 0.25, 1.00], rpy: [0, 0, 3.14159]}
+  - {id: 23, row: 4, column: 5, position: [1.5, 0.75, 1.00], rpy: [0, 0, 3.14159]}
+  - {id: 24, row: 4, column: 6, position: [1.5, 1.25, 1.00], rpy: [0, 0, 3.14159]}

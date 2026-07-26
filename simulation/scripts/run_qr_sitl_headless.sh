@@ -56,7 +56,8 @@ done
 ros2 topic list | grep -q '/fmu/out/vehicle_status_v1'
 
 ros2 launch uav_vision qr_shelf_task.launch.py \
-    mode:=sitl detector_backend:=opencv target_qr_id:="${TARGET_QR_ID:-7}" \
+    mode:=sitl detector_backend:=opencv target_qr_id:="${TARGET_QR_ID:-10}" \
+    search_heading:="${SEARCH_HEADING:-1.60}" search_yaw_rate:=0.0 \
     use_sim_time:=true simulation_mode:=true \
     enable_offboard:="${ENABLE_OFFBOARD:-false}" \
     enable_auto_arm:="${ENABLE_AUTO_ARM:-false}" \

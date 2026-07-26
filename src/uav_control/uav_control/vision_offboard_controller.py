@@ -319,8 +319,9 @@ class VisionOffboardController(Node):
         self.declare_parameter('qr_approach_area', 6000.0)
         self.declare_parameter('mission_align_error', 12.0)
         self.declare_parameter('transit_seconds', 4.0)
-        self.declare_parameter('transit_speed', 0.15)
+        self.declare_parameter('transit_speed', -0.20)
         self.declare_parameter('search_yaw_rate', 0.2)
+        self.declare_parameter('qr_mission_yaw', 0.0)
         self.declare_parameter('image_center_x', 160.0)
         self.declare_parameter('image_center_y', 120.0)
         self.declare_parameter(
@@ -577,7 +578,8 @@ class VisionOffboardController(Node):
         message.direct_actuator = False
         self.offboard_publisher.publish(message)
 
-    def publish_setpoint(self, north, east, down, yaw_rate=math.nan):
+    def publish_setpoint(self, north, east, down, yaw_rate=math.nan,
+                         yaw=math.nan):
         """发布全部位置无效、仅速度有效的NED设定值。."""
         message = TrajectorySetpoint()
         message.timestamp = self.timestamp()
@@ -586,7 +588,7 @@ class VisionOffboardController(Node):
         message.velocity = [north, east, down]
         message.acceleration = [nan, nan, nan]
         message.jerk = [nan, nan, nan]
-        message.yaw = nan
+        message.yaw = yaw
         message.yawspeed = yaw_rate
         self.trajectory_publisher.publish(message)
 
@@ -647,6 +649,7 @@ class VisionOffboardController(Node):
             return
 
         yaw_rate = math.nan
+        yaw = math.nan
         if mission_output is not None:
             if mission_output.request_land:
                 if not self.land_requested:
@@ -663,6 +666,10 @@ class VisionOffboardController(Node):
                     self.disarm_requested = True
                 return
             yaw_rate = mission_output.yaw_rate
+            # Shelf bearing is a deployment parameter, not Gazebo truth.
+            # Holding it also prevents an unconstrained yaw drift during
+            # takeoff/search when PX4's magnetic heading settles.
+            yaw = float(self.get_parameter('qr_mission_yaw').value)
             if mission_output.use_vision:
                 north, east = self.logic.vision_ned_velocity(
                     self.now_seconds())
@@ -674,7 +681,7 @@ class VisionOffboardController(Node):
                     north, east, self.logic.max_horizontal_velocity)
 
         self.publish_offboard_mode()
-        self.publish_setpoint(north, east, down, yaw_rate)
+        self.publish_setpoint(north, east, down, yaw_rate, yaw)
 
         if request_mode:
             self.publish_command(

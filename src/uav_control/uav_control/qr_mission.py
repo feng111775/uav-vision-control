@@ -43,7 +43,7 @@ class QRMission:
     def __init__(self, target_qr_id=7, event_timeout=1.0,
                  state_timeout=30.0, mission_timeout=180.0,
                  approach_area=15000.0, align_error=12.0,
-                 transit_seconds=4.0, transit_speed=0.15,
+                 transit_seconds=4.0, transit_speed=-0.20,
                  search_yaw_rate=0.2):
         numeric = (event_timeout, state_timeout, mission_timeout,
                    approach_area, align_error, transit_seconds,
@@ -62,7 +62,7 @@ class QRMission:
         self.approach_area = float(approach_area)
         self.align_error = float(align_error)
         self.transit_seconds = float(transit_seconds)
-        self.transit_speed = abs(float(transit_speed))
+        self.transit_speed = float(transit_speed)
         self.search_yaw_rate = abs(float(search_yaw_rate))
         self.state = self.WAITING
         self.state_since = None

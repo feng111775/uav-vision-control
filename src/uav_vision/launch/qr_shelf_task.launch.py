@@ -18,7 +18,7 @@ def generate_launch_description():
                               choices=['offline', 'observe', 'sitl']),
         DeclareLaunchArgument('image_topic',
                               default_value='/camera/front/image_raw'),
-        DeclareLaunchArgument('target_qr_id', default_value='7'),
+        DeclareLaunchArgument('target_qr_id', default_value='10'),
         DeclareLaunchArgument('inventory_mode', default_value='target'),
         DeclareLaunchArgument('detector_backend', default_value='opencv'),
         DeclareLaunchArgument(
@@ -29,7 +29,8 @@ def generate_launch_description():
         DeclareLaunchArgument('qr_timeout', default_value='30.0'),
         DeclareLaunchArgument('laser_alignment_threshold',
                               default_value='12.0'),
-        DeclareLaunchArgument('search_yaw_rate', default_value='0.2'),
+        DeclareLaunchArgument('search_yaw_rate', default_value='0.0'),
+        DeclareLaunchArgument('search_heading', default_value='1.60'),
         DeclareLaunchArgument('enable_offboard', default_value='false'),
         DeclareLaunchArgument('enable_auto_arm', default_value='false'),
         DeclareLaunchArgument('simulation_mode', default_value='true'),
@@ -69,6 +70,10 @@ def generate_launch_description():
             'task_mode': 'qr_shelf',
             'target_qr_id': ParameterValue(
                 LaunchConfiguration('target_qr_id'), value_type=int),
+            'qr_mission_yaw': ParameterValue(
+                LaunchConfiguration('search_heading'), value_type=float),
+            'image_center_x': 320.0,
+            'image_center_y': 240.0,
             'simulation_mode': ParameterValue(
                 LaunchConfiguration('simulation_mode'), value_type=bool),
             'enable_offboard': ParameterValue(
