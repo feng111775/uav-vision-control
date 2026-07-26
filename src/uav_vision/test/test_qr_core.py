@@ -7,6 +7,7 @@ import pytest
 from uav_vision.qr_core import HybridQRDetector, LaserAlignment
 from uav_vision.qr_core import QRDecoder, QRInventory
 from uav_vision.qr_core import QRObservation
+from uav_vision.qr_core import SNAKE_SCAN_ORDER
 
 
 def code(qr_id, size=240):
@@ -72,34 +73,59 @@ def observation(qr_id=7, now=1.0, center=(100, 100)):
 
 def test_multiframe_confirmation_and_deduplication():
     inventory = QRInventory(confirm_frames=3, target_qr_id=7)
-    inventory.update([observation(now=1)], 1)
-    inventory.update([observation(now=2)], 2)
+    inventory.set_scan_context(0, True, [1, 2, 3])
+    inventory.update([observation(1, now=1)], 1)
+    inventory.update([observation(1, now=2)], 2)
     assert not inventory.records
-    inventory.update([observation(now=3)], 3)
-    assert list(inventory.records) == [7]
-    inventory.update([observation(now=4), observation(now=4)], 4)
+    inventory.update([observation(1, now=3)], 3)
+    assert list(inventory.records) == [1]
+    inventory.update([observation(1, now=4), observation(1, now=4)], 4)
     assert len(inventory.records) == 1
 
 
 def test_confirmation_must_be_consecutive():
     inventory = QRInventory(confirm_frames=2, target_qr_id=7)
-    inventory.update([observation()], 1)
+    inventory.set_scan_context(0, True)
+    inventory.update([observation(1)], 1)
     inventory.update([], 2)
-    inventory.update([observation()], 3)
+    inventory.update([observation(1)], 3)
     assert not inventory.records
 
 
-def test_target_selection_full_and_timeout_modes():
-    target = QRInventory(confirm_frames=1, target_qr_id=7)
-    target.update([observation()], 0)
-    assert target.complete(0)
-    full = QRInventory(confirm_frames=1, inventory_mode='full')
-    full.update([observation(i) for i in range(1, 25)], 0)
-    assert full.complete(0)
-    timeout = QRInventory(confirm_frames=1, inventory_mode='timeout',
-                          timeout=2)
-    timeout.update([], 0)
-    assert timeout.complete(2.1)
+def test_strict_snake_order_and_non_current_ids_cannot_advance():
+    inventory = QRInventory(confirm_frames=1, target_qr_id=10)
+    for index, expected in enumerate(SNAKE_SCAN_ORDER):
+        inventory.set_scan_context(index, True, [index, 0, 0])
+        other = 24 if expected != 24 else 23
+        inventory.update([observation(other)], index + .1)
+        assert inventory.scan_index == index
+        inventory.update([observation(expected)], index + .2)
+        assert inventory.scan_index == index + 1
+    assert inventory.complete(30)
+    assert list(inventory.records) == list(SNAKE_SCAN_ORDER)
+
+
+def test_duplicate_frame_cannot_confirm_next_scan_point():
+    inventory = QRInventory(confirm_frames=1)
+    inventory.set_scan_context(0, True)
+    inventory.update([observation(1), observation(2)], 1)
+    assert inventory.scan_index == 1
+    assert 2 not in inventory.records
+
+
+def test_inventory_json_exposes_progress_missing_and_record_fields():
+    import json
+    inventory = QRInventory(confirm_frames=1)
+    inventory.set_scan_context(0, True, [0.8, -1.25, -2.5], 1)
+    inventory.update([observation(1)], 1)
+    data = json.loads(inventory.to_json())
+    assert data['confirmed_ids'] == [1]
+    assert data['current_expected_qr_id'] == 2
+    assert not data['complete']
+    assert 2 in data['missing_ids']
+    assert {'scan_index', 'qr_id', 'confirmed', 'first_seen_time',
+            'confirmed_time', 'scan_position', 'image_center', 'confidence',
+            'retry_count'} <= set(data['records'][0])
 
 
 def test_image_timeout():

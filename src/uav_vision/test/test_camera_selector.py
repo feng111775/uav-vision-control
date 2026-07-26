@@ -61,11 +61,14 @@ def test_qr_mission_gates_down_switch_until_laser_is_complete():
     selector = CameraSelector(
         front_confirm_frames=1, front_area_threshold=2500.0,
         down_confirm_frames=1)
-    selector.update_mission_state('LASER_ALIGN')
-    selector.update_front(detection(area=3000.0), 0.0)
-    selector.update_down(detection(area=900.0), 0.01)
-    assert selector.state == selector.SEARCH
-    assert selector.selected_camera == 'front'
+    for state in ('QR_SCAN_CONFIRM', 'TARGET_ACQUIRE',
+                  'TARGET_APPROACH', 'LASER_ALIGN'):
+        selector.update_mission_state(
+            '{"state": "%s", "scan_index": 0}' % state)
+        selector.update_front(detection(area=3000.0), 0.0)
+        selector.update_down(detection(area=900.0), 0.01)
+        assert selector.state == selector.SEARCH
+        assert selector.selected_camera == 'front'
 
     selector.update_mission_state('TRANSIT_TO_LANDING')
     selector.update_front(detection(area=3000.0), 0.02)

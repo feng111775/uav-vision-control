@@ -77,6 +77,8 @@ class VisionOffboardLogic:
 
         self.state = self.WAITING
         self.position_z = 0.0
+        self.position_x = 0.0
+        self.position_y = 0.0
         self.heading = 0.0
         self.position_valid = False
         self.position_time = None
@@ -122,13 +124,15 @@ class VisionOffboardLogic:
         """将标量限制到对称区间。."""
         return max(-limit, min(limit, value))
 
-    def update_position(self, z, heading, valid, now_seconds):
+    def update_position(self, z, heading, valid, now_seconds, x=0.0, y=0.0):
         """更新PX4位置和航向。."""
         finite = math.isfinite(float(z)) and math.isfinite(float(heading))
         self.position_valid = bool(valid) and finite
         self.position_time = float(now_seconds)
         if self.position_valid:
             self.position_z = float(z)
+            self.position_x = float(x)
+            self.position_y = float(y)
             self.heading = float(heading)
 
     def position_acceptance(self, xy_valid, z_valid,
@@ -321,6 +325,10 @@ class VisionOffboardController(Node):
         self.declare_parameter('transit_seconds', 4.0)
         self.declare_parameter('transit_speed', -0.20)
         self.declare_parameter('search_yaw_rate', 0.2)
+        self.declare_parameter('scan_hold_seconds', 0.6)
+        self.declare_parameter('scan_timeout', 8.0)
+        self.declare_parameter('scan_max_retries', 2)
+        self.declare_parameter('scan_position_kp', 0.8)
         self.declare_parameter('qr_mission_yaw', 0.0)
         self.declare_parameter('image_center_x', 160.0)
         self.declare_parameter('image_center_y', 120.0)
@@ -380,7 +388,12 @@ class VisionOffboardController(Node):
                 transit_seconds=self.get_parameter('transit_seconds').value,
                 transit_speed=self.get_parameter('transit_speed').value,
                 search_yaw_rate=self.get_parameter(
-                    'search_yaw_rate').value)
+                    'search_yaw_rate').value,
+                scan_hold_seconds=self.get_parameter(
+                    'scan_hold_seconds').value,
+                scan_timeout=self.get_parameter('scan_timeout').value,
+                scan_max_retries=self.get_parameter(
+                    'scan_max_retries').value)
 
         if self.logic.enable_auto_arm and not self.logic.simulation_mode:
             self.get_logger().error(
@@ -488,7 +501,10 @@ class VisionOffboardController(Node):
                 'SITL模式：使用有限heading，忽略heading_good_for_control=false')
             self.sitl_heading_warning_emitted = True
         self.logic.update_position(
-            message.z, message.heading, valid, self.now_seconds())
+            message.z, message.heading, valid, self.now_seconds(),
+            message.x, message.y)
+        if self.mission is not None and valid:
+            self.mission.update_position(message.x, message.y, message.z)
 
     def status_callback(self, message):
         """接收PX4解锁、Offboard和failsafe状态。."""
@@ -529,18 +545,25 @@ class VisionOffboardController(Node):
                 item for item in records
                 if int(item.get('qr_id', -1)) ==
                 self.mission.target_qr_id), None)
+            target_visible = self.mission.target_qr_id in [
+                int(value) for value in data.get('visible_ids', [])]
             complete = bool(data.get('complete', False))
             if target is not None:
                 center = target.get('image_center', [math.inf, math.inf])
-                error = math.hypot(
-                    float(center[0]) - float(image_size[0]) / 2.0,
+                error_x = (
+                    float(center[0]) - float(image_size[0]) / 2.0)
+                error_y = (
                     float(center[1]) - float(image_size[1]) / 2.0)
+                error = math.hypot(
+                    error_x, error_y)
                 area = float(target.get('area', 0.0))
             else:
                 area, error = 0.0, math.inf
+                error_x, error_y = math.inf, math.inf
             self.mission.update_inventory(
                 complete, target is not None, area, error,
-                self.now_seconds())
+                self.now_seconds(), data.get('count', 0), target_visible,
+                error_x, error_y)
         except (KeyError, TypeError, ValueError):
             self.get_logger().warning('ignored malformed QR inventory')
 
@@ -623,10 +646,18 @@ class VisionOffboardController(Node):
                 self.mission.start(self.now_seconds())
             mission_output = self.mission.step(
                 self.now_seconds(), self.logic.state)
+            state_message = String()
+            import json
+            state_message.data = json.dumps({
+                'state': self.mission.state,
+                'scan_index': self.mission.scan_index,
+                'expected_qr_id': self.mission.scan_order[
+                    min(self.mission.scan_index, 23)],
+                'hold': self.mission.state == self.mission.QR_SCAN_CONFIRM,
+                'retry_count': self.mission.retry_count,
+                'scan_position': list(self.mission.scan_point())})
+            self.mission_state_publisher.publish(state_message)
             if self.mission.state != self.last_mission_state:
-                state_message = String()
-                state_message.data = self.mission.state
-                self.mission_state_publisher.publish(state_message)
                 self.get_logger().info(
                     'QR任务状态：%s，原因：%s' % (
                         self.mission.state, self.mission.reason))
@@ -673,12 +704,31 @@ class VisionOffboardController(Node):
             if mission_output.use_vision:
                 north, east = self.logic.vision_ned_velocity(
                     self.now_seconds())
+                if mission_output.scan_position:
+                    target_d = mission_output.scan_position[2]
+                    gain = float(
+                        self.get_parameter('scan_position_kp').value)
+                    down = self.logic.clamp(
+                        gain * (target_d - self.logic.position_z),
+                        self.logic.max_vertical_velocity)
+            elif mission_output.scan_position:
+                target_n, target_e, target_d = mission_output.scan_position
+                gain = float(self.get_parameter('scan_position_kp').value)
+                north = gain * (target_n - self.logic.position_x)
+                east = gain * (target_e - self.logic.position_y)
+                down = self.logic.clamp(
+                    gain * (target_d - self.logic.position_z),
+                    self.logic.max_vertical_velocity)
+                north, east = self.logic.limit_horizontal(
+                    north, east, self.logic.max_horizontal_velocity)
             else:
                 north, east = self.logic.flu_to_ned(
                     mission_output.forward, mission_output.left,
                     self.logic.heading)
                 north, east = self.logic.limit_horizontal(
                     north, east, self.logic.max_horizontal_velocity)
+            if math.isfinite(mission_output.vertical):
+                down = mission_output.vertical
 
         self.publish_offboard_mode()
         self.publish_setpoint(north, east, down, yaw_rate, yaw)

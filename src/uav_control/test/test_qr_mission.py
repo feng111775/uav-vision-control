@@ -1,4 +1,4 @@
-"""Tests for the sensor-event-driven QR mission."""
+"""Tests for the sequential sensor-event-driven QR mission."""
 
 import math
 
@@ -7,104 +7,97 @@ import pytest
 from uav_control.qr_mission import QRMission
 
 
-def reach_approach(mission):
+def airborne(mission):
     mission.start(0.0)
-    mission.update_flight(True, False, 0.1)
     mission.step(0.1, 'TAKEOFF')
     mission.step(0.2, 'VISION_CONTROL')
-    mission.update_inventory(True, True, 1000, 20, 0.3)
-    mission.step(0.3, 'VISION_CONTROL')
-    mission.step(0.4, 'VISION_CONTROL')
-    mission.step(0.5, 'VISION_CONTROL')
-    assert mission.state == mission.TARGET_APPROACH
+    assert mission.state == mission.QR_SCAN_MOVE
 
 
-def test_complete_event_driven_mission():
-    mission = QRMission(
-        event_timeout=2, transit_seconds=1, align_error=10)
-    reach_approach(mission)
-    mission.update_inventory(True, True, 20000, 5, 0.6)
-    mission.step(0.6, 'VISION_CONTROL')
-    mission.update_laser(True, 0.7)
-    mission.step(0.7, 'VISION_CONTROL')
-    mission.step(0.8, 'VISION_CONTROL')
-    mission.step(1.9, 'VISION_CONTROL')
-    mission.update_camera('down', 2.0)
-    mission.step(2.0, 'VISION_CONTROL')
-    mission.update_down(True, 5, 2.1)
-    output = mission.step(2.1, 'VISION_CONTROL')
-    assert mission.state == mission.LAND and output.request_land
-    mission.update_flight(True, True, 2.2)
-    output = mission.step(2.2, 'VISION_CONTROL')
-    assert mission.state == mission.DISARM and output.request_disarm
-    mission.update_flight(False, True, 2.3)
-    assert not mission.step(2.3, 'VISION_CONTROL').request_disarm
-
-
-def test_target_loss_returns_to_acquire():
-    mission = QRMission(event_timeout=.2)
-    reach_approach(mission)
-    mission.step(1.0, 'VISION_CONTROL')
-    assert mission.state == mission.TARGET_ACQUIRE
-
-
-def test_laser_jitter_does_not_advance():
-    mission = QRMission(event_timeout=1)
-    reach_approach(mission)
-    mission.update_inventory(True, True, 20000, 5, .6)
-    mission.step(.6, 'VISION_CONTROL')
-    mission.update_laser(False, .7)
-    mission.step(.7, 'VISION_CONTROL')
-    assert mission.state == mission.LASER_ALIGN
-
-
-def test_front_to_down_requires_fresh_feedback():
-    mission = QRMission(event_timeout=.5, transit_seconds=.1)
-    reach_approach(mission)
-    mission.update_inventory(True, True, 20000, 1, .6)
-    mission.step(.6, 'VISION_CONTROL')
-    mission.update_laser(True, .7)
-    mission.step(.7, 'VISION_CONTROL')
-    mission.step(.8, 'VISION_CONTROL')
-    mission.step(1.0, 'VISION_CONTROL')
-    mission.update_camera('down', .1)
-    mission.step(1.0, 'VISION_CONTROL')
-    assert mission.state == mission.DOWN_ACQUIRE
-
-
-def test_down_alignment_requires_valid_threshold():
-    mission = QRMission(event_timeout=1, align_error=10)
-    mission.state = mission.ALIGN
-    mission.state_since = mission.started = 0
-    mission.update_down(False, 1, .1)
-    mission.step(.1, 'VISION_CONTROL')
-    mission.update_down(True, 11, .2)
-    mission.step(.2, 'VISION_CONTROL')
-    assert mission.state == mission.ALIGN
-
-
-def test_state_and_total_timeout():
-    state = QRMission(state_timeout=1, mission_timeout=20)
-    state.start(0)
-    state.step(2, 'PRESTREAM')
-    assert state.state == state.PRESTREAM
-    state.step(21, 'PRESTREAM')
-    assert state.state == state.FAILSAFE
-    total = QRMission(state_timeout=20, mission_timeout=1)
-    total.start(0)
-    total.step(2, 'PRESTREAM')
-    assert total.state == total.FAILSAFE
-
-
-def test_out_of_order_and_nonfinite_events_are_ignored():
+def test_scan_order_and_generated_points():
     mission = QRMission()
-    mission.update_camera('down', 2)
-    mission.update_camera('front', 1)
-    assert mission.selected_camera == 'down'
-    mission.update_down(True, math.nan, 3)
-    assert mission.down_time is None
-    mission.update_inventory(True, True, math.inf, 1, 3)
-    assert mission.qr_time is None
+    assert mission.scan_order == (
+        1, 2, 3, 4, 5, 6, 12, 11, 10, 9, 8, 7,
+        13, 14, 15, 16, 17, 18, 24, 23, 22, 21, 20, 19)
+    assert mission.scan_point() == pytest.approx((-1.25, .78, -2.5))
+
+
+def test_scan_requires_arrival_hold_and_inventory_confirmation():
+    mission = QRMission(scan_hold_seconds=.5)
+    airborne(mission)
+    mission.update_position(*mission.scan_point())
+    mission.step(.3, 'VISION_CONTROL')
+    assert mission.state == mission.QR_SCAN_HOLD
+    mission.step(.7, 'VISION_CONTROL')
+    assert mission.state == mission.QR_SCAN_HOLD
+    mission.step(.81, 'VISION_CONTROL')
+    assert mission.state == mission.QR_SCAN_CONFIRM
+    mission.update_inventory(False, False, 0, 0, .82, scan_index=1)
+    mission.step(.82, 'VISION_CONTROL')
+    assert mission.state == mission.QR_SCAN_NEXT
+    mission.step(.83, 'VISION_CONTROL')
+    assert mission.state == mission.QR_SCAN_MOVE
+
+
+def test_timeout_retries_then_failsafe_without_skipping():
+    mission = QRMission(
+        scan_hold_seconds=.1, scan_timeout=.2, scan_max_retries=1)
+    airborne(mission)
+    mission.update_position(*mission.scan_point())
+    mission.step(.3, 'VISION_CONTROL')
+    mission.step(.41, 'VISION_CONTROL')
+    mission.step(.62, 'VISION_CONTROL')
+    assert mission.state == mission.QR_SCAN_MOVE
+    assert mission.scan_index == 0 and mission.retry_count == 1
+    mission.update_position(*mission.scan_point())
+    mission.step(.7, 'VISION_CONTROL')
+    mission.step(.81, 'VISION_CONTROL')
+    mission.step(1.02, 'VISION_CONTROL')
+    assert mission.state == mission.FAILSAFE
+    assert mission.scan_index == 0
+
+
+def test_incomplete_inventory_cannot_enter_target_approach():
+    mission = QRMission()
+    airborne(mission)
+    mission.update_inventory(False, True, 1000, 0, .3, scan_index=23)
+    mission.step(.3, 'VISION_CONTROL')
+    assert mission.state in (mission.QR_SCAN_MOVE, mission.QR_SCAN_HOLD)
+
+
+def test_inventory_progress_is_accepted_before_target_is_seen():
+    mission = QRMission(target_qr_id=10)
+    mission.update_inventory(
+        False, False, 0, math.inf, .3, scan_index=1,
+        target_visible=False)
+    assert mission.inventory_count == 1
+
+
+def test_complete_inventory_selects_configured_target():
+    mission = QRMission(target_qr_id=10)
+    airborne(mission)
+    mission.scan_index = 23
+    mission.inventory_count = 23
+    mission.state = mission.QR_SCAN_CONFIRM
+    mission.state_since = .2
+    mission.update_inventory(True, True, 1000, 0, .3, scan_index=24)
+    mission.step(.3, 'VISION_CONTROL')
+    assert mission.state == mission.QR_INVENTORY_COMPLETE
+    mission.step(.4, 'VISION_CONTROL')
+    assert mission.state == mission.TARGET_ACQUIRE
+    assert mission.target_point() == pytest.approx((.25, .78, -2.0))
+
+
+def test_missing_target_after_complete_is_safe_failure():
+    mission = QRMission(target_qr_id=10)
+    mission.start(0)
+    mission.state = mission.QR_INVENTORY_COMPLETE
+    mission.state_since = 0
+    mission.inventory_complete = True
+    mission.inventory_count = 24
+    mission.target_seen = False
+    mission.step(.1, 'VISION_CONTROL')
+    assert mission.state == mission.FAILSAFE
 
 
 @pytest.mark.parametrize('target', [0, 25])

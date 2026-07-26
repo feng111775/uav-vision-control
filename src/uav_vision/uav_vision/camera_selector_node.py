@@ -75,6 +75,12 @@ class CameraSelector:
 
     def update_mission_state(self, state):
         """Allow the down camera only after the QR/laser phase is complete."""
+        if str(state).startswith('{'):
+            import json
+            try:
+                state = json.loads(state).get('state', '')
+            except (json.JSONDecodeError, TypeError):
+                state = ''
         self.down_enabled = state in (
             'TRANSIT_TO_LANDING', 'DOWN_ACQUIRE', 'ALIGN', 'LAND',
             'DISARM')

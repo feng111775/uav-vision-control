@@ -32,6 +32,7 @@ class QRDetectorNode(Node):
             'target_topic': '/vision/qr/target',
             'laser_topic': '/vision/qr/laser_aligned',
             'diagnostics_topic': '/vision/qr/diagnostics',
+            'mission_state_topic': '/control/qr_mission_state',
             'debug_image_topic': '/vision/qr/debug_image'}
         for name, value in defaults.items():
             self.declare_parameter(name, value)
@@ -67,10 +68,25 @@ class QRDetectorNode(Node):
         self.subscription = self.create_subscription(
             Image, value('image_topic'), self.callback,
             qos_profile_sensor_data)
+        self.state_subscription = self.create_subscription(
+            String, value('mission_state_topic'), self.state_callback, 10)
+        self.last_confirmed_count = 0
         self.get_logger().info(
             'QR detector ready: backend=%s target=%d %s' % (
                 value('detector_backend'), value('target_qr_id'),
                 self.detector.fallback_reason))
+
+    def state_callback(self, message):
+        """Accept scan-point gating and position from the flight controller."""
+        try:
+            data = json.loads(message.data)
+            self.inventory.set_scan_context(
+                data['scan_index'], data.get('hold', False),
+                data.get('scan_position', []), data.get('retry_count', 0),
+                data.get('state', 'QR_SCAN_MOVE'))
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+            # Backward-compatible plain task states cannot authorize a scan.
+            pass
 
     def callback(self, message):
         now = self.get_clock().now().nanoseconds * 1e-9
@@ -83,6 +99,19 @@ class QRDetectorNode(Node):
         observations = self.detector.detect(image, now)
         self.inventory.image_size = (image.shape[1], image.shape[0])
         self.inventory.update(observations, now)
+        if len(self.inventory.records) > self.last_confirmed_count:
+            record = self.inventory.records[
+                list(self.inventory.records)[-1]]
+            self.get_logger().info(
+                '[QR SCAN] confirmed %d/24: QR %d' % (
+                    len(self.inventory.records), record['qr_id']))
+            self.last_confirmed_count = len(self.inventory.records)
+            if self.inventory.complete(now):
+                self.get_logger().info(
+                    '[QR SCAN] inventory complete: 24/24')
+                self.get_logger().info(
+                    '[QR SCAN] target selected: QR %d' %
+                    self.inventory.target_qr_id)
         for obs in observations:
             output = Float32MultiArray(data=[
                 float(obs.qr_id)] + obs.detection_array())
@@ -108,13 +137,28 @@ class QRDetectorNode(Node):
             'model_available': self.detector.learned.available,
             'fallback': self.detector.fallback_reason})))
         if self.visualization and self.debug_pub.get_subscription_count():
+            import cv2
             for obs in observations:
                 x, y, width, height = obs.bbox
-                import cv2
                 cv2.rectangle(image, (x, y), (x + width, y + height),
                               (0, 255, 0), 2)
-                cv2.putText(image, str(obs.qr_id), (x, max(15, y - 4)),
+                cv2.putText(image, 'decoded QR %d' % obs.qr_id,
+                            (x, max(15, y - 4)),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+            expected = self.inventory.expected_qr_id
+            lines = [
+                'SCAN %d/24  EXPECT QR %s' % (
+                    min(self.inventory.scan_index + 1, 24),
+                    '-' if expected is None else expected),
+                '%s  confirmed=%d  target=%d' % (
+                    'CONFIRMED' if self.inventory.status in (
+                        'QR_SCAN_NEXT', 'QR_INVENTORY_COMPLETE') else
+                    'RETRY %d' % self.inventory.retry_count,
+                    len(self.inventory.records), self.inventory.target_qr_id)]
+            for row, text_value in enumerate(lines):
+                cv2.putText(image, text_value, (12, 28 + row * 28),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.65,
+                            (0, 220, 255), 2)
             output = self.bridge.cv2_to_imgmsg(image, 'bgr8')
             output.header = message.header
             self.debug_pub.publish(output)

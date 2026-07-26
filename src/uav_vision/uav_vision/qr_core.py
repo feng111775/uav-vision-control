@@ -11,6 +11,12 @@ import numpy as np
 
 
 VALID_IDS = set(range(1, 25))
+SNAKE_SCAN_ORDER = (
+    1, 2, 3, 4, 5, 6,
+    12, 11, 10, 9, 8, 7,
+    13, 14, 15, 16, 17, 18,
+    24, 23, 22, 21, 20, 19,
+)
 
 
 @dataclass
@@ -233,7 +239,7 @@ class HybridQRDetector:
 
 
 class QRInventory:
-    """Multi-frame confirmation and de-duplicated shelf inventory."""
+    """Strict, scan-point-gated sequential shelf inventory."""
 
     def __init__(self, layout=None, confirm_frames=3, timeout=30.0,
                  image_timeout=0.5, target_qr_id=1,
@@ -253,6 +259,31 @@ class QRInventory:
         self.start_time = None
         self.last_image_time = None
         self.image_size = None
+        self.scan_index = 0
+        self.scan_hold = False
+        self.scan_position = []
+        self.retry_count = 0
+        self.status = 'QR_SCAN_MOVE'
+        self.visible_ids = []
+
+    @property
+    def expected_qr_id(self):
+        """Return the only QR ID allowed to advance the inventory."""
+        return SNAKE_SCAN_ORDER[self.scan_index] \
+            if self.scan_index < len(SNAKE_SCAN_ORDER) else None
+
+    def set_scan_context(self, scan_index, hold, scan_position=None,
+                         retry_count=0, status='QR_SCAN_MOVE'):
+        """Gate confirmation with the controller's reached scan point."""
+        index = int(scan_index)
+        if index != self.scan_index:
+            return
+        self.scan_hold = bool(hold)
+        self.scan_position = list(scan_position or [])
+        self.retry_count = int(retry_count)
+        self.status = str(status)
+        if not self.scan_hold and self.expected_qr_id in self.pending:
+            self.pending[self.expected_qr_id].clear()
 
     def update(self, observations, now):
         """Merge one frame and confirm only consecutive repeated results."""
@@ -260,10 +291,23 @@ class QRInventory:
         self.start_time = now if self.start_time is None else self.start_time
         self.last_image_time = now
         seen = set()
+        self.visible_ids = sorted({
+            obs.qr_id for obs in observations if obs.qr_id in VALID_IDS})
+        if self.complete(now):
+            for obs in observations:
+                if obs.qr_id == self.target_qr_id:
+                    self.records[obs.qr_id].update({
+                        'last_seen': now,
+                        'image_center': list(obs.center),
+                        'bbox': list(obs.bbox),
+                        'area': obs.bbox[2] * obs.bbox[3],
+                        'confidence': obs.confidence})
         for obs in observations:
             if obs.qr_id not in VALID_IDS:
                 continue
             seen.add(obs.qr_id)
+            if not self.scan_hold or obs.qr_id != self.expected_qr_id:
+                continue
             history = self.pending.setdefault(obs.qr_id, deque(
                 maxlen=self.confirm_frames))
             history.append(obs)
@@ -273,7 +317,12 @@ class QRInventory:
             position = self.layout.get(obs.qr_id, {})
             if entry is None:
                 entry = {
-                    'qr_id': obs.qr_id, 'first_seen': now,
+                    'scan_index': self.scan_index + 1,
+                    'qr_id': obs.qr_id, 'confirmed': True,
+                    'first_seen_time': history[0].timestamp,
+                    'confirmed_time': now, 'scan_position':
+                    list(self.scan_position), 'confidence': obs.confidence,
+                    'retry_count': self.retry_count,
                     'observations': 0, 'confirmed_frames': 0}
                 self.records[obs.qr_id] = entry
             entry.update({
@@ -288,6 +337,11 @@ class QRInventory:
                 'is_target': obs.qr_id == self.target_qr_id,
             })
             entry['observations'] += 1
+            self.scan_index += 1
+            self.scan_hold = False
+            self.status = 'QR_SCAN_NEXT' if self.scan_index < 24 \
+                else 'QR_INVENTORY_COMPLETE'
+            break
         for qr_id in list(self.pending):
             if qr_id not in seen:
                 self.pending[qr_id].clear()
@@ -298,17 +352,20 @@ class QRInventory:
             float(now) - self.last_image_time > self.image_timeout
 
     def complete(self, now):
-        if self.inventory_mode == 'target':
-            return self.target_qr_id in self.records
-        if self.inventory_mode == 'full':
-            return len(self.records) == 24
-        return len(self.records) == 24 or (
-            self.start_time is not None and
-            float(now) - self.start_time >= self.timeout)
+        return self.scan_index == len(SNAKE_SCAN_ORDER)
 
     def to_json(self):
         return json.dumps(
             {'count': len(self.records),
+             'current_scan_index': self.scan_index + 1
+             if self.scan_index < 24 else 24,
+             'current_expected_qr_id': self.expected_qr_id,
+             'confirmed_ids': [qr_id for qr_id in SNAKE_SCAN_ORDER
+                               if qr_id in self.records],
+             'missing_ids': [qr_id for qr_id in SNAKE_SCAN_ORDER
+                             if qr_id not in self.records],
+             'visible_ids': self.visible_ids,
+             'status': self.status,
              'target_qr_id': self.target_qr_id,
              'complete': self.complete(
                  self.last_image_time if self.last_image_time is not None

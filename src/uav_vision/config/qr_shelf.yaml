@@ -5,8 +5,8 @@ qr_detector_node:
     detector_backend: opencv
     model_path: ""
     layout_path: ""
-    target_qr_id: 7
-    inventory_mode: target
+    target_qr_id: 10
+    inventory_mode: full
     confidence_threshold: 0.35
     confirm_frames: 3
     qr_timeout: 30.0

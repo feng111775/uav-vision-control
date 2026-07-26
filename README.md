@@ -1,5 +1,241 @@
 # UAV Vision Control
 
+## 从零复现 GUI 二维码逐个盘点仿真
+
+本流程支持并已按以下组合验证：Ubuntu 24.04、ROS 2 Jazzy、PX4
+v1.17.0。Gazebo 窗口是第三人称视角，不会替代机载相机画面；前视识别
+过程需要另开 `rqt_image_view`。
+
+### 1. 安装系统与 ROS 依赖
+
+```bash
+sudo apt update
+sudo apt install -y git curl gnupg lsb-release build-essential cmake \
+  python3-pip python3-venv python3-colcon-common-extensions python3-rosdep
+sudo rosdep init 2>/dev/null || true
+rosdep update
+sudo apt install -y ros-jazzy-desktop ros-jazzy-ros-gz-bridge \
+  ros-jazzy-rqt-image-view ros-jazzy-cv-bridge
+```
+
+安装 Micro XRCE-DDS Agent：
+
+```bash
+git clone -b v2.4.3 https://github.com/eProsima/Micro-XRCE-DDS-Agent.git \
+  ~/Micro-XRCE-DDS-Agent
+cd ~/Micro-XRCE-DDS-Agent
+mkdir -p build
+cd build
+cmake ..
+make -j"$(nproc)"
+sudo make install
+sudo ldconfig
+MicroXRCEAgent --version
+```
+
+### 2. 下载本分支与 PX4 v1.17.0
+
+```bash
+git clone -b feature/qr-shelf-sitl \
+  https://github.com/feng111775/uav-vision-control.git \
+  ~/px4_ros2_ws
+git clone --recursive -b v1.17.0 \
+  https://github.com/PX4/PX4-Autopilot.git \
+  ~/PX4-Autopilot
+cd ~/PX4-Autopilot
+bash ./Tools/setup/ubuntu.sh
+git submodule update --init --recursive
+make px4_sitl_default
+```
+
+### 3. 构建工作空间并测试
+
+```bash
+cd ~/px4_ros2_ws
+source /opt/ros/jazzy/setup.bash
+rosdep install --from-paths src --ignore-src -r -y
+colcon build --symlink-install
+source ~/px4_ros2_ws/install/setup.bash
+git diff --check
+python3 -m compileall -q src
+bash -n simulation/scripts/*.sh
+colcon test
+colcon test-result --verbose
+```
+
+如果 `px4_msgs` 未由系统或上层工作空间提供，先把与 PX4 v1.17 消息兼容的
+`px4_msgs` 放入 `~/px4_ros2_ws/src/px4_msgs` 后重新执行上述构建。
+
+### 4. 生成并安装 Gazebo overlay
+
+仓库已经提交生成后的 4×6 货架、QR 1～24、世界、双摄机型和 airframe。
+下列命令会重新生成货架资源、检查安装清单、安装到 PX4，并编译 SITL：
+
+```bash
+cd ~/px4_ros2_ws
+source /opt/ros/jazzy/setup.bash
+python3 simulation/scripts/generate_qr_shelf_assets.py
+./simulation/scripts/install_px4_overlay.sh ~/PX4-Autopilot
+./simulation/scripts/install_px4_overlay.sh ~/PX4-Autopilot --apply
+cd ~/PX4-Autopilot
+make px4_sitl_default
+```
+
+### 5. 推荐：一键 GUI 运行
+
+确认没有连接真机 Pixhawk 后：
+
+```bash
+cd ~/px4_ros2_ws
+source /opt/ros/jazzy/setup.bash
+source ~/px4_ros2_ws/install/setup.bash
+TARGET_QR_ID=10 ./simulation/scripts/run_qr_sitl_gui.sh
+```
+
+脚本检查 Jazzy、PX4 v1.17、MicroXRCEAgent 和 overlay，清理冲突实例，
+只启动一个 Agent、一个 PX4/Gazebo 世界、一个 bridge/检测任务和唯一正式控制器
+`vision_offboard_controller.py`。它明确传入仅限 SITL 的
+`simulation_mode=true enable_offboard=true enable_auto_arm=true`，不会启动
+`offboard_control.py`。日志位于 `~/px4_ros2_ws/test_results/qr_sitl_gui/`。
+可用 `TARGET_QR_ID=1` 至 `24` 修改最终目标。
+
+### 6. 手动模式（四个终端）
+
+终端 1，DDS Agent：
+
+```bash
+cd ~/px4_ros2_ws
+source /opt/ros/jazzy/setup.bash
+source ~/px4_ros2_ws/install/setup.bash
+MicroXRCEAgent udp4 -p 8888
+```
+
+终端 2，Gazebo GUI 与 PX4：
+
+```bash
+cd ~/PX4-Autopilot
+source /opt/ros/jazzy/setup.bash
+PX4_GZ_WORLD=qr_shelf_world make px4_sitl gz_x500_downward_camera
+```
+
+终端 3，正式 ROS 任务链：
+
+```bash
+cd ~/px4_ros2_ws
+source /opt/ros/jazzy/setup.bash
+source ~/px4_ros2_ws/install/setup.bash
+ros2 launch uav_vision qr_shelf_task.launch.py mode:=sitl \
+  inventory_mode:=full target_qr_id:=10 simulation_mode:=true \
+  enable_offboard:=true enable_auto_arm:=true use_sim_time:=true
+```
+
+终端 4，前视识别画面：
+
+```bash
+cd ~/px4_ros2_ws
+source /opt/ros/jazzy/setup.bash
+source ~/px4_ros2_ws/install/setup.bash
+ros2 run rqt_image_view rqt_image_view /vision/qr/debug_image
+```
+
+另开终端查看下视原始画面：
+
+```bash
+cd ~/px4_ros2_ws
+source /opt/ros/jazzy/setup.bash
+source ~/px4_ros2_ws/install/setup.bash
+ros2 run rqt_image_view rqt_image_view /camera/down/image_raw
+```
+
+### 7. 运行检查与成功标准
+
+```bash
+cd ~/px4_ros2_ws
+source /opt/ros/jazzy/setup.bash
+source ~/px4_ros2_ws/install/setup.bash
+ros2 topic list | grep -E 'vehicle_status_v1|vehicle_local_position_v1|camera/(front|down)/image_raw|vision/qr/(debug_image|inventory)|control/qr_mission_state'
+ros2 topic hz /fmu/out/vehicle_status_v1
+ros2 topic hz /fmu/out/vehicle_local_position_v1
+ros2 topic hz /camera/front/image_raw
+ros2 topic hz /camera/down/image_raw
+ros2 topic hz /vision/qr/debug_image
+ros2 topic echo /vision/qr/inventory
+ros2 topic echo /control/qr_mission_state
+```
+
+Gazebo 中应看到一架 x500 在 4×6 货架前按蛇形轨迹逐点移动和悬停；前视窗口
+显示 `n/24`、期望 ID、实际解码框、`CONFIRMED/RETRY`、确认数量和目标 ID。
+正常日志顺序为：
+
+```text
+QR_SCAN_MOVE → QR_SCAN_HOLD → QR_SCAN_CONFIRM → QR_SCAN_NEXT
+[QR SCAN] confirmed 1/24: QR 1
+...
+[QR SCAN] confirmed 24/24: QR 19
+QR_INVENTORY_COMPLETE → TARGET_ACQUIRE → TARGET_APPROACH
+[QR SCAN] inventory complete: 24/24
+[QR SCAN] target selected: QR 10
+```
+
+成功必须同时满足：24 个码按规定顺序分别连续帧确认，随后才选择目标；接近
+QR 10 并激光确认后才切到 down；红区对准后 PX4 执行 Land，最终
+`landed=true`、Disarmed、`failsafe=false`。任何缺码重试耗尽都会 FAILSAFE，
+不会伪报 24/24。
+
+### 8. 排查
+
+```bash
+# 无相机话题 / Gazebo 有场景但无画面
+gz topic -l | grep /camera
+ros2 node list
+ros2 topic info -v /camera/front/image_raw
+ros2 run ros_gz_bridge parameter_bridge \
+  /camera/front/image@sensor_msgs/msg/Image[gz.msgs.Image
+
+# UDP 8888 被占用
+ss -lunp | grep ':8888'
+pgrep -af MicroXRCEAgent
+
+# 错误世界或重复 Gazebo
+pgrep -af 'gz sim|px4'
+gz service -l | grep world
+
+# 二维码不解码 / 停在扫描点
+ros2 topic echo /vision/qr/diagnostics
+ros2 topic echo /vision/qr/inventory
+ros2 topic echo /control/qr_mission_state
+ros2 topic hz /camera/front/image_raw
+
+# 停在 WAITING
+ros2 topic echo /fmu/out/vehicle_status_v1 --once
+ros2 topic echo /fmu/out/vehicle_local_position_v1 --once
+ros2 topic hz /clock
+```
+
+若世界或进程错误，先停止后重新安装 overlay 并运行一键脚本：
+
+```bash
+cd ~/px4_ros2_ws
+./simulation/scripts/stop_qr_sitl.sh
+./simulation/scripts/install_px4_overlay.sh ~/PX4-Autopilot --apply
+TARGET_QR_ID=10 ./simulation/scripts/run_qr_sitl_gui.sh
+```
+
+### 9. 正确停止
+
+```bash
+cd ~/px4_ros2_ws
+./simulation/scripts/stop_qr_sitl.sh
+ss -lunp | grep ':8888' || echo "UDP 8888 released"
+```
+
+### 10. SITL/真机严格安全边界
+
+上述 GUI 命令中的自动 Offboard、自动解锁和仿真时钟只允许本机 PX4 SITL，
+绝不能复制到真机 launch。真机必须保持 `simulation_mode=false`、
+`enable_auto_arm=false`，拆桨完成坐标、相机、激光、遥控接管、地理围栏、
+失联和降落保护验证，并由现场安全负责人逐项放行。
+
 ROS 2 无人机视觉控制工程，包含 Raspberry Pi/OpenMV 视觉输入、目标检测与滤波、
 视觉伺服，以及经过 PX4 SITL 实飞验证的前视/下视双摄闭环。
 

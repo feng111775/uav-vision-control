@@ -19,7 +19,7 @@ def generate_launch_description():
         DeclareLaunchArgument('image_topic',
                               default_value='/camera/front/image_raw'),
         DeclareLaunchArgument('target_qr_id', default_value='10'),
-        DeclareLaunchArgument('inventory_mode', default_value='target'),
+        DeclareLaunchArgument('inventory_mode', default_value='full'),
         DeclareLaunchArgument('detector_backend', default_value='opencv'),
         DeclareLaunchArgument(
             'model_path',
@@ -31,6 +31,8 @@ def generate_launch_description():
                               default_value='12.0'),
         DeclareLaunchArgument('search_yaw_rate', default_value='0.0'),
         DeclareLaunchArgument('search_heading', default_value='1.60'),
+        DeclareLaunchArgument('scan_timeout', default_value='8.0'),
+        DeclareLaunchArgument('scan_max_retries', default_value='2'),
         DeclareLaunchArgument('enable_offboard', default_value='false'),
         DeclareLaunchArgument('enable_auto_arm', default_value='false'),
         DeclareLaunchArgument('simulation_mode', default_value='true'),
@@ -74,6 +76,10 @@ def generate_launch_description():
                 LaunchConfiguration('search_heading'), value_type=float),
             'image_center_x': 320.0,
             'image_center_y': 240.0,
+            'scan_timeout': ParameterValue(
+                LaunchConfiguration('scan_timeout'), value_type=float),
+            'scan_max_retries': ParameterValue(
+                LaunchConfiguration('scan_max_retries'), value_type=int),
             'simulation_mode': ParameterValue(
                 LaunchConfiguration('simulation_mode'), value_type=bool),
             'enable_offboard': ParameterValue(
