@@ -660,3 +660,389 @@ v0.3-h2025-final-demo
 ```
 
 该分支用于 2025 年 H 题自主巡查无人机练习，不影响主分支正式比赛工程。
+
+---
+
+# H2025 Gazebo运行完整指南
+
+## 0. 启动前准备
+
+运行环境：
+
+| 项目 | 版本 |
+| --- | --- |
+| 操作系统 | Ubuntu 24.04 |
+| ROS | ROS 2 Jazzy |
+| 飞控 | PX4 v1.15.4 |
+| 仿真 | Gazebo Harmonic |
+
+工程路径：
+
+PX4：
+
+```text
+/home/a-corn/2025h/PX4-Autopilot
+```
+
+ROS 2 工程：
+
+```text
+/home/a-corn/2025h/uav-vision-control
+```
+
+首次运行前，打开终端并进入 ROS 2 工程：
+
+```bash
+cd ~/2025h/uav-vision-control
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+```
+
+如果 `install/setup.bash` 不存在，需要先构建工程：
+
+```bash
+cd ~/2025h/uav-vision-control
+source /opt/ros/jazzy/setup.bash
+colcon build --symlink-install
+source install/setup.bash
+```
+
+---
+
+# 一、完整版巡查模式
+
+完整版用于模拟 H 题完整巡查任务。
+
+任务规模为 622 个任务点：
+
+```text
+1个起飞点
+  +
+621个覆盖巡查航点
+```
+
+执行流程：
+
+```text
+自动启动
+  ↓
+Offboard模式
+  ↓
+Arm
+  ↓
+2米高度起飞
+  ↓
+执行完整覆盖航线
+  ↓
+返回起飞点
+  ↓
+自动降落
+  ↓
+自动Disarm锁桨
+```
+
+## 完整版启动顺序
+
+必须按照以下顺序打开终端。终端 1 至终端 6 启动后均需保持运行。
+
+### 终端1：启动PX4 Gazebo
+
+执行：
+
+```bash
+cd ~/2025h/PX4-Autopilot
+make px4_sitl gz_x500
+```
+
+等待终端出现：
+
+```text
+pxh>
+```
+
+出现后表示 PX4 启动完成，请保持该终端运行，不要关闭。
+
+### 终端2：启动MicroXRCE DDS
+
+执行：
+
+```bash
+source /opt/ros/jazzy/setup.bash
+MicroXRCEAgent udp4 -p 8888
+```
+
+看到以下信息表示通信成功：
+
+```text
+session established
+```
+
+请保持该终端运行，不要关闭。
+
+### 终端3：启动PX4位置桥
+
+执行：
+
+```bash
+cd ~/2025h/uav-vision-control
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 run uav_control px4_position_bridge_node
+```
+
+### 终端4：启动任务管理器（完整版）
+
+执行：
+
+```bash
+cd ~/2025h/uav-vision-control
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 run uav_control mission_manager_node
+```
+
+启动后应该看到：
+
+```text
+demo_mode=False
+```
+
+### 终端5：启动Offboard控制器
+
+执行：
+
+```bash
+cd ~/2025h/uav-vision-control
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 run uav_control mission_offboard_controller
+```
+
+### 终端6：启动轨迹记录
+
+执行：
+
+```bash
+cd ~/2025h/uav-vision-control
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 run uav_control flight_trajectory_logger
+```
+
+### 终端7：启动任务
+
+执行：
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source ~/2025h/uav-vision-control/install/setup.bash
+ros2 service call /mission/start std_srvs/srv/Trigger "{}"
+```
+
+服务返回成功后观察 Gazebo，无人机将依次执行：
+
+```text
+起飞
+  ↓
+巡航
+  ↓
+返航
+  ↓
+降落
+```
+
+---
+
+# 二、Demo快速展示模式
+
+Demo 模式用于快速验证完整任务闭环。
+
+相比完整版：
+
+| 模式 | 任务规模 |
+| --- | --- |
+| 完整版 | 622 点 |
+| Demo | 21 点：1 个起飞点 + 20 个巡查点 |
+
+Demo 模式适合：
+
+- 答辩展示
+- 快速测试
+- 检查控制流程
+
+## Demo启动方式
+
+终端 1 至终端 3 与完整版保持一致。
+
+### 终端1：启动PX4 Gazebo
+
+```bash
+cd ~/2025h/PX4-Autopilot
+make px4_sitl gz_x500
+```
+
+### 终端2：启动DDS
+
+```bash
+source /opt/ros/jazzy/setup.bash
+MicroXRCEAgent udp4 -p 8888
+```
+
+### 终端3：启动位置桥
+
+```bash
+cd ~/2025h/uav-vision-control
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 run uav_control px4_position_bridge_node
+```
+
+### 终端4：启动Demo任务管理器
+
+```bash
+cd ~/2025h/uav-vision-control
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 run uav_control mission_manager_node \
+  --ros-args \
+  --params-file src/uav_control/config/demo_mode.yaml
+```
+
+启动后应该看到：
+
+```text
+demo_mode=True
+```
+
+### 终端5：启动控制器
+
+```bash
+cd ~/2025h/uav-vision-control
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 run uav_control mission_offboard_controller
+```
+
+### 终端6：启动轨迹记录
+
+```bash
+cd ~/2025h/uav-vision-control
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 run uav_control flight_trajectory_logger
+```
+
+### 终端7：启动任务
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source ~/2025h/uav-vision-control/install/setup.bash
+ros2 service call /mission/start std_srvs/srv/Trigger "{}"
+```
+
+---
+
+# 三、飞行结果查看
+
+任务完成后，查看以下目录：
+
+```text
+/home/a-corn/2025h/uav-vision-control/log/
+```
+
+系统会生成：
+
+```text
+h2025_flight_xy_*.png
+```
+
+二维轨迹图，包含计划航线和实际飞行轨迹。
+
+```text
+h2025_flight_actual_*.csv
+```
+
+实际飞行位置数据。
+
+```text
+h2025_flight_planned_*.csv
+```
+
+规划轨迹数据。
+
+---
+
+# 四、常用检查命令
+
+执行检查命令前，应先加载 ROS 2 和工程环境：
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source ~/2025h/uav-vision-control/install/setup.bash
+```
+
+查看 ROS 节点：
+
+```bash
+ros2 node list
+```
+
+查看任务状态：
+
+```bash
+ros2 topic echo /mission/status --once
+```
+
+查看 PX4 状态：
+
+```bash
+ros2 topic echo /fmu/out/vehicle_status --once
+```
+
+查看飞机位置：
+
+```bash
+ros2 topic echo /fmu/out/vehicle_local_position --once
+```
+
+---
+
+# 五、停止运行
+
+推荐停止顺序：
+
+1. 等待飞机自动降落并完成 Disarm 锁桨。
+2. 在各 ROS 2 节点终端按 `Ctrl+C`。
+3. 在 PX4 终端按 `Ctrl+C`。
+4. 最后停止 MicroXRCEAgent。
+
+如果进程异常、无法通过 `Ctrl+C` 正常退出，可以执行：
+
+```bash
+pkill -f mission_manager
+pkill -f mission_offboard
+pkill -f px4_position_bridge
+pkill -f gz
+```
+
+使用 `pkill` 前应确认当前没有其他需要保留的同名进程。
+
+---
+
+## 本指南对应版本
+
+Git 分支：
+
+```text
+h2025-practice
+```
+
+最终版本：
+
+```text
+v0.3-h2025-final-demo
+```
+
+用途：
+
+2025 年全国大学生电子设计竞赛 H 题自主巡查无人机练习工程。
