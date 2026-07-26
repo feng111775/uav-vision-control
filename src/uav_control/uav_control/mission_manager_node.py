@@ -47,9 +47,24 @@ class MissionManagerNode(Node):
         """创建任务、ROS 2发布订阅接口和任务控制服务。"""
         super().__init__('mission_manager_node')
 
+        self.declare_parameter('takeoff_height', 2.0)
+        self.declare_parameter('patrol_height', 2.0)
+        self.declare_parameter('demo_mode', False)
+        self.declare_parameter('demo_waypoints', 20)
+        self.takeoff_height = self._positive_height_parameter(
+            'takeoff_height')
+        self.patrol_height = self._positive_height_parameter(
+            'patrol_height')
+        self.demo_mode = bool(self.get_parameter('demo_mode').value)
+        self.demo_waypoints = int(
+            self.get_parameter('demo_waypoints').value)
+        if self.demo_waypoints <= 0:
+            raise ValueError('demo_waypoints必须是正整数')
+
         self.grid_map = None
         self.plan_result = None
         self.trajectory = []
+        self.loaded_coverage_waypoints = 0
         self.manager = None
         self.last_logged_state = None
         self._initialize_mission()
@@ -101,14 +116,28 @@ class MissionManagerNode(Node):
             self.TIMER_PERIOD, self.timer_callback)
 
         self.get_logger().info(
-            '任务管理节点已启动：覆盖航点=%d，轨迹点=%d'
-            % (len(self.plan_result.waypoints), len(self.trajectory))
+            '任务管理节点已启动：覆盖航点=%d，轨迹点=%d，'
+            'takeoff_height=%.2f，patrol_height=%.2f，demo_mode=%s'
+            % (
+                self.loaded_coverage_waypoints,
+                len(self.trajectory),
+                self.takeoff_height,
+                self.patrol_height,
+                self.demo_mode,
+            )
         )
+
+    def _positive_height_parameter(self, name):
+        """读取并验证有限正数高度参数。"""
+        value = float(self.get_parameter(name).value)
+        if not math.isfinite(value) or value <= 0.0:
+            raise ValueError('%s必须是有限正数' % name)
+        return value
 
     def _initialize_mission(self):
         """重新创建地图、规划器、轨迹生成器和任务管理器。"""
         grid_map = GridMap(rows=7, cols=9, cell_size=0.5)
-        planner = CoveragePlanner()
+        planner = CoveragePlanner(patrol_height=self.patrol_height)
         plan_result = planner.plan(grid_map)
         if not plan_result.success:
             raise RuntimeError(
@@ -116,11 +145,13 @@ class MissionManagerNode(Node):
 
         generator = TrajectoryGenerator(speed=planner.speed)
         coverage_trajectory = generator.generate(plan_result.waypoints)
+        if self.demo_mode:
+            coverage_trajectory = coverage_trajectory[:self.demo_waypoints]
         takeoff_point = TrajectoryPoint(
             timestamp=0.0,
             x=0.0,
             y=0.0,
-            z=1.2,
+            z=self.takeoff_height,
             vx=0.0,
             vy=0.0,
             vz=0.0,
@@ -130,10 +161,22 @@ class MissionManagerNode(Node):
         trajectory = [takeoff_point] + coverage_trajectory
         manager = MissionManager()
         manager.load_trajectory(trajectory)
+        manager.return_target = TrajectoryPoint(
+            timestamp=0.0,
+            x=0.0,
+            y=0.0,
+            z=self.takeoff_height,
+            vx=0.0,
+            vy=0.0,
+            vz=0.0,
+            yaw=0.0,
+            waypoint_id=len(trajectory),
+        )
 
         self.grid_map = grid_map
         self.plan_result = plan_result
         self.trajectory = trajectory
+        self.loaded_coverage_waypoints = len(coverage_trajectory)
         self.manager = manager
         self.last_logged_state = None
 

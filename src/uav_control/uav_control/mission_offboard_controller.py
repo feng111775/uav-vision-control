@@ -128,9 +128,11 @@ class MissionOffboardController(Node):
 
     TIMER_PERIOD = 0.1
     PRESTREAM_DURATION = 2.0
-    TAKEOFF_HOLD_DURATION = 3.0
+    HORIZONTAL_SPEED_THRESHOLD = 0.1
+    HORIZONTAL_STABILITY_DURATION = 1.0
+    GROUND_Z_THRESHOLD = -0.2
+    GROUND_DISARM_DURATION = 2.0
     COMMAND_RETRY_INTERVAL = 1.0
-    TAKEOFF_POSITION = (0.0, 0.0, -1.2)
 
     WAIT = 'WAIT'
     PRESTREAM = 'PRESTREAM'
@@ -150,6 +152,22 @@ class MissionOffboardController(Node):
         self.declare_parameter('target_timeout', 0.5)
         self.declare_parameter('mission_status_timeout', 0.5)
         self.declare_parameter('local_position_timeout', 0.5)
+        self.declare_parameter('takeoff_height', 2.0)
+        self.declare_parameter('takeoff_hold_time', 5.0)
+
+        self.takeoff_height = float(
+            self.get_parameter('takeoff_height').value)
+        if (
+                not math.isfinite(self.takeoff_height)
+                or self.takeoff_height <= 0.0):
+            raise ValueError('takeoff_height必须是有限正数')
+        self.takeoff_hold_time = float(
+            self.get_parameter('takeoff_hold_time').value)
+        if (
+                not math.isfinite(self.takeoff_hold_time)
+                or self.takeoff_hold_time <= 0.0):
+            raise ValueError('takeoff_hold_time必须是有限正数')
+        self.takeoff_position = (0.0, 0.0, -self.takeoff_height)
 
         transformer = CoordinateTransformer(
             origin_north=self.get_parameter('origin_north').value,
@@ -225,6 +243,10 @@ class MissionOffboardController(Node):
         self.control_state = self.WAIT
         self.prestream_started_at: Optional[float] = None
         self.takeoff_hold_started_at: Optional[float] = None
+        self.horizontal_stable_started_at: Optional[float] = None
+        self.local_velocity_x: Optional[float] = None
+        self.local_velocity_y: Optional[float] = None
+        self.local_position_z: Optional[float] = None
         self.last_command_time: Optional[float] = None
         self.px4_offboard = False
         self.px4_armed = False
@@ -234,6 +256,8 @@ class MissionOffboardController(Node):
         self.land_command_failed = False
         self.last_land_command_time: Optional[float] = None
         self.auto_land_logged = False
+        self.ground_contact_started_at: Optional[float] = None
+        self.disarm_command_sent = False
         self.get_logger().info(
             '任务Offboard控制节点已启动；控制状态：WAIT')
 
@@ -283,6 +307,17 @@ class MissionOffboardController(Node):
             message.z_valid,
             self.now_seconds(),
         )
+        if all(math.isfinite(float(value)) for value in (
+                message.vx, message.vy)):
+            self.local_velocity_x = float(message.vx)
+            self.local_velocity_y = float(message.vy)
+        else:
+            self.local_velocity_x = None
+            self.local_velocity_y = None
+        if message.z_valid and math.isfinite(float(message.z)):
+            self.local_position_z = float(message.z)
+        else:
+            self.local_position_z = None
 
     def vehicle_status_callback(self, message: VehicleStatus) -> None:
         """保存PX4当前Offboard、解锁和自动降落状态。"""
@@ -433,7 +468,11 @@ class MissionOffboardController(Node):
                 return
             if self.px4_armed:
                 self.takeoff_hold_started_at = now_seconds
+                self.horizontal_stable_started_at = None
                 self.set_control_state(self.TAKEOFF_HOLD)
+                self.get_logger().info(
+                    'TAKEOFF_HOLD at height=%.2f m，保持时间=%.1f s'
+                    % (self.takeoff_height, self.takeoff_hold_time))
                 return
             if self.command_due(now_seconds):
                 self.publish_vehicle_command(
@@ -451,10 +490,30 @@ class MissionOffboardController(Node):
             if not self.px4_armed:
                 self.set_control_state(self.REQUEST_ARM)
                 return
+            hold_complete = (
+                self.takeoff_hold_started_at is not None
+                and now_seconds - self.takeoff_hold_started_at
+                >= self.takeoff_hold_time
+            )
+            velocity_stable = (
+                self.local_velocity_x is not None
+                and self.local_velocity_y is not None
+                and abs(self.local_velocity_x)
+                < self.HORIZONTAL_SPEED_THRESHOLD
+                and abs(self.local_velocity_y)
+                < self.HORIZONTAL_SPEED_THRESHOLD
+            )
+            if not hold_complete or not velocity_stable:
+                self.horizontal_stable_started_at = None
+                return
+            if self.horizontal_stable_started_at is None:
+                self.horizontal_stable_started_at = now_seconds
+                self.get_logger().info(
+                    '水平速度已低于0.1 m/s，开始1秒稳定计时')
+                return
             if (
-                    self.takeoff_hold_started_at is not None
-                    and now_seconds - self.takeoff_hold_started_at
-                    >= self.TAKEOFF_HOLD_DURATION):
+                    now_seconds - self.horizontal_stable_started_at
+                    >= self.HORIZONTAL_STABILITY_DURATION):
                 self.set_control_state(self.MISSION_EXECUTE)
 
     def handle_land_state(self, now_seconds: float) -> None:
@@ -489,6 +548,46 @@ class MissionOffboardController(Node):
             self.get_logger().info('PX4进入自动降落')
             self.auto_land_logged = True
 
+    def handle_ground_disarm(self, now_seconds: float) -> None:
+        """自动降落近地持续2秒后发送一次锁桨命令。"""
+        if self.logic.mission_state != MissionStatus.LAND:
+            self.ground_contact_started_at = None
+            self.disarm_command_sent = False
+            return
+
+        local_position_fresh = self.logic._fresh(
+            now_seconds,
+            self.logic.local_position_time,
+            self.logic.local_position_timeout,
+        )
+        near_ground = (
+            self.px4_auto_land
+            and self.px4_armed
+            and local_position_fresh
+            and self.local_position_z is not None
+            and self.local_position_z > self.GROUND_Z_THRESHOLD
+        )
+        if not near_ground:
+            self.ground_contact_started_at = None
+            return
+
+        if self.ground_contact_started_at is None:
+            self.ground_contact_started_at = now_seconds
+            self.get_logger().info(
+                '自动降落已接近地面，开始2秒锁桨确认')
+            return
+
+        if (
+                not self.disarm_command_sent
+                and now_seconds - self.ground_contact_started_at
+                >= self.GROUND_DISARM_DURATION):
+            self.publish_vehicle_command(
+                VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM,
+                param1=0.0,
+            )
+            self.disarm_command_sent = True
+            self.get_logger().info('已发送PX4锁桨命令')
+
     def timer_callback(self) -> None:
         """以10 Hz发送Offboard心跳并推进自动起飞控制状态。"""
         now_seconds = self.now_seconds()
@@ -497,7 +596,7 @@ class MissionOffboardController(Node):
         self.publish_offboard_mode()
         if self.control_state == self.TAKEOFF_HOLD:
             self.publish_trajectory_setpoint(
-                position=self.TAKEOFF_POSITION,
+                position=self.takeoff_position,
                 yaw=0.0,
             )
         elif (
@@ -512,6 +611,7 @@ class MissionOffboardController(Node):
             self.publish_trajectory_setpoint()
         self.step_control_state(now_seconds, allowed)
         self.handle_land_state(now_seconds)
+        self.handle_ground_disarm(now_seconds)
 
         if allowed != self.output_active:
             if allowed:

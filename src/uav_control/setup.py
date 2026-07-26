@@ -50,6 +50,8 @@ setup(
             'uav_control.animal_detector_sim_node:main',
             'animal_statistics_node = '
             'uav_control.animal_statistics_node:main',
+            'flight_trajectory_logger = '
+            'uav_control.flight_trajectory_logger:main',
         ],
     },
 )
