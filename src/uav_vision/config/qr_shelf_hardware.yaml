@@ -1,0 +1,33 @@
+qr_detector_node:
+  ros__parameters:
+    use_sim_time: false
+    image_topic: /camera/front/image_raw
+    detector_backend: opencv
+    model_path: ""
+    layout_path: ""
+    target_qr_id: 7
+    inventory_mode: target
+    confidence_threshold: 0.35
+    confirm_frames: 3
+    qr_timeout: 30.0
+    image_timeout: 0.5
+    laser_alignment_threshold: 12.0
+    laser_confirm_frames: 5
+    visualization: false
+    target_topic: /vision/front/detection
+
+vision_offboard_controller:
+  ros__parameters:
+    use_sim_time: false
+    task_mode: qr_shelf
+    simulation_mode: false
+    enable_offboard: false
+    enable_auto_arm: false
+    target_qr_id: 7
+    target_altitude: 1.0
+    max_horizontal_velocity: 0.2
+    max_vertical_velocity: 0.3
+    mission_timeout: 180.0
+    vehicle_status_topic: /fmu/out/vehicle_status_v1
+    vehicle_local_position_topic: /fmu/out/vehicle_local_position_v1
+    vehicle_land_detected_topic: /fmu/out/vehicle_land_detected

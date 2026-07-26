@@ -432,7 +432,7 @@ source /opt/ros/jazzy/setup.bash
 colcon build --symlink-install
 source install/setup.bash
 ros2 launch uav_vision qr_shelf_task.launch.py mode:=observe \
-  target_qr_id:=7 detector_backend:=hybrid enable_offboard:=false
+  target_qr_id:=7 detector_backend:=opencv enable_offboard:=false
 ```
 
 数据、训练、安全 SITL 和真实验证边界见

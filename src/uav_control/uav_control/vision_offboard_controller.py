@@ -7,6 +7,7 @@ from geometry_msgs.msg import TwistStamped
 from px4_msgs.msg import OffboardControlMode
 from px4_msgs.msg import TrajectorySetpoint
 from px4_msgs.msg import VehicleCommand
+from px4_msgs.msg import VehicleLandDetected
 from px4_msgs.msg import VehicleLocalPosition
 from px4_msgs.msg import VehicleStatus
 
@@ -16,6 +17,12 @@ from rclpy.qos import DurabilityPolicy
 from rclpy.qos import HistoryPolicy
 from rclpy.qos import QoSProfile
 from rclpy.qos import ReliabilityPolicy
+from rosgraph_msgs.msg import Clock
+from std_msgs.msg import Bool
+from std_msgs.msg import Float32MultiArray
+from std_msgs.msg import String
+
+from .qr_mission import QRMission
 
 
 class VisionOffboardLogic:
@@ -87,6 +94,9 @@ class VisionOffboardLogic:
         self.failsafe_reason = None
         self.mode_requested = False
         self.arm_requested = False
+        self.pre_flight_checks_pass = False
+        self.sitl_verified = False
+        self.prestream_cycles = 0
 
     @staticmethod
     def flu_to_ned(body_forward, body_left, heading):
@@ -134,12 +144,18 @@ class VisionOffboardLogic:
             return True, True
         return False, False
 
-    def update_status(self, armed, offboard_active, failsafe, now_seconds):
+    def update_status(self, armed, offboard_active, failsafe, now_seconds,
+                      pre_flight_checks_pass=True):
         """更新PX4解锁、导航和failsafe状态。."""
         self.armed = bool(armed)
         self.offboard_active = bool(offboard_active)
         self.px4_failsafe = bool(failsafe)
+        self.pre_flight_checks_pass = bool(pre_flight_checks_pass)
         self.status_time = float(now_seconds)
+
+    def update_sitl_evidence(self, verified):
+        """Latch independently observed simulator clock evidence."""
+        self.sitl_verified = self.sitl_verified or bool(verified)
 
     def update_vision(self, forward, left, valid, now_seconds):
         """更新FLU机体水平视觉速度。."""
@@ -156,7 +172,9 @@ class VisionOffboardLogic:
     def auto_arm_allowed(self):
         """仅允许显式启用的仿真自动解锁。."""
         return all((self.simulation_mode, self.enable_offboard,
-                    self.enable_auto_arm))
+                    self.enable_auto_arm, self.sitl_verified,
+                    self.pre_flight_checks_pass, not self.px4_failsafe,
+                    self.position_valid, self.prestream_cycles >= 20))
 
     def px4_data_ready(self, now_seconds):
         """检查位置、航向和状态消息是否有效且新鲜。."""
@@ -244,7 +262,10 @@ class VisionOffboardLogic:
                 self.target_z = -abs(self.target_altitude)
 
         elif self.state == self.PRESTREAM:
+            self.prestream_cycles += 1
             elapsed = now - self.prestream_start
+            self.prestream_cycles = max(
+                self.prestream_cycles, int(elapsed * 20.0))
             if elapsed >= self.PRESTREAM_SECONDS:
                 if not self.mode_requested:
                     request_mode = True
@@ -290,6 +311,18 @@ class VisionOffboardController(Node):
         self.declare_parameter('takeoff_timeout', 25.0)
         self.declare_parameter('px4_status_timeout', 1.5)
         self.declare_parameter('local_position_timeout', 0.5)
+        self.declare_parameter('task_mode', 'legacy')
+        self.declare_parameter('target_qr_id', 7)
+        self.declare_parameter('mission_event_timeout', 1.0)
+        self.declare_parameter('mission_state_timeout', 30.0)
+        self.declare_parameter('mission_timeout', 180.0)
+        self.declare_parameter('qr_approach_area', 6000.0)
+        self.declare_parameter('mission_align_error', 12.0)
+        self.declare_parameter('transit_seconds', 4.0)
+        self.declare_parameter('transit_speed', 0.15)
+        self.declare_parameter('search_yaw_rate', 0.2)
+        self.declare_parameter('image_center_x', 160.0)
+        self.declare_parameter('image_center_y', 120.0)
         self.declare_parameter(
             'vision_velocity_topic', '/control/vision_velocity')
         self.declare_parameter(
@@ -305,6 +338,17 @@ class VisionOffboardController(Node):
             '/fmu/out/vehicle_local_position_v1')
         self.declare_parameter(
             'vehicle_status_topic', '/fmu/out/vehicle_status_v1')
+        self.declare_parameter(
+            'vehicle_land_detected_topic',
+            '/fmu/out/vehicle_land_detected')
+        self.declare_parameter(
+            'qr_inventory_topic', '/vision/qr/inventory')
+        self.declare_parameter(
+            'qr_laser_topic', '/vision/qr/laser_aligned')
+        self.declare_parameter(
+            'selected_camera_topic', '/vision/selected_camera')
+        self.declare_parameter(
+            'selected_detection_topic', '/vision/selected_detection')
 
         names = ('simulation_mode', 'enable_offboard', 'enable_auto_arm',
                  'target_altitude', 'altitude_kp', 'max_vertical_velocity',
@@ -313,6 +357,29 @@ class VisionOffboardController(Node):
                  'px4_status_timeout', 'local_position_timeout')
         values = {name: self.get_parameter(name).value for name in names}
         self.logic = VisionOffboardLogic(**values)
+        self.task_mode = self.get_parameter('task_mode').value
+        self.image_center_x = float(
+            self.get_parameter('image_center_x').value)
+        self.image_center_y = float(
+            self.get_parameter('image_center_y').value)
+        if self.task_mode not in ('legacy', 'qr_shelf'):
+            raise ValueError('task_mode must be legacy or qr_shelf')
+        self.mission = None
+        if self.task_mode == 'qr_shelf':
+            self.mission = QRMission(
+                target_qr_id=self.get_parameter('target_qr_id').value,
+                event_timeout=self.get_parameter(
+                    'mission_event_timeout').value,
+                state_timeout=self.get_parameter(
+                    'mission_state_timeout').value,
+                mission_timeout=self.get_parameter('mission_timeout').value,
+                approach_area=self.get_parameter('qr_approach_area').value,
+                align_error=self.get_parameter(
+                    'mission_align_error').value,
+                transit_seconds=self.get_parameter('transit_seconds').value,
+                transit_speed=self.get_parameter('transit_speed').value,
+                search_yaw_rate=self.get_parameter(
+                    'search_yaw_rate').value)
 
         if self.logic.enable_auto_arm and not self.logic.simulation_mode:
             self.get_logger().error(
@@ -350,11 +417,35 @@ class VisionOffboardController(Node):
             VehicleStatus,
             self.get_parameter('vehicle_status_topic').value,
             self.status_callback, px4_qos)
+        self.land_subscription = self.create_subscription(
+            VehicleLandDetected,
+            self.get_parameter('vehicle_land_detected_topic').value,
+            self.land_callback, px4_qos)
+        self.clock_subscription = self.create_subscription(
+            Clock, '/clock', self.clock_callback, 10)
+        self.inventory_subscription = self.create_subscription(
+            String, self.get_parameter('qr_inventory_topic').value,
+            self.inventory_callback, 10)
+        self.laser_subscription = self.create_subscription(
+            Bool, self.get_parameter('qr_laser_topic').value,
+            self.laser_callback, 10)
+        self.camera_subscription = self.create_subscription(
+            String, self.get_parameter('selected_camera_topic').value,
+            self.camera_callback, 10)
+        self.selected_detection_subscription = self.create_subscription(
+            Float32MultiArray,
+            self.get_parameter('selected_detection_topic').value,
+            self.selected_detection_callback, 10)
+        self.mission_state_publisher = self.create_publisher(
+            String, '/control/qr_mission_state', 10)
         # PX4 的 Offboard 丢失保护要求心跳持续到达。双路图像渲染和检测
         # 会产生短时调度抖动，20 Hz 为默认超时保留充足余量。
         self.timer = self.create_timer(0.05, self.timer_callback)
         self.last_logged_state = None
         self.land_requested = False
+        self.disarm_requested = False
+        self.last_landed = False
+        self.last_mission_state = None
         self.sitl_heading_warning_emitted = False
         self.get_logger().info(
             '视觉Offboard控制器已安全启动：simulation=%s offboard=%s auto_arm=%s'
@@ -405,7 +496,73 @@ class VisionOffboardController(Node):
             message.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD,
             message.failsafe,
             self.now_seconds(),
+            message.pre_flight_checks_pass,
         )
+        if getattr(self, 'mission', None) is not None:
+            self.mission.update_flight(
+                self.logic.armed, self.last_landed, self.now_seconds())
+
+    def clock_callback(self, message):
+        """Use a progressing external simulation clock as SITL evidence."""
+        stamp = message.clock.sec + message.clock.nanosec * 1e-9
+        if math.isfinite(stamp) and stamp > 0.0:
+            self.logic.update_sitl_evidence(True)
+
+    def land_callback(self, message):
+        """Consume the real PX4 landing detector."""
+        self.last_landed = bool(message.landed)
+        if self.mission is not None:
+            self.mission.update_flight(
+                self.logic.armed, self.last_landed, self.now_seconds())
+
+    def inventory_callback(self, message):
+        """Drive inventory completion and target acquisition from JSON."""
+        if self.mission is None:
+            return
+        import json
+        try:
+            data = json.loads(message.data)
+            records = data.get('records', [])
+            image_size = data.get('image_size', [320, 240])
+            target = next((
+                item for item in records
+                if int(item.get('qr_id', -1)) ==
+                self.mission.target_qr_id), None)
+            complete = bool(data.get('complete', False))
+            if target is not None:
+                center = target.get('image_center', [math.inf, math.inf])
+                error = math.hypot(
+                    float(center[0]) - float(image_size[0]) / 2.0,
+                    float(center[1]) - float(image_size[1]) / 2.0)
+                area = float(target.get('area', 0.0))
+            else:
+                area, error = 0.0, math.inf
+            self.mission.update_inventory(
+                complete, target is not None, area, error,
+                self.now_seconds())
+        except (KeyError, TypeError, ValueError):
+            self.get_logger().warning('ignored malformed QR inventory')
+
+    def laser_callback(self, message):
+        if self.mission is not None:
+            self.mission.update_laser(message.data, self.now_seconds())
+
+    def camera_callback(self, message):
+        if self.mission is not None:
+            self.mission.update_camera(message.data, self.now_seconds())
+
+    def selected_detection_callback(self, message):
+        """Track real down-camera alignment error."""
+        if self.mission is None or self.mission.selected_camera != 'down':
+            return
+        values = list(message.data)
+        valid = len(values) == 7 and values[0] == 1.0 and all(
+            math.isfinite(float(value)) for value in values)
+        error = math.hypot(
+            values[1] - self.image_center_x,
+            values[2] - self.image_center_y) \
+            if valid else math.inf
+        self.mission.update_down(valid, error, self.now_seconds())
 
     def publish_offboard_mode(self):
         """发布仅启用速度控制的Offboard心跳。."""
@@ -420,7 +577,7 @@ class VisionOffboardController(Node):
         message.direct_actuator = False
         self.offboard_publisher.publish(message)
 
-    def publish_setpoint(self, north, east, down):
+    def publish_setpoint(self, north, east, down, yaw_rate=math.nan):
         """发布全部位置无效、仅速度有效的NED设定值。."""
         message = TrajectorySetpoint()
         message.timestamp = self.timestamp()
@@ -430,7 +587,7 @@ class VisionOffboardController(Node):
         message.acceleration = [nan, nan, nan]
         message.jerk = [nan, nan, nan]
         message.yaw = nan
-        message.yawspeed = nan
+        message.yawspeed = yaw_rate
         self.trajectory_publisher.publish(message)
 
     def publish_command(self, command, param1=0.0, param2=0.0):
@@ -458,6 +615,24 @@ class VisionOffboardController(Node):
 
         north, east, down, request_mode, request_arm = self.logic.step(
             self.now_seconds())
+        mission_output = None
+        if getattr(self, 'mission', None) is not None:
+            if self.logic.state == self.logic.PRESTREAM:
+                self.mission.start(self.now_seconds())
+            mission_output = self.mission.step(
+                self.now_seconds(), self.logic.state)
+            if self.mission.state != self.last_mission_state:
+                state_message = String()
+                state_message.data = self.mission.state
+                self.mission_state_publisher.publish(state_message)
+                self.get_logger().info(
+                    'QR任务状态：%s，原因：%s' % (
+                        self.mission.state, self.mission.reason))
+                self.last_mission_state = self.mission.state
+            if self.mission.state == self.mission.FAILSAFE and \
+                    self.logic.state != self.logic.FAILSAFE:
+                self.logic.state = self.logic.FAILSAFE
+                self.logic.failsafe_reason = self.mission.reason
         if self.logic.state == self.logic.FAILSAFE:
             if not self.land_requested and self.logic.armed:
                 self.publish_command(VehicleCommand.VEHICLE_CMD_NAV_LAND)
@@ -471,8 +646,35 @@ class VisionOffboardController(Node):
                 self.last_logged_state = self.logic.state
             return
 
+        yaw_rate = math.nan
+        if mission_output is not None:
+            if mission_output.request_land:
+                if not self.land_requested:
+                    self.publish_command(VehicleCommand.VEHICLE_CMD_NAV_LAND)
+                    self.land_requested = True
+                    self.get_logger().info(
+                        'QR mission: requested PX4 Land once')
+                return
+            if mission_output.request_disarm:
+                if not self.disarm_requested:
+                    self.publish_command(
+                        VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM,
+                        param1=0.0)
+                    self.disarm_requested = True
+                return
+            yaw_rate = mission_output.yaw_rate
+            if mission_output.use_vision:
+                north, east = self.logic.vision_ned_velocity(
+                    self.now_seconds())
+            else:
+                north, east = self.logic.flu_to_ned(
+                    mission_output.forward, mission_output.left,
+                    self.logic.heading)
+                north, east = self.logic.limit_horizontal(
+                    north, east, self.logic.max_horizontal_velocity)
+
         self.publish_offboard_mode()
-        self.publish_setpoint(north, east, down)
+        self.publish_setpoint(north, east, down, yaw_rate)
 
         if request_mode:
             self.publish_command(

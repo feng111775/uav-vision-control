@@ -20,7 +20,7 @@ def generate_launch_description():
                               default_value='/camera/front/image_raw'),
         DeclareLaunchArgument('target_qr_id', default_value='7'),
         DeclareLaunchArgument('inventory_mode', default_value='target'),
-        DeclareLaunchArgument('detector_backend', default_value='hybrid'),
+        DeclareLaunchArgument('detector_backend', default_value='opencv'),
         DeclareLaunchArgument(
             'model_path',
             default_value=str(share / 'models' / 'qr_hog_svm.xml')),
@@ -29,6 +29,7 @@ def generate_launch_description():
         DeclareLaunchArgument('qr_timeout', default_value='30.0'),
         DeclareLaunchArgument('laser_alignment_threshold',
                               default_value='12.0'),
+        DeclareLaunchArgument('search_yaw_rate', default_value='0.2'),
         DeclareLaunchArgument('enable_offboard', default_value='false'),
         DeclareLaunchArgument('enable_auto_arm', default_value='false'),
         DeclareLaunchArgument('simulation_mode', default_value='true'),
@@ -41,6 +42,8 @@ def generate_launch_description():
             'image_topic': LaunchConfiguration('image_topic'),
             'target_qr_id': ParameterValue(
                 LaunchConfiguration('target_qr_id'), value_type=int),
+            'search_yaw_rate': ParameterValue(
+                LaunchConfiguration('search_yaw_rate'), value_type=float),
             'inventory_mode': LaunchConfiguration('inventory_mode'),
             'detector_backend': LaunchConfiguration('detector_backend'),
             'model_path': LaunchConfiguration('model_path'),
@@ -63,6 +66,9 @@ def generate_launch_description():
         name='vision_offboard_controller', output='screen',
         condition=IfCondition(PythonExpression(["'", mode, "' == 'sitl'"])),
         parameters=[{
+            'task_mode': 'qr_shelf',
+            'target_qr_id': ParameterValue(
+                LaunchConfiguration('target_qr_id'), value_type=int),
             'simulation_mode': ParameterValue(
                 LaunchConfiguration('simulation_mode'), value_type=bool),
             'enable_offboard': ParameterValue(
@@ -81,7 +87,10 @@ def generate_launch_description():
     selector = Node(
         package='uav_vision', executable='camera_selector_node',
         name='camera_selector_node', condition=sitl_condition,
-        parameters=[str(share / 'config' / 'dual_camera_simulation.yaml')])
+        parameters=[
+            str(share / 'config' / 'dual_camera_simulation.yaml'),
+            {'front_area_threshold': 6000.0,
+             'front_size_threshold': 75.0}])
     target_filter = Node(
         package='uav_vision', executable='target_filter_node',
         name='target_filter_node', condition=sitl_condition,
@@ -90,5 +99,18 @@ def generate_launch_description():
         package='uav_vision', executable='visual_servo_node',
         name='visual_servo_node', condition=sitl_condition,
         parameters=[str(share / 'config' / 'dual_camera_simulation.yaml')])
+    bridge = Node(
+        package='ros_gz_bridge', executable='parameter_bridge',
+        name='qr_shelf_camera_bridge',
+        condition=IfCondition(PythonExpression(
+            ["'", mode, "' != 'offline'"])),
+        arguments=[
+            '/camera/front/image@sensor_msgs/msg/Image[gz.msgs.Image',
+            '/camera/down/image@sensor_msgs/msg/Image[gz.msgs.Image',
+            '/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock'],
+        remappings=[
+            ('/camera/front/image', '/camera/front/image_raw'),
+            ('/camera/down/image', '/camera/down/image_raw')])
     return LaunchDescription(arguments + [
-        detector, down_detector, selector, target_filter, servo, controller])
+        bridge, detector, down_detector, selector, target_filter, servo,
+        controller])

@@ -74,6 +74,31 @@ def test_real_mode_rejects_auto_arm():
     assert not logic.auto_arm_allowed()
 
 
+def test_simulation_parameter_alone_cannot_auto_arm():
+    """simulation_mode without independent clock evidence is insufficient."""
+    logic = VisionOffboardLogic(
+        simulation_mode=True, enable_offboard=True, enable_auto_arm=True)
+    logic.update_position(0, 0, True, 0)
+    logic.update_status(False, False, False, 0,
+                        pre_flight_checks_pass=True)
+    logic.prestream_cycles = 20
+    assert not logic.auto_arm_allowed()
+
+
+def test_preflight_failure_and_failsafe_block_auto_arm():
+    logic = VisionOffboardLogic(
+        simulation_mode=True, enable_offboard=True, enable_auto_arm=True)
+    logic.update_sitl_evidence(True)
+    logic.update_position(0, 0, True, 0)
+    logic.prestream_cycles = 20
+    logic.update_status(False, False, False, 0,
+                        pre_flight_checks_pass=False)
+    assert not logic.auto_arm_allowed()
+    logic.update_status(False, False, True, 0,
+                        pre_flight_checks_pass=True)
+    assert not logic.auto_arm_allowed()
+
+
 def prepare_active_logic():
     """创建已收到有效PX4状态的仿真控制逻辑。."""
     logic = VisionOffboardLogic(
@@ -83,6 +108,7 @@ def prepare_active_logic():
     )
     logic.update_position(0.0, 0.0, True, 0.0)
     logic.update_status(False, False, False, 0.0)
+    logic.update_sitl_evidence(True)
     return logic
 
 

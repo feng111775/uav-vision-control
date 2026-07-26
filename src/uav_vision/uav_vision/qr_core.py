@@ -117,6 +117,28 @@ class QRDecoder:
             x, y, width, height = cv2.boundingRect(
                 corners.astype(np.float32))
             results.append((qr_id, (x, y, width, height), corners))
+        if not results and max(image.shape[:2]) <= 800:
+            # Gazebo and Raspberry Pi preview streams often contain
+            # physically small but sharp codes. Upscaling the whole frame
+            # is bounded and considerably cheaper than learned sliding
+            # windows.
+            enlarged = cv2.resize(
+                image, None, fx=2.0, fy=2.0,
+                interpolation=cv2.INTER_CUBIC)
+            try:
+                ok, texts, points, _ = \
+                    self.detector.detectAndDecodeMulti(enlarged)
+            except (cv2.error, ValueError):
+                ok, texts, points = False, (), None
+            if ok and points is not None:
+                for text, corners in zip(texts, points):
+                    qr_id = self.parse(text)
+                    if qr_id is None:
+                        continue
+                    corners = np.asarray(corners, np.float32) / 2.0
+                    x, y, width, height = cv2.boundingRect(corners)
+                    results.append(
+                        (qr_id, (x, y, width, height), corners))
         return results
 
 
@@ -230,6 +252,7 @@ class QRInventory:
         self.records = {}
         self.start_time = None
         self.last_image_time = None
+        self.image_size = None
 
     def update(self, observations, now):
         """Merge one frame and confirm only consecutive repeated results."""
@@ -287,6 +310,10 @@ class QRInventory:
         return json.dumps(
             {'count': len(self.records),
              'target_qr_id': self.target_qr_id,
+             'complete': self.complete(
+                 self.last_image_time if self.last_image_time is not None
+                 else 0.0),
+             'image_size': list(self.image_size) if self.image_size else [],
              'records': list(self.records.values())},
             ensure_ascii=False, sort_keys=True)
 
@@ -304,28 +331,6 @@ class LaserAlignment:
         self.count = self.count + 1 if valid and \
             error <= self.threshold_px else 0
         return self.count >= self.confirm_frames
-
-
-class QRMissionLogic:
-    """High-level QR mission state machine; PX4 output remains external."""
-
-    STATES = ('WAITING', 'PRESTREAM', 'TAKEOFF', 'QR_SEARCH',
-              'QR_INVENTORY', 'TARGET_ACQUIRE', 'TARGET_APPROACH',
-              'LASER_ALIGN', 'LASER_CONFIRM', 'TRANSIT_TO_LANDING',
-              'DOWN_ACQUIRE', 'ALIGN', 'LAND', 'DISARM', 'FAILSAFE')
-
-    def __init__(self):
-        self.state = 'WAITING'
-        self.transitions = []
-
-    def transition(self, target, now, reason=''):
-        if target not in self.STATES:
-            raise ValueError('invalid mission state')
-        self.transitions.append(
-            {'from': self.state, 'to': target,
-             'time': float(now), 'reason': reason})
-        self.state = target
-        return target
 
 
 def load_layout(path):

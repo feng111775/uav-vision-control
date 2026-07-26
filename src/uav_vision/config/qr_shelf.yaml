@@ -2,7 +2,7 @@ qr_detector_node:
   ros__parameters:
     use_sim_time: true
     image_topic: /camera/front/image_raw
-    detector_backend: hybrid
+    detector_backend: opencv
     model_path: ""
     layout_path: ""
     target_qr_id: 7

@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from uav_vision.qr_core import HybridQRDetector, LaserAlignment
-from uav_vision.qr_core import QRDecoder, QRInventory, QRMissionLogic
+from uav_vision.qr_core import QRDecoder, QRInventory
 from uav_vision.qr_core import QRObservation
 
 
@@ -122,15 +122,6 @@ def test_laser_requires_consecutive_aligned_frames():
     assert not logic.update(3, 4)
     assert logic.update(3, 4)
     assert not logic.update(20, 0)
-
-
-def test_mission_all_states_and_invalid_transition():
-    mission = QRMissionLogic()
-    for index, state in enumerate(QRMissionLogic.STATES[1:]):
-        assert mission.transition(state, index) == state
-    assert len(mission.transitions) == len(QRMissionLogic.STATES) - 1
-    with pytest.raises(ValueError):
-        mission.transition('UNSAFE', 100)
 
 
 def test_detection_compatibility_array():

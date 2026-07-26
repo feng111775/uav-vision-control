@@ -14,6 +14,7 @@ def main():
     for qr_id in range(1, 25):
         code = encoder.encode(str(qr_id))
         code = cv2.resize(code, (512, 512), interpolation=cv2.INTER_NEAREST)
+        code = cv2.cvtColor(code, cv2.COLOR_GRAY2BGR)
         cv2.imwrite(str(material / f'qr_{qr_id:02d}.png'), code)
 
     visuals = []
@@ -25,7 +26,7 @@ def main():
         z = 2.25 - row * .5
         visuals.append(f'''
         <visual name="qr_{qr_id:02d}">
-          <pose>0 {y:.2f} {z:.2f} 0 1.570796 0</pose>
+          <pose>-0.002 {y:.2f} {z:.2f} 0 -1.570796 0</pose>
           <geometry><plane><normal>0 0 1</normal>
             <size>0.19 0.19</size></plane></geometry>
           <material><pbr><metal><albedo_map>
@@ -38,6 +39,8 @@ def main():
   <physics type="ode"><max_step_size>0.004</max_step_size>
     <real_time_factor>1</real_time_factor></physics>
   <gravity>0 0 -9.8</gravity>
+  <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
+  <atmosphere type="adiabatic"/>
   <scene><ambient>0.55 0.55 0.55 1</ambient>
     <background>0.75 0.75 0.75 1</background><shadows>true</shadows></scene>
   <model name="ground"><static>true</static><link name="link">
@@ -61,9 +64,28 @@ def main():
       <cylinder><radius>0.65</radius><length>0.03</length></cylinder>
       </geometry><material><diffuse>0.9 0.05 0.05 1</diffuse>
       </material></visual></link></model>
+  <model name="shelf_validation_camera"><static>true</static>
+    <pose>3 0 1.75 0 0 0</pose><link name="link">
+      <sensor name="camera" type="camera">
+        <topic>/camera/shelf_validation/image</topic>
+        <camera><horizontal_fov>1.0471975512</horizontal_fov>
+          <image><width>640</width><height>480</height>
+            <format>R8G8B8</format></image>
+          <clip><near>0.05</near><far>10</far></clip></camera>
+        <always_on>true</always_on><update_rate>5</update_rate>
+      </sensor>
+    </link>
+  </model>
   <light name="sun" type="directional"><pose>0 0 10 0 0 0</pose>
     <cast_shadows>true</cast_shadows><intensity>1</intensity>
     <direction>-0.3 0.2 -0.9</direction></light>
+  <spherical_coordinates>
+    <surface_model>EARTH_WGS84</surface_model>
+    <world_frame_orientation>ENU</world_frame_orientation>
+    <latitude_deg>47.397971057728974</latitude_deg>
+    <longitude_deg>8.546163739800146</longitude_deg>
+    <elevation>0</elevation>
+  </spherical_coordinates>
 </world></sdf>
 '''
     world_path = root / 'worlds' / 'qr_shelf_world.sdf'

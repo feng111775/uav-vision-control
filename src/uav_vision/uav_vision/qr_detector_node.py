@@ -81,6 +81,7 @@ class QRDetectorNode(Node):
                 data=json.dumps({'ok': False, 'error': str(error)})))
             return
         observations = self.detector.detect(image, now)
+        self.inventory.image_size = (image.shape[1], image.shape[0])
         self.inventory.update(observations, now)
         for obs in observations:
             output = Float32MultiArray(data=[
