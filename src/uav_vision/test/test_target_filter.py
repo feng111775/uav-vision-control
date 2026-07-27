@@ -9,7 +9,8 @@ from uav_vision.target_filter_node import INVALID_DETECTION, TargetFilter
 
 def detection(cx=160.0, confidence=90.0, valid=1.0):
     """生成一帧合法测试检测。"""
-    return [valid, cx, 120.0, 50.0, 48.0, 2400.0, confidence]
+    return [
+        valid, cx, 120.0, 50.0, 48.0, 2400.0, confidence, 320.0, 240.0]
 
 
 def test_confirms_after_three_frames():

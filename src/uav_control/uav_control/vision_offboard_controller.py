@@ -25,6 +25,7 @@ class VisionOffboardLogic:
     PRESTREAM = 'PRESTREAM'
     TAKEOFF = 'TAKEOFF'
     VISION_CONTROL = 'VISION_CONTROL'
+    EXTERNAL_CONTROL = 'EXTERNAL_CONTROL'
     FAILSAFE = 'FAILSAFE'
 
     PRESTREAM_SECONDS = 1.0
@@ -76,6 +77,7 @@ class VisionOffboardLogic:
         self.status_time = None
         self.armed = False
         self.offboard_active = False
+        self.ever_entered_offboard = False
         self.px4_failsafe = False
         self.vision_forward = 0.0
         self.vision_left = 0.0
@@ -138,6 +140,13 @@ class VisionOffboardLogic:
         """更新PX4解锁、导航和failsafe状态。."""
         self.armed = bool(armed)
         self.offboard_active = bool(offboard_active)
+        if self.offboard_active:
+            self.ever_entered_offboard = True
+        elif (self.ever_entered_offboard
+              and self.state != self.EXTERNAL_CONTROL):
+            # PX4模式是最终权限来源。只要曾经确认进入OFFBOARD，后续任何
+            # 非OFFBOARD模式都视为人工或PX4接管，永久停止本次节点输出。
+            self.state = self.EXTERNAL_CONTROL
         self.px4_failsafe = bool(failsafe)
         self.status_time = float(now_seconds)
 
@@ -230,15 +239,15 @@ class VisionOffboardLogic:
         request_mode = False
         request_arm = False
 
-        if self.state not in (self.WAITING, self.FAILSAFE):
+        if self.state not in (
+                self.WAITING, self.EXTERNAL_CONTROL, self.FAILSAFE):
             failure_reason = self.px4_failure_reason(now)
             if failure_reason is not None:
                 self.state = self.FAILSAFE
                 self.failsafe_reason = failure_reason
 
         if self.state == self.WAITING:
-            if all((self.simulation_mode, self.enable_offboard,
-                    self.px4_data_ready(now))):
+            if self.enable_offboard and self.px4_data_ready(now):
                 self.state = self.PRESTREAM
                 self.prestream_start = now
                 self.target_z = -abs(self.target_altitude)
@@ -283,9 +292,9 @@ class VisionOffboardController(Node):
         self.declare_parameter('enable_auto_arm', False)
         self.declare_parameter('target_altitude', 2.0)
         self.declare_parameter('altitude_kp', 0.8)
-        self.declare_parameter('max_vertical_velocity', 0.5)
+        self.declare_parameter('max_z_speed', 0.5)
         self.declare_parameter('vision_timeout', 0.3)
-        self.declare_parameter('max_horizontal_velocity', 0.3)
+        self.declare_parameter('max_xy_speed', 0.3)
         self.declare_parameter('takeoff_tolerance', 0.15)
         self.declare_parameter('takeoff_timeout', 25.0)
         self.declare_parameter('px4_status_timeout', 1.5)
@@ -307,20 +316,18 @@ class VisionOffboardController(Node):
             'vehicle_status_topic', '/fmu/out/vehicle_status_v1')
 
         names = ('simulation_mode', 'enable_offboard', 'enable_auto_arm',
-                 'target_altitude', 'altitude_kp', 'max_vertical_velocity',
-                 'vision_timeout', 'max_horizontal_velocity',
+                 'target_altitude', 'altitude_kp', 'max_z_speed',
+                 'vision_timeout', 'max_xy_speed',
                  'takeoff_tolerance', 'takeoff_timeout',
                  'px4_status_timeout', 'local_position_timeout')
         values = {name: self.get_parameter(name).value for name in names}
+        values['max_vertical_velocity'] = values.pop('max_z_speed')
+        values['max_horizontal_velocity'] = values.pop('max_xy_speed')
         self.logic = VisionOffboardLogic(**values)
 
         if self.logic.enable_auto_arm and not self.logic.simulation_mode:
             self.get_logger().error(
                 '拒绝自动解锁：enable_auto_arm=true但simulation_mode=false')
-        if self.logic.enable_offboard and not self.logic.simulation_mode:
-            self.get_logger().error(
-                '拒绝激活控制：enable_offboard只允许在simulation_mode中使用')
-
         px4_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -458,6 +465,13 @@ class VisionOffboardController(Node):
 
         north, east, down, request_mode, request_arm = self.logic.step(
             self.now_seconds())
+        if self.logic.state == self.logic.EXTERNAL_CONTROL:
+            if self.logic.state != self.last_logged_state:
+                self.get_logger().warning(
+                    '控制状态：EXTERNAL_CONTROL；PX4已退出OFFBOARD，'
+                    '停止全部Offboard输出且本次运行不再请求模式')
+                self.last_logged_state = self.logic.state
+            return
         if self.logic.state == self.logic.FAILSAFE:
             if not self.land_requested and self.logic.armed:
                 self.publish_command(VehicleCommand.VEHICLE_CMD_NAV_LAND)
@@ -480,7 +494,7 @@ class VisionOffboardController(Node):
                 param1=1.0,
                 param2=6.0,
             )
-            self.get_logger().info('已请求SITL进入Offboard模式')
+            self.get_logger().info('已请求PX4进入Offboard模式')
         if request_arm and self.logic.auto_arm_allowed():
             self.publish_command(
                 VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM,

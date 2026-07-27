@@ -3,7 +3,10 @@
 Publishes `std_msgs/msg/Float32MultiArray` on
 `/vision/h7/detection` in this order:
 
-`[valid, cx, cy, width, height, area, confidence]`
+`[valid, cx, cy, width, height, area, confidence, image_width, image_height]`
+
+最后两个字段来自实际采集到的帧，而不是仅使用请求的分辨率。下游因此可以
+按画面宽高计算归一化误差，并与固定 320×240 的 H7 Plus 数据安全混用。
 
 Keep `h7_bridge_node` stopped while this publisher is running.
 

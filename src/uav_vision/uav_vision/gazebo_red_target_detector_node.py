@@ -10,8 +10,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float32MultiArray
 
-
-INVALID_DETECTION = [0.0] * 7
+from .detection import INVALID_DETECTION
 
 
 class RedTargetDetector:
@@ -54,7 +53,7 @@ class RedTargetDetector:
             [red2_h_max, 255, 255], dtype=np.uint8)
 
     def detect(self, image):
-        """Return a seven-value detection, debug image, and binary mask."""
+        """Return a nine-value detection, debug image, and binary mask."""
         if not isinstance(image, np.ndarray) or image.size == 0:
             return list(INVALID_DETECTION), None, None
         if image.ndim != 3 or image.shape[2] not in (3, 4):
@@ -83,8 +82,10 @@ class RedTargetDetector:
             contour for contour in contours
             if cv2.contourArea(contour) >= self.min_area
         ]
+        invalid = list(INVALID_DETECTION)
+        invalid[7:] = [float(width), float(height)]
         if not candidates:
-            return list(INVALID_DETECTION), debug_image, mask
+            return invalid, debug_image, mask
 
         contour = max(candidates, key=cv2.contourArea)
         area = float(cv2.contourArea(contour))
@@ -93,7 +94,7 @@ class RedTargetDetector:
         center_y = min(float(height - 1), max(0.0, y + box_height / 2.0))
         result = [
             1.0, center_x, center_y, float(box_width), float(box_height),
-            area, self.confidence,
+            area, self.confidence, float(width), float(height),
         ]
         if not all(math.isfinite(value) for value in result):
             return list(INVALID_DETECTION), debug_image, mask
@@ -151,7 +152,7 @@ class GazeboRedTargetDetectorNode(Node):
             'Gazebo red detector started; H7 bridge must remain stopped')
 
     def publish_detection(self, values):
-        """Publish exactly seven finite float values."""
+        """Publish exactly nine finite float values."""
         message = Float32MultiArray()
         message.data = [float(value) for value in values]
         self.publisher.publish(message)

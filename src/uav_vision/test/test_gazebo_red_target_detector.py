@@ -29,14 +29,16 @@ def test_red_target_center_is_correct():
 def test_no_target_outputs_all_zero():
     result, _, _ = RedTargetDetector().detect(
         np.zeros((240, 320, 3), dtype=np.uint8))
-    assert result == INVALID_DETECTION
+    assert result[:7] == INVALID_DETECTION[:7]
+    assert result[7:] == [320.0, 240.0]
 
 
 def test_small_red_noise_is_filtered():
     detector = RedTargetDetector(min_area=100, morphology_kernel=1)
     result, _, _ = detector.detect(
         image_with_rectangles([((10, 10), (14, 14))]))
-    assert result == INVALID_DETECTION
+    assert result[:7] == INVALID_DETECTION[:7]
+    assert result[7:] == [320.0, 240.0]
 
 
 def test_largest_valid_target_is_selected():
@@ -71,7 +73,8 @@ def test_output_is_finite_h7_compatible_array():
     detector = RedTargetDetector(min_area=1, morphology_kernel=1)
     result, _, _ = detector.detect(
         image_with_rectangles([((1, 1), (30, 30))]))
-    assert len(result) == 7
+    assert len(result) == 9
+    assert result[7:] == [320.0, 240.0]
     assert result[0] in (0.0, 1.0)
     assert all(math.isfinite(value) for value in result)
     assert 0.0 <= result[6] <= 100.0

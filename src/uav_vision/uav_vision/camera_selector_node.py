@@ -1,4 +1,4 @@
-"""Select one fresh seven-field detection from front and down cameras."""
+"""Select one fresh resolution-aware detection from two cameras."""
 
 import math
 
@@ -9,9 +9,10 @@ from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
 from std_msgs.msg import String
 
+from .detection import INVALID_DETECTION
+from .detection import normalized_geometry
+from .detection import validate_detection
 
-INVALID_DETECTION = [0.0] * 7
-VALUE_COUNT = 7
 
 
 class CameraSelector:
@@ -22,8 +23,9 @@ class CameraSelector:
     ALIGN = 'ALIGN'
 
     def __init__(self, mode='auto', front_confirm_frames=3,
-                 front_area_threshold=15000.0,
-                 front_size_threshold=140.0, down_confirm_frames=3,
+                 front_area_ratio_threshold=0.1,
+                 front_width_ratio_threshold=0.35,
+                 front_height_ratio_threshold=0.35, down_confirm_frames=3,
                  down_hold_frames=2, down_lost_frames=5,
                  source_timeout=0.3, switch_cooldown=2.0):
         """Validate thresholds and initialize selection state."""
@@ -34,11 +36,12 @@ class CameraSelector:
         if any(int(value) < 1 for value in counts):
             raise ValueError('frame thresholds must be at least 1')
         numeric = (
-            front_area_threshold, front_size_threshold, source_timeout,
-            switch_cooldown)
+            front_area_ratio_threshold, front_width_ratio_threshold,
+            front_height_ratio_threshold, source_timeout, switch_cooldown)
         if not all(math.isfinite(float(value)) for value in numeric):
             raise ValueError('selector thresholds must be finite')
-        if front_area_threshold < 0.0 or front_size_threshold < 0.0:
+        ratios = numeric[:3]
+        if any(value < 0.0 or value > 1.0 for value in ratios):
             raise ValueError('front switch thresholds cannot be negative')
         if source_timeout <= 0.0:
             raise ValueError('source_timeout must be positive')
@@ -49,8 +52,12 @@ class CameraSelector:
 
         self.mode = mode
         self.front_confirm_frames = int(front_confirm_frames)
-        self.front_area_threshold = float(front_area_threshold)
-        self.front_size_threshold = float(front_size_threshold)
+        self.front_area_ratio_threshold = float(
+            front_area_ratio_threshold)
+        self.front_width_ratio_threshold = float(
+            front_width_ratio_threshold)
+        self.front_height_ratio_threshold = float(
+            front_height_ratio_threshold)
         self.down_confirm_frames = int(down_confirm_frames)
         self.down_hold_frames = int(down_hold_frames)
         self.down_lost_frames = int(down_lost_frames)
@@ -72,19 +79,8 @@ class CameraSelector:
 
     @staticmethod
     def validate(values):
-        """Validate and normalize one seven-field detection."""
-        if len(values) != VALUE_COUNT:
-            raise ValueError('detection must contain exactly 7 values')
-        data = [float(value) for value in values]
-        if not all(math.isfinite(value) for value in data):
-            raise ValueError('detection values must be finite')
-        if data[0] not in (0.0, 1.0):
-            raise ValueError('valid must be 0 or 1')
-        if any(value < 0.0 for value in data[1:6]):
-            raise ValueError('detection geometry cannot be negative')
-        if not 0.0 <= data[6] <= 100.0:
-            raise ValueError('confidence must be in [0, 100]')
-        return data
+        """Validate one nine-field resolution-aware detection."""
+        return validate_detection(values)
 
     @staticmethod
     def is_valid(detection):
@@ -92,11 +88,15 @@ class CameraSelector:
         return detection[0] == 1.0
 
     def front_is_close(self, detection):
-        """Apply OR-based area/size approach threshold."""
-        return self.is_valid(detection) and (
-            detection[5] >= self.front_area_threshold
-            or max(detection[3], detection[4])
-            >= self.front_size_threshold)
+        """Apply resolution-independent area and target-size thresholds."""
+        if not self.is_valid(detection):
+            return False
+        _, _, area_ratio, width_ratio, height_ratio = normalized_geometry(
+            detection)
+        return (
+            area_ratio >= self.front_area_ratio_threshold
+            or width_ratio >= self.front_width_ratio_threshold
+            or height_ratio >= self.front_height_ratio_threshold)
 
     def update_front(self, values, now_seconds):
         """Record a front frame and advance front confirmation."""
@@ -198,8 +198,9 @@ class CameraSelectorNode(Node):
             'selected_detection_topic': '/vision/selected_detection',
             'selected_camera_topic': '/vision/selected_camera',
             'front_confirm_frames': 3,
-            'front_area_threshold': 15000.0,
-            'front_size_threshold': 140.0,
+            'front_area_ratio_threshold': 0.1,
+            'front_width_ratio_threshold': 0.35,
+            'front_height_ratio_threshold': 0.35,
             'down_confirm_frames': 3,
             'down_hold_frames': 2,
             'down_lost_frames': 5,
@@ -213,8 +214,10 @@ class CameraSelectorNode(Node):
         self.selector = CameraSelector(**{
             name: self.get_parameter(name).value
             for name in (
-                'mode', 'front_confirm_frames', 'front_area_threshold',
-                'front_size_threshold', 'down_confirm_frames',
+                'mode', 'front_confirm_frames',
+                'front_area_ratio_threshold',
+                'front_width_ratio_threshold',
+                'front_height_ratio_threshold', 'down_confirm_frames',
                 'down_hold_frames', 'down_lost_frames', 'source_timeout',
                 'switch_cooldown')
         })

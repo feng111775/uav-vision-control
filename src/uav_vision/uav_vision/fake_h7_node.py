@@ -33,6 +33,8 @@ class FakeH7Node(Node):
             48.0,
             2400.0,
             90.0,
+            320.0,
+            240.0,
         ]
         self.publisher.publish(message)
         self.sample_index += 1

@@ -13,7 +13,8 @@ class TestH7Parser(unittest.TestCase):
         self.assertEqual(
             H7BridgeNode.parse_line(
                 'TARGET,1,160,120,50,48,2400,90'),
-            [1.0, 160.0, 120.0, 50.0, 48.0, 2400.0, 90.0],
+            [1.0, 160.0, 120.0, 50.0, 48.0, 2400.0, 90.0,
+             320.0, 240.0],
         )
 
     def test_invalid_target_lines(self):

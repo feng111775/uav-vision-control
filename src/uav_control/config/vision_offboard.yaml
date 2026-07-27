@@ -5,9 +5,9 @@ vision_offboard_controller:
     enable_auto_arm: false
     target_altitude: 2.0
     altitude_kp: 0.8
-    max_vertical_velocity: 0.5
+    max_z_speed: 0.5
     vision_timeout: 0.3
-    max_horizontal_velocity: 0.3
+    max_xy_speed: 0.3
     takeoff_tolerance: 0.15
     takeoff_timeout: 25.0
     px4_status_timeout: 1.5

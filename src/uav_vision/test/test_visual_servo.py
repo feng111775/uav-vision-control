@@ -8,9 +8,12 @@ from uav_vision.visual_servo_node import ZERO_VELOCITY
 from uav_vision.visual_servo_node import VisualServoController
 
 
-def detection(cx=160.0, cy=120.0, valid=1.0):
+def detection(cx=160.0, cy=120.0, valid=1.0,
+              image_width=320.0, image_height=240.0):
     """生成一帧滤波检测数据。"""
-    return [valid, cx, cy, 50.0, 48.0, 2400.0, 90.0]
+    return [
+        valid, cx, cy, 50.0, 48.0, 2400.0, 90.0,
+        image_width, image_height]
 
 
 def test_center_target_outputs_zero():
@@ -64,7 +67,8 @@ def test_four_direction_signs(cx, cy, x_sign, y_sign):
 
 def test_deadband_outputs_zero_per_axis():
     """中心死区内的偏差不得产生速度。"""
-    controller = VisualServoController(deadband_x=10.0, deadband_y=10.0)
+    controller = VisualServoController(
+        deadband_x=10.0 / 160.0, deadband_y=10.0 / 120.0)
     assert controller.process(
         detection(cx=170.0, cy=110.0), 1.0) == ZERO_VELOCITY
 
@@ -95,7 +99,7 @@ def test_stale_input_outputs_zero():
 
 @pytest.mark.parametrize('values', [
     [1.0, 160.0],
-    [1.0, 160.0, 120.0, 50.0, 48.0, 2400.0, 90.0, 0.0],
+    [1.0, 160.0, 120.0, 50.0, 48.0, 2400.0, 90.0, 320.0],
     [2.0, 160.0, 120.0, 50.0, 48.0, 2400.0, 90.0],
     [1.0, math.nan, 120.0, 50.0, 48.0, 2400.0, 90.0],
     [1.0, 160.0, 120.0, -1.0, 48.0, 2400.0, 90.0],
@@ -108,3 +112,14 @@ def test_invalid_messages_are_rejected_and_clear_velocity(values):
     with pytest.raises(ValueError):
         controller.process(values, 1.1)
     assert controller.velocity_at(1.1) == ZERO_VELOCITY
+
+
+def test_same_relative_position_has_same_normalized_error():
+    """320x240 and 640x480 produce identical normalized commands."""
+    controller = VisualServoController(
+        kp_x=0.2, kp_y=0.2, deadband_x=0.0, deadband_y=0.0)
+    small = controller.process(detection(
+        cx=240.0, cy=60.0, image_width=320.0, image_height=240.0), 1.0)
+    large = controller.process(detection(
+        cx=480.0, cy=120.0, image_width=640.0, image_height=480.0), 1.1)
+    assert small == pytest.approx(large)

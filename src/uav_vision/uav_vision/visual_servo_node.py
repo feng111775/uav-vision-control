@@ -9,22 +9,22 @@ from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
 from std_msgs.msg import String
 
+from .detection import normalized_geometry
+from .detection import validate_detection
 
-VALUE_COUNT = 7
 ZERO_VELOCITY = (0.0, 0.0)
 
 
 class VisualServoController:
     """与ROS消息解耦的视觉伺服速度计算和超时状态。"""
 
-    def __init__(self, center_x=160.0, center_y=120.0,
-                 kp_x=0.002, kp_y=0.002,
-                 deadband_x=10.0, deadband_y=10.0,
+    def __init__(self, kp_x=0.15, kp_y=0.15,
+                 deadband_x=0.05, deadband_y=0.05,
                  max_velocity=0.3, stale_timeout=0.3,
                  sign_x=-1.0, sign_y=-1.0,
                  camera_mode='down', front_approach_velocity=0.12):
-        parameters = [center_x, center_y, kp_x, kp_y, deadband_x,
-                      deadband_y, max_velocity, stale_timeout,
+        parameters = [kp_x, kp_y, deadband_x, deadband_y,
+                      max_velocity, stale_timeout,
                       sign_x, sign_y]
         if not all(math.isfinite(float(value)) for value in parameters):
             raise ValueError('视觉伺服参数必须是有限数值')
@@ -42,8 +42,6 @@ class VisualServoController:
                 or front_approach_velocity < 0.0):
             raise ValueError('front_approach_velocity必须是有限非负数')
 
-        self.center_x = float(center_x)
-        self.center_y = float(center_y)
         self.kp_x = float(kp_x)
         self.kp_y = float(kp_y)
         self.deadband_x = float(deadband_x)
@@ -60,23 +58,11 @@ class VisualServoController:
 
     @staticmethod
     def validate(values):
-        """严格校验七字段滤波检测数据。"""
-        if len(values) != VALUE_COUNT:
-            raise ValueError(
-                '检测数组必须正好包含7个元素，实际为%d' % len(values))
+        """严格校验携带图像尺寸的九字段滤波检测数据。"""
         try:
-            data = [float(value) for value in values]
+            data = validate_detection(values)
         except (TypeError, ValueError) as error:
             raise ValueError('检测数组包含非法数值') from error
-
-        if not all(math.isfinite(value) for value in data):
-            raise ValueError('检测数组中的所有数值必须有限')
-        if data[0] not in (0.0, 1.0):
-            raise ValueError('valid只能是0或1')
-        if any(value < 0.0 for value in data[1:6]):
-            raise ValueError('坐标、尺寸和面积不能为负数')
-        if not 0.0 <= data[6] <= 100.0:
-            raise ValueError('confidence必须在0到100之间')
         return data
 
     @staticmethod
@@ -96,8 +82,7 @@ class VisualServoController:
             self.latest_velocity = ZERO_VELOCITY
             return self.latest_velocity
 
-        error_x = data[1] - self.center_x
-        error_y = data[2] - self.center_y
+        error_x, error_y, _, _, _ = normalized_geometry(data)
         left_velocity = 0.0
         forward_velocity = 0.0
 
@@ -142,12 +127,10 @@ class VisualServoNode(Node):
 
     def __init__(self):
         super().__init__('visual_servo_node')
-        self.declare_parameter('center_x', 160.0)
-        self.declare_parameter('center_y', 120.0)
-        self.declare_parameter('kp_x', 0.002)
-        self.declare_parameter('kp_y', 0.002)
-        self.declare_parameter('deadband_x', 10.0)
-        self.declare_parameter('deadband_y', 10.0)
+        self.declare_parameter('kp_x', 0.15)
+        self.declare_parameter('kp_y', 0.15)
+        self.declare_parameter('deadband_x', 0.05)
+        self.declare_parameter('deadband_y', 0.05)
         self.declare_parameter('max_velocity', 0.3)
         self.declare_parameter('stale_timeout', 0.3)
         self.declare_parameter('sign_x', -1.0)
@@ -162,8 +145,7 @@ class VisualServoNode(Node):
         self.declare_parameter(
             'vision_velocity_topic', '/control/vision_velocity')
 
-        names = ('center_x', 'center_y', 'kp_x', 'kp_y',
-                 'deadband_x', 'deadband_y', 'max_velocity',
+        names = ('kp_x', 'kp_y', 'deadband_x', 'deadband_y', 'max_velocity',
                  'stale_timeout', 'sign_x', 'sign_y', 'camera_mode',
                  'front_approach_velocity')
         values = {name: self.get_parameter(name).value for name in names}

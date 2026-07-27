@@ -251,8 +251,8 @@ ros2 topic echo /fmu/out/vehicle_status_v1 --once
 | `enable_auto_arm` | `false` | 是否允许 SITL 自动解锁 |
 | `selector_mode` | `auto` | `front`、`down` 或自动选择 |
 | `target_altitude` | `2.0` m | 起飞目标高度 |
-| `max_horizontal_velocity` | `0.3` m/s | PX4 水平速度总限幅 |
-| `max_vertical_velocity` | `0.5` m/s | PX4 垂直速度限幅 |
+| `max_xy_speed` | `0.3` m/s | PX4 水平速度总限幅 |
+| `max_z_speed` | `0.5` m/s | PX4 垂直速度限幅 |
 | `front_approach_velocity` | `0.12` m/s | 前视有效时接近速度 |
 | `visual_servo.max_velocity` | `0.15` m/s | 视觉伺服单轴限幅 |
 | `vision_timeout` | `0.3` s | 控制器视觉速度超时 |
@@ -261,8 +261,9 @@ ros2 topic echo /fmu/out/vehicle_status_v1 --once
 | `camera_source_timeout` | `0.3` s | 当前相机标签超时 |
 | `px4_status_timeout` | `1.5` s | PX4 状态超时 |
 | `local_position_timeout` | `0.5` s | PX4 本地位置超时 |
-| `front_area_threshold` | `15000` px² | 前视切换面积阈值 |
-| `front_size_threshold` | `140` px | 前视切换边长阈值 |
+| `front_area_ratio_threshold` | `0.0488` | 前视目标面积/画面面积阈值 |
+| `front_width_ratio_threshold` | `0.4375` | 前视目标宽度/画面宽度阈值 |
+| `front_height_ratio_threshold` | `0.5833` | 前视目标高度/画面高度阈值 |
 | `front_confirm_frames` | `3` | 前视接近连续确认帧 |
 | `down_confirm_frames` | `3` | 下视有效连续确认帧 |
 | `down_hold_frames` | `2` | 下视短时丢失保持帧 |
@@ -277,6 +278,7 @@ launch 的 `enable_offboard` 和 `enable_auto_arm` 默认值必须保持为 `fal
 
 ```text
 WAITING → PRESTREAM → TAKEOFF → VISION_CONTROL
+                              ├→ EXTERNAL_CONTROL
                               └→ FAILSAFE → PX4 LAND
 ```
 
@@ -284,6 +286,8 @@ WAITING → PRESTREAM → TAKEOFF → VISION_CONTROL
 - `PRESTREAM`：发布 20 Hz Offboard 心跳与零速度预流，然后请求 Offboard。
 - `TAKEOFF`：只进行高度闭环，不使用水平视觉速度。
 - `VISION_CONTROL`：保持高度并应用视觉水平速度。
+- `EXTERNAL_CONTROL`：曾进入 OFFBOARD 后 PX4 切到任意其他模式，永久停止
+  本次进程的 Offboard 心跳和设定值，不重新抢回模式。
 - `FAILSAFE`：单次请求 PX4 正常 LAND，停止继续发布 Offboard。
 
 相机状态：
@@ -294,6 +298,23 @@ SEARCH/front → DOWN_ACQUIRE/front → ALIGN/down
 
 当前没有任务完成自动判定状态；最终验证在稳定 ALIGN 后由 PX4 控制台请求正常
 LAND。后续若增加自动任务降落，应在独立任务层实现，不能破坏底层安全状态机。
+
+第一次真机红目标测试使用独立的
+[`red_target_hardware.yaml`](src/uav_vision/config/red_target_hardware.yaml)
+和 `red_target_hardware.launch.py`，不要复用 SITL YAML。安全监视命令：
+
+```bash
+ros2 launch uav_vision red_target_hardware.launch.py
+```
+
+确认两路检测、PX4 状态和人工模式切换均正常后，才显式启用控制：
+
+```bash
+ros2 launch uav_vision red_target_hardware.launch.py enable_offboard:=true
+```
+
+真机 launch 强制 `simulation_mode=false`、`enable_auto_arm=false`；稳定 ALIGN
+后只保持 0.8 m 高度，必须由遥控器或 QGroundControl 请求 LAND。
 
 ## Raspberry Pi 与 OpenMV
 

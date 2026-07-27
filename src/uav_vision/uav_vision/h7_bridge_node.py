@@ -8,6 +8,8 @@ import serial
 from serial import SerialException
 from std_msgs.msg import Float32MultiArray
 
+from .detection import validate_detection
+
 
 class H7BridgeNode(Node):
     """读取并校验H7Plus串口协议。"""
@@ -18,9 +20,16 @@ class H7BridgeNode(Node):
         self.declare_parameter('baudrate', 115200)
         self.declare_parameter(
             'detection_topic', '/vision/h7/detection')
+        self.declare_parameter('image_width', 320.0)
+        self.declare_parameter('image_height', 240.0)
         self.port = self.get_parameter('port').value
         self.baudrate = self.get_parameter('baudrate').value
         self.detection_topic = self.get_parameter('detection_topic').value
+        self.image_width = float(self.get_parameter('image_width').value)
+        self.image_height = float(self.get_parameter('image_height').value)
+        validate_detection([
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            self.image_width, self.image_height])
 
         self.publisher = self.create_publisher(
             Float32MultiArray, self.detection_topic, 10)
@@ -52,7 +61,7 @@ class H7BridgeNode(Node):
             self.warn_throttled(f'无法打开H7Plus串口：{error}')
 
     @staticmethod
-    def parse_line(line):
+    def parse_line(line, image_width=320.0, image_height=240.0):
         """校验一行协议并返回按发布顺序排列的数据。"""
         fields = line.strip().split(',')
         if len(fields) != 8:
@@ -79,7 +88,9 @@ class H7BridgeNode(Node):
         if not 0.0 <= confidence <= 100.0:
             raise ValueError('confidence必须在0到100之间')
 
-        return [float(valid), cx, cy, width, height, area, confidence]
+        return validate_detection([
+            float(valid), cx, cy, width, height, area, confidence,
+            image_width, image_height])
 
     def read_serial(self):
         """读取当前可用数据，错误行不会终止节点。"""
@@ -93,7 +104,8 @@ class H7BridgeNode(Node):
                     break
                 try:
                     line = raw_line.decode('utf-8').strip()
-                    data = self.parse_line(line)
+                    data = self.parse_line(
+                        line, self.image_width, self.image_height)
                 except (UnicodeDecodeError, ValueError) as error:
                     self.warn_throttled(f'忽略无效H7Plus数据：{error}')
                     continue

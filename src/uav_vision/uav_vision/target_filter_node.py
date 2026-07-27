@@ -1,15 +1,13 @@
 """对H7Plus目标检测结果进行确认、丢失保持和指数平滑。"""
 
-import math
-
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
 
+from .detection import INVALID_DETECTION
+from .detection import validate_detection
 
-INVALID_DETECTION = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-VALUE_COUNT = 7
 
 
 class TargetFilter:
@@ -37,28 +35,15 @@ class TargetFilter:
 
     @staticmethod
     def validate(values):
-        """严格校验七字段检测数组并返回普通浮点数列表。"""
-        if len(values) != VALUE_COUNT:
-            raise ValueError(
-                '检测数组必须正好包含7个元素，实际为%d' % len(values))
-
+        """严格校验九字段检测数组并返回普通浮点数列表。"""
         try:
-            data = [float(value) for value in values]
+            data = validate_detection(values)
         except (TypeError, ValueError) as error:
             raise ValueError('检测数组包含非法数值') from error
-
-        if not all(math.isfinite(value) for value in data):
-            raise ValueError('检测数组中的所有数值必须有限')
-        if data[0] not in (0.0, 1.0):
-            raise ValueError('valid只能是0或1')
-        if any(value < 0.0 for value in data[1:6]):
-            raise ValueError('坐标、尺寸和面积不能为负数')
-        if not 0.0 <= data[6] <= 100.0:
-            raise ValueError('confidence必须在0到100之间')
         return data
 
     def process(self, values):
-        """处理一帧数据并返回七字段滤波结果。"""
+        """处理一帧数据并返回九字段滤波结果。"""
         data = self.validate(values)
         qualified = data[0] == 1.0 and data[6] >= self.min_confidence
         if not qualified:

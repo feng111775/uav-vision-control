@@ -6,11 +6,16 @@ from uav_vision.camera_selector_node import CameraSelector
 from uav_vision.camera_selector_node import INVALID_DETECTION
 
 
-def detection(valid=True, area=1000.0, width=40.0, height=40.0):
-    """Build one valid seven-field detection."""
+def detection(valid=True, area=1000.0, width=40.0, height=40.0,
+              image_width=320.0, image_height=240.0):
+    """Build one valid nine-field detection."""
     if not valid:
-        return list(INVALID_DETECTION)
-    return [1.0, 160.0, 120.0, width, height, area, 90.0]
+        result = list(INVALID_DETECTION)
+        result[7:] = [image_width, image_height]
+        return result
+    return [
+        1.0, image_width / 2.0, image_height / 2.0,
+        width, height, area, 90.0, image_width, image_height]
 
 
 @pytest.mark.parametrize(('mode', 'expected_camera'), [
@@ -42,7 +47,7 @@ def test_auto_starts_with_front_camera():
 def test_front_confirmation_switches_to_down_then_aligns():
     """A close front target then confirmed down target enters ALIGN."""
     selector = CameraSelector(
-        front_confirm_frames=3, front_area_threshold=2500.0,
+        front_confirm_frames=3, front_area_ratio_threshold=0.03,
         down_confirm_frames=2)
     for index in range(3):
         selector.update_front(detection(area=3000.0), index * 0.01)
@@ -59,7 +64,7 @@ def test_front_confirmation_switches_to_down_then_aligns():
 def test_down_acquire_keeps_fresh_front_control_until_down_confirmed():
     """DOWN_ACQUIRE must not forward an invalid down stream to control."""
     selector = CameraSelector(
-        front_confirm_frames=1, front_area_threshold=2500.0,
+        front_confirm_frames=1, front_area_ratio_threshold=0.03,
         down_confirm_frames=2, down_lost_frames=4)
     selector.update_front(detection(area=3000.0), 0.0)
     assert selector.state == selector.DOWN_ACQUIRE
@@ -76,7 +81,7 @@ def test_down_acquire_keeps_fresh_front_control_until_down_confirmed():
 def test_down_acquire_waits_safely_through_front_loss():
     """Front loss during handoff must stop motion without cancelling acquire."""
     selector = CameraSelector(
-        front_confirm_frames=1, front_area_threshold=2500.0,
+        front_confirm_frames=1, front_area_ratio_threshold=0.03,
         down_confirm_frames=2)
     selector.update_front(detection(area=3000.0), 0.0)
     selector.update_front(detection(valid=False), 0.01)
@@ -96,7 +101,7 @@ def test_sustained_down_loss_returns_to_front_search():
     selector = CameraSelector(
         front_confirm_frames=1, down_confirm_frames=1,
         down_hold_frames=2, down_lost_frames=4,
-        front_area_threshold=2500.0)
+        front_area_ratio_threshold=0.03)
     selector.update_front(detection(area=3000.0), 0.0)
     selector.update_down(detection(area=900.0), 0.01)
     assert selector.state == selector.ALIGN
@@ -111,7 +116,7 @@ def test_down_failure_cooldown_prevents_immediate_reswitch():
     selector = CameraSelector(
         front_confirm_frames=1, down_confirm_frames=1,
         down_hold_frames=1, down_lost_frames=2,
-        front_area_threshold=2500.0, switch_cooldown=2.0)
+        front_area_ratio_threshold=0.03, switch_cooldown=2.0)
     selector.update_front(detection(area=3000.0), 0.0)
     selector.update_down(detection(area=900.0), 0.05)
     selector.update_down(detection(valid=False), 0.1)
@@ -129,7 +134,7 @@ def test_short_down_loss_holds_without_camera_chatter():
     selector = CameraSelector(
         front_confirm_frames=2, down_confirm_frames=1,
         down_hold_frames=2, down_lost_frames=5,
-        front_area_threshold=2500.0)
+        front_area_ratio_threshold=0.03)
     selector.update_front(detection(area=3000.0), 0.0)
     selector.update_front(detection(area=3000.0), 0.01)
     selector.update_down(detection(area=900.0), 0.02)
@@ -176,7 +181,7 @@ def test_only_selected_detection_enters_output():
     selector.update_front(detection(area=1111.0), 0.0)
     selector.update_down(detection(area=9999.0), 0.0)
     selected = selector.selected(0.1)[2]
-    assert len(selected) == 7
+    assert len(selected) == 9
     assert selected[5] == 1111.0
     assert 9999.0 not in selected
 
@@ -186,3 +191,23 @@ def test_invalid_mode_is_rejected(mode):
     """Only the documented selection modes are accepted."""
     with pytest.raises(ValueError, match='mode'):
         CameraSelector(mode=mode)
+
+
+def test_switch_threshold_is_resolution_independent():
+    """Equivalent target ratios must switch identically at both sizes."""
+    small = CameraSelector(
+        front_confirm_frames=1, front_area_ratio_threshold=0.08,
+        front_width_ratio_threshold=0.5,
+        front_height_ratio_threshold=0.5)
+    large = CameraSelector(
+        front_confirm_frames=1, front_area_ratio_threshold=0.08,
+        front_width_ratio_threshold=0.5,
+        front_height_ratio_threshold=0.5)
+    small.update_front(detection(
+        area=8000.0, width=80.0, height=100.0,
+        image_width=320.0, image_height=240.0), 0.0)
+    large.update_front(detection(
+        area=32000.0, width=160.0, height=200.0,
+        image_width=640.0, image_height=480.0), 0.0)
+    assert small.state == small.DOWN_ACQUIRE
+    assert large.state == large.DOWN_ACQUIRE

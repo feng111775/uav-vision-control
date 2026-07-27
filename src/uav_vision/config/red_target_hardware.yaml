@@ -1,59 +1,54 @@
-front_red_target_detector:
+pi_camera_vision_node:
   ros__parameters:
-    use_sim_time: true
-    image_topic: /camera/front/image_raw
+    source_type: picamera2
+    source: ""
+    device: 0
+    loop: false
+    width: 640
+    height: 480
+    fps: 15.0
+    rotation: 0
+    flip_horizontal: false
+    flip_vertical: false
+    min_area: 100.0
+    morphology_kernel: 5
+    red1_h_min: 0
+    red1_h_max: 10
+    red2_h_min: 170
+    red2_h_max: 179
+    saturation_min: 100
+    value_min: 80
     detection_topic: /vision/front/detection
-    debug_image_topic: /vision/front/debug_image
-    min_area: 100.0
-    confidence: 90.0
-    morphology_kernel: 5
-    red1_h_min: 0
-    red1_h_max: 10
-    red2_h_min: 170
-    red2_h_max: 179
-    saturation_min: 100
-    value_min: 70
-    debug: true
+    display: false
 
-down_red_target_detector:
+h7_bridge_node:
   ros__parameters:
-    use_sim_time: true
-    image_topic: /camera/down/image_raw
+    port: /dev/ttyACM0
+    baudrate: 115200
+    image_width: 320.0
+    image_height: 240.0
     detection_topic: /vision/down/detection
-    debug_image_topic: /vision/down/debug_image
-    min_area: 100.0
-    confidence: 90.0
-    morphology_kernel: 5
-    red1_h_min: 0
-    red1_h_max: 10
-    red2_h_min: 170
-    red2_h_max: 179
-    saturation_min: 100
-    value_min: 70
-    debug: true
 
 camera_selector_node:
   ros__parameters:
-    use_sim_time: true
     mode: auto
     front_detection_topic: /vision/front/detection
     down_detection_topic: /vision/down/detection
     selected_detection_topic: /vision/selected_detection
     selected_camera_topic: /vision/selected_camera
     front_confirm_frames: 3
-    front_area_ratio_threshold: 0.048828125
-    front_width_ratio_threshold: 0.4375
-    front_height_ratio_threshold: 0.5833333333
+    front_area_ratio_threshold: 0.10
+    front_width_ratio_threshold: 0.40
+    front_height_ratio_threshold: 0.40
     down_confirm_frames: 3
     down_hold_frames: 2
     down_lost_frames: 5
-    source_timeout: 0.3
+    source_timeout: 0.4
     switch_cooldown: 2.0
     publish_rate: 20.0
 
 target_filter_node:
   ros__parameters:
-    use_sim_time: true
     alpha: 0.35
     min_confidence: 50.0
     confirm_frames: 3
@@ -63,36 +58,34 @@ target_filter_node:
 
 visual_servo_node:
   ros__parameters:
-    use_sim_time: true
-    kp_x: 0.32
-    kp_y: 0.24
-    deadband_x: 0.0625
-    deadband_y: 0.0833333333
+    kp_x: 0.15
+    kp_y: 0.15
+    deadband_x: 0.05
+    deadband_y: 0.05
     max_velocity: 0.15
-    stale_timeout: 0.3
+    stale_timeout: 0.4
     sign_x: -1.0
     sign_y: -1.0
     camera_mode: front
-    front_approach_velocity: 0.12
+    front_approach_velocity: 0.08
     selected_camera_topic: /vision/selected_camera
-    camera_source_timeout: 0.3
+    camera_source_timeout: 0.4
     filtered_detection_topic: /vision/selected_filtered_detection
     vision_velocity_topic: /control/vision_velocity
 
 vision_offboard_controller:
   ros__parameters:
-    use_sim_time: true
-    simulation_mode: true
+    simulation_mode: false
     enable_offboard: false
     enable_auto_arm: false
-    target_altitude: 2.0
-    altitude_kp: 0.8
-    max_z_speed: 0.5
-    max_xy_speed: 0.3
-    vision_timeout: 0.3
-    takeoff_tolerance: 0.15
-    takeoff_timeout: 25.0
-    px4_status_timeout: 1.5
+    target_altitude: 0.8
+    altitude_kp: 0.5
+    max_xy_speed: 0.25
+    max_z_speed: 0.20
+    vision_timeout: 0.4
+    takeoff_tolerance: 0.10
+    takeoff_timeout: 20.0
+    px4_status_timeout: 1.0
     local_position_timeout: 0.5
     vision_velocity_topic: /control/vision_velocity
     offboard_control_mode_topic: /fmu/in/offboard_control_mode
@@ -100,7 +93,3 @@ vision_offboard_controller:
     vehicle_command_topic: /fmu/in/vehicle_command
     vehicle_local_position_topic: /fmu/out/vehicle_local_position_v1
     vehicle_status_topic: /fmu/out/vehicle_status_v1
-
-dual_camera_bridge:
-  ros__parameters:
-    use_sim_time: true

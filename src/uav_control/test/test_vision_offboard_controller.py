@@ -4,6 +4,7 @@ import math
 from unittest.mock import Mock
 
 from px4_msgs.msg import VehicleCommand
+from px4_msgs.msg import VehicleStatus
 import pytest
 
 from uav_control.offboard_control import OffboardControl
@@ -72,6 +73,19 @@ def test_real_mode_rejects_auto_arm():
         enable_auto_arm=True,
     )
     assert not logic.auto_arm_allowed()
+
+
+def test_startup_non_offboard_is_not_external_takeover():
+    """启动时尚未进入OFFBOARD不能误判为人工接管。."""
+    logic = VisionOffboardLogic(
+        simulation_mode=False, enable_offboard=True,
+        enable_auto_arm=False)
+    logic.update_position(0.0, 0.0, True, 0.0)
+    for now in (0.0, 0.2, 0.4):
+        logic.update_status(True, False, False, now)
+        logic.step(now)
+    assert not logic.ever_entered_offboard
+    assert logic.state == logic.PRESTREAM
 
 
 def prepare_active_logic():
@@ -281,6 +295,63 @@ def test_failsafe_requests_land_once_and_stops_offboard_output():
             == VehicleCommand.VEHICLE_CMD_NAV_LAND)
     assert controller.publish_offboard_mode.call_count == 0
     assert controller.publish_setpoint.call_count == 0
+
+
+def test_auto_land_after_offboard_stops_all_offboard_output():
+    """曾进入OFFBOARD后切换AUTO_LAND必须停止全部Offboard输出。."""
+    controller = object.__new__(VisionOffboardController)
+    controller.logic = VisionOffboardLogic(
+        simulation_mode=False, enable_offboard=True)
+    controller.logic.state = controller.logic.VISION_CONTROL
+    controller.logic.update_status(True, True, False, 1.0)
+    controller.logic.update_status(True, False, False, 1.1)
+    controller.last_logged_state = None
+    controller.land_requested = False
+    controller.get_logger = Mock(return_value=Mock())
+    controller.now_seconds = Mock(return_value=1.1)
+    controller.publish_offboard_mode = Mock()
+    controller.publish_setpoint = Mock()
+    controller.publish_command = Mock()
+
+    controller.timer_callback()
+
+    assert controller.logic.state == controller.logic.EXTERNAL_CONTROL
+    controller.publish_offboard_mode.assert_not_called()
+    controller.publish_setpoint.assert_not_called()
+    controller.publish_command.assert_not_called()
+
+
+def test_vehicle_status_auto_land_callback_latches_external_control():
+    """真实VehicleStatus的AUTO_LAND值必须触发外部接管锁存。."""
+    controller = object.__new__(VisionOffboardController)
+    controller.logic = VisionOffboardLogic(
+        simulation_mode=False, enable_offboard=True)
+    controller.logic.state = controller.logic.VISION_CONTROL
+    controller.now_seconds = Mock(side_effect=(1.0, 1.1))
+    status = VehicleStatus()
+    status.arming_state = VehicleStatus.ARMING_STATE_ARMED
+    status.failsafe = False
+    status.nav_state = VehicleStatus.NAVIGATION_STATE_OFFBOARD
+    controller.status_callback(status)
+    status.nav_state = VehicleStatus.NAVIGATION_STATE_AUTO_LAND
+    controller.status_callback(status)
+    assert controller.logic.ever_entered_offboard
+    assert controller.logic.state == controller.logic.EXTERNAL_CONTROL
+
+
+def test_external_takeover_is_latched_and_never_reclaims_offboard():
+    """退出OFFBOARD后即使状态更新也不得重新请求或发布。."""
+    logic = VisionOffboardLogic(
+        simulation_mode=False, enable_offboard=True)
+    logic.state = logic.VISION_CONTROL
+    logic.mode_requested = True
+    logic.update_status(True, True, False, 1.0)
+    logic.update_status(True, False, False, 1.1)
+    for now in (1.1, 2.0, 5.0):
+        output = logic.step(now)
+        assert output == (0.0, 0.0, 0.0, False, False)
+        logic.update_status(True, False, False, now)
+    assert logic.state == logic.EXTERNAL_CONTROL
 
 
 def test_disabled_offboard_example_publishes_zero_control_messages():

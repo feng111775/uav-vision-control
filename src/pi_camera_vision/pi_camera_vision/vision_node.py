@@ -34,7 +34,7 @@ def transform_frame(frame, rotation=0, flip_horizontal=False,
 
 
 class PiCameraVisionNode(Node):
-    """Acquire frames, detect red targets, and publish seven float fields."""
+    """Acquire frames and publish target geometry with actual frame size."""
 
     def __init__(self):
         super().__init__('pi_camera_vision_node')
@@ -67,6 +67,8 @@ class PiCameraVisionNode(Node):
         if fps <= 0:
             raise ValueError('fps must be positive')
         self.display = bool(self.get_parameter('display').value)
+        self.requested_width = float(self.get_parameter('width').value)
+        self.requested_height = float(self.get_parameter('height').value)
         self.rotation = int(self.get_parameter('rotation').value)
         self.flip_horizontal = bool(
             self.get_parameter('flip_horizontal').value)
@@ -104,7 +106,7 @@ class PiCameraVisionNode(Node):
             % self.detection_topic)
 
     def publish_detection(self, values):
-        """Publish exactly seven H7-compatible fields."""
+        """Publish exactly nine normalized-geometry input fields."""
         message = Float32MultiArray()
         message.data = [float(value) for value in values]
         self.publisher.publish(message)
@@ -116,7 +118,9 @@ class PiCameraVisionNode(Node):
         ok, frame = self.source.read()
         if not ok:
             self.finished = True
-            self.publish_detection(INVALID_DETECTION)
+            invalid = list(INVALID_DETECTION)
+            invalid[7:] = [self.requested_width, self.requested_height]
+            self.publish_detection(invalid)
             self.get_logger().info(
                 'Input ended or failed; published invalid detection')
             self.timer.cancel()
