@@ -1,350 +1,554 @@
-# UAV Vision Control v0.4
+# H2025 Wildlife Inspection UAV System
 
-## 1. 项目简介
+本项目是面向 2025 年全国大学生电子设计竞赛 H 题的无人机野生动物巡检仿真系统。系统基于以下组件构建：
 
-本工程是一个 ROS 2 UAV Control Framework，当前实现无人机视觉目标检测、目标
-数据滤波、视觉伺服速度生成以及 PX4 Offboard 控制。工程同时包含 OpenMV Cam
-H7 Plus 端程序和 ROS 2 Python 节点，可使用以下两类视觉输入：
+- PX4 Autopilot
+- ROS 2 Jazzy
+- Gazebo Harmonic
+- Python ROS 2 节点
+- MicroXRCE DDS
+- ROS 2 + PX4 Offboard 控制
 
-- 真实硬件：OpenMV H7 Plus 检测红色色块，通过 USB CDC 串口发送检测结果。
-- Gazebo 仿真：ROS-Gazebo 图像桥接后，在 ROS 2 侧检测红色目标。
+当前 H2025 版本已经实现：
 
-两类输入统一发布为 `/vision/h7/detection`，后续滤波、视觉伺服和飞控链路共用
-同一接口。
+- PX4 SITL 无人机仿真
+- Gazebo `wildlife_inspection` 野生动物巡检环境
+- 自动起飞
+- 9×7 网格覆盖巡航
+- 自动返航
+- 自动降落
+- 禁飞区域规划框架
+- UAV 实时位置和任务路线可视化
+- PX4 local NED 与 Gazebo world ENU 坐标转换
 
-目录结构如下：
+本文面向第一次接触 PX4、ROS 2 和 Gazebo 的使用者。建议严格按照终端编号依次启动，先确认每一步正常，再继续下一步。
+
+---
+
+# 1. 项目结构
+
+与 H2025 任务直接相关的主要目录如下：
 
 ```text
 uav-vision-control/
-├── docs/
-│   ├── architecture.md       # 当前架构、节点与扩展边界
-│   └── developer_notes.md    # 开发约束和比赛任务扩展说明
-├── openmv_h7plus/            # OpenMV H7 Plus MicroPython 程序
-└── src/
-    ├── uav_vision/           # 视觉输入、滤波和视觉伺服 ROS 2 包
-    └── uav_control/          # PX4 状态监听及 Offboard 控制 ROS 2 包
-        ├── config/
-        │   └── control.yaml
-        └── launch/
-            └── uav_control.launch.py
+├── src/
+│   ├── mission_interfaces/                 # 任务自定义ROS 2消息
+│   └── uav_control/
+│       └── uav_control/
+│           ├── mission_manager.py          # MissionState任务状态机
+│           ├── mission_manager_node.py     # 任务规划和任务接口
+│           ├── mission_offboard_controller.py
+│           │                               # PX4 Offboard位置控制
+│           ├── px4_position_bridge_node.py # PX4 NED位置反馈转换
+│           ├── coverage_planner.py         # 覆盖路径和禁飞区绕行
+│           └── mission_visualizer.py       # 地图、路线和UAV位置显示
+├── simulation/
+│   └── px4_overlay/
+│       └── Tools/simulation/gz/
+│           ├── worlds/
+│           │   └── wildlife_inspection.sdf
+│           └── models/
+│               └── wildlife/
+└── README.md
 ```
 
-## 2. 系统架构
+`simulation/px4_overlay` 保存本任务使用的 Gazebo 世界和动物模型资源。运行仿真时，对应资源需要位于 PX4 工程的 `Tools/simulation/gz` 路径中。
 
-真实硬件链路：
+---
 
-```text
-OpenMV H7 Plus
-  └─ USB CDC: TARGET,valid,cx,cy,width,height,area,confidence
-       └─ h7_bridge_node
-            └─ /vision/h7/detection
-                 └─ target_filter_node
-                      └─ /vision/h7/filtered_detection
-                           └─ visual_servo_node
-                                └─ /control/vision_velocity
-                                     └─ vision_offboard_controller
-                                          └─ PX4 /fmu/in/*
-```
+# 2. 环境要求
 
-Gazebo 仿真链路：
+当前验证通过的环境：
 
-```text
-Gazebo 相机
-  └─ ros_gz_bridge: /camera/down/image_raw
-       └─ gazebo_red_target_detector_node
-            └─ /vision/h7/detection
-                 └─ target_filter_node
-                      └─ visual_servo_node
-                           └─ vision_offboard_controller
-                                └─ PX4 SITL
-```
-
-真实 H7Plus 桥接节点与 Gazebo 检测节点是同一原始检测 topic 的两个替代数据源，
-不应同时运行。
-
-坐标约定：
-
-- 视觉伺服输出使用 ROS `base_link` 的 FLU 坐标系：X 向前、Y 向左、Z 向上。
-- PX4 本地控制使用 NED 坐标系：X 向北、Y 向东、Z 向下。
-- `vision_offboard_controller` 根据 PX4 heading 将机体水平速度转换为 NED
-  速度设定值。
-
-## 3. 软件环境
-
-工程依赖 ROS 2 的 `ament_python`/`colcon` 构建体系。具体 ROS 2、PX4 和
-`px4_msgs` 版本应保持消息定义兼容。
-
-主要依赖：
-
-- ROS 2、Python 3、`colcon`
-- ROS 2 包：`rclpy`、`std_msgs`、`geometry_msgs`、`sensor_msgs`
-- PX4 ROS 2 消息包：`px4_msgs`
-- 视觉组件：OpenCV、NumPy、`cv_bridge`
-- Gazebo 联调：`ros_gz_bridge`、`rosgraph_msgs`、`launch_ros`
-- H7Plus 联调：PySerial
-- OpenMV Cam H7 Plus：OpenMV 固件 5.0 / MicroPython 1.28
-
-使用真实飞控或 PX4 SITL 时，还需要启动与当前 PX4 版本匹配的 ROS 2/DDS
-通信链路，并确认 `/fmu/in/*` 和 `/fmu/out/*` topic 已建立。
-
-## 4. ROS 2 节点说明
-
-### `uav_vision`
-
-| 可执行节点 | 作用 | 主要输入 | 主要输出 |
-| --- | --- | --- | --- |
-| `h7_bridge_node` | 读取并校验 H7Plus 串口协议；断线后周期重连 | USB 串口，默认 `/dev/ttyACM0`、115200 | `/vision/h7/detection` |
-| `fake_h7_node` | 以 10 Hz 发布模拟目标数据，用于无硬件测试 | 无 | `/vision/h7/detection` |
-| `gazebo_red_target_detector_node` | 从 Gazebo 相机图像检测红色目标 | `/camera/down/image_raw`（可配置） | `/vision/h7/detection`、`/vision/gazebo/debug_image` |
-| `target_filter_node` | 置信度判定、帧确认、丢失判定和平滑滤波 | `/vision/h7/detection` | `/vision/h7/filtered_detection` |
-| `visual_servo_node` | 将像素偏差转换为 `base_link` 水平速度；输入超时发布零速度 | `/vision/h7/filtered_detection` | `/control/vision_velocity` |
-
-检测消息使用 `std_msgs/msg/Float32MultiArray`，数据顺序为：
-
-```text
-[valid, cx, cy, width, height, area, confidence]
-```
-
-`valid` 为 0 或 1，`confidence` 范围为 0～100。
-
-### `uav_control`
-
-| 可执行节点 | 作用 | 说明 |
-| --- | --- | --- |
-| `vehicle_status_listener` | 订阅并打印 PX4 解锁、导航和 failsafe 状态 | 通过 `vehicle_status_topic` 参数配置，默认 `/fmu/out/vehicle_status` |
-| `offboard_control` | 发布固定位置目标及 PX4 命令 | 示例节点会请求 Offboard、解锁，并在约 15 秒后请求降落 |
-| `vision_offboard_controller` | 接收视觉速度和 PX4 状态，发布速度模式 Offboard 心跳、速度设定值及必要命令 | PX4 状态 topic 可通过参数配置；默认不启用 Offboard 和自动解锁 |
-
-`vision_offboard_controller` 包含 `WAITING`、`PRESTREAM`、`TAKEOFF`、
-`VISION_CONTROL` 和 `FAILSAFE` 状态。自动解锁只允许在
-`simulation_mode=true`、`enable_offboard=true` 和
-`enable_auto_arm=true` 同时设置时执行。
-
-## 5. PX4 通信 topic 说明
-
-| 方向 | Topic | 消息类型 | 用途 |
-| --- | --- | --- | --- |
-| ROS 2 → PX4 | `/fmu/in/offboard_control_mode` | `px4_msgs/msg/OffboardControlMode` | Offboard 控制模式心跳 |
-| ROS 2 → PX4 | `/fmu/in/trajectory_setpoint` | `px4_msgs/msg/TrajectorySetpoint` | 位置或速度设定值 |
-| ROS 2 → PX4 | `/fmu/in/vehicle_command` | `px4_msgs/msg/VehicleCommand` | 模式切换、解锁、降落等命令 |
-| PX4 → ROS 2 | `/fmu/out/vehicle_local_position` | `px4_msgs/msg/VehicleLocalPosition` | 本地位置、航向及有效性 |
-| PX4 → ROS 2 | `/fmu/out/vehicle_status` | `px4_msgs/msg/VehicleStatus` | 解锁、导航模式和 failsafe 状态 |
-
-`vision_offboard_controller` 的 PX4 输出 topic 参数：
-
-| 参数 | 默认值 |
+| 组件 | 版本 |
 | --- | --- |
-| `vehicle_local_position_topic` | `/fmu/out/vehicle_local_position` |
-| `vehicle_status_topic` | `/fmu/out/vehicle_status` |
+| 操作系统 | Ubuntu 24.04 |
+| ROS 2 | Jazzy |
+| PX4 Autopilot | v1.15.4 |
+| Gazebo | Harmonic |
+| Python | 3.12 |
+| PX4/ROS 2通信 | MicroXRCE DDS |
 
-可通过以下命令检查实际 topic：
+推荐使用 16 GB 或更多内存。PX4 SITL、Gazebo、ROS 2 节点和 Matplotlib 可视化同时运行时会占用较多内存和 CPU。
 
-```bash
-ros2 topic list | grep '^/fmu/'
-ros2 topic info /fmu/out/vehicle_status
-```
-
-## 6. 编译方法
-
-在工程根目录执行：
-
-```bash
-cd ~/uav-vision-control
-source /opt/ros/<ros_distro>/setup.bash
-rosdep install --from-paths src --ignore-src -r -y
-colcon build --symlink-install
-source install/setup.bash
-```
-
-将 `<ros_distro>` 替换为当前安装的 ROS 2 发行版名称。每个新终端都需要重新
-加载 ROS 2 和本工作空间环境。
-
-当前推荐的控制节点启动方式：
-
-```bash
-source install/setup.bash
-ros2 launch uav_control uav_control.launch.py
-```
-
-该 launch：
-
-- 只启动正式控制节点 `vision_offboard_controller`；
-- 自动加载 `src/uav_control/config/control.yaml`；
-- 不启动通信测试节点 `offboard_control`；
-- 不启动只读诊断节点 `vehicle_status_listener`。
-
-`control.yaml` 默认设置：
-
-```yaml
-simulation_mode: false
-enable_offboard: false
-enable_auto_arm: false
-vehicle_local_position_topic: /fmu/out/vehicle_local_position
-vehicle_status_topic: /fmu/out/vehicle_status
-```
-
-因此，使用默认配置启动不会自动进入 Offboard 或自动解锁。高度、速度、超时和
-PX4 topic 参数均应优先通过该 YAML 配置，不要直接修改控制代码中的默认值。
-
-运行测试：
-
-```bash
-cd ~/uav-vision-control
-source /opt/ros/<ros_distro>/setup.bash
-source install/setup.bash
-colcon test
-colcon test-result --verbose
-```
-
-## 7. 运行方法
-
-### 7.1 H7Plus 实机视觉链路
-
-先按照 `openmv_h7plus/README.md` 将程序上传到开发板，并确保 OpenMV IDE
-未占用 USB CDC 串口。
-
-分别在终端中运行：
-
-```bash
-source install/setup.bash
-ros2 run uav_vision h7_bridge_node --ros-args \
-  -p port:=/dev/ttyACM0 -p baudrate:=115200
-```
-
-```bash
-source install/setup.bash
-ros2 run uav_vision target_filter_node
-```
-
-```bash
-source install/setup.bash
-ros2 run uav_vision visual_servo_node
-```
-
-无 H7Plus 时，可用以下节点替代 `h7_bridge_node`：
-
-```bash
-source install/setup.bash
-ros2 run uav_vision fake_h7_node
-```
-
-### 7.2 Gazebo 视觉链路
-
-在 Gazebo 相机和 ROS-Gazebo 通信环境已启动后执行：
-
-```bash
-source install/setup.bash
-ros2 launch uav_vision gazebo_vision.launch.py
-```
-
-该 launch 文件启动图像桥、Gazebo 红色目标检测、目标滤波和视觉伺服，不启动
-PX4 控制器，也不会解锁无人机。参数位于
-`src/uav_vision/config/gazebo_vision.yaml`。
-
-### 7.3 PX4 视觉 Offboard 控制
-
-先启动 PX4 SITL、对应的 ROS 2/DDS 通信链路和上述任一视觉链路。确认以下
-topic 持续更新：
-
-```bash
-ros2 topic hz /control/vision_velocity
-ros2 topic hz /fmu/out/vehicle_local_position
-ros2 topic hz /fmu/out/vehicle_status
-```
-
-仅观察控制器输出、不请求 Offboard 或解锁：
-
-```bash
-source install/setup.bash
-ros2 run uav_control vision_offboard_controller
-```
-
-在 PX4 SITL 中显式启用 Offboard 和自动解锁：
-
-```bash
-source install/setup.bash
-ros2 run uav_control vision_offboard_controller --ros-args \
-  -p simulation_mode:=true \
-  -p enable_offboard:=true \
-  -p enable_auto_arm:=true
-```
-
-运行前应确认仿真环境、坐标方向、目标高度、速度限制、PX4 状态反馈和紧急停止
-方式均符合预期。不要将仅为 SITL 设计的自动解锁参数直接用于真实飞行器。
-
-独立状态观察：
-
-```bash
-source install/setup.bash
-ros2 run uav_control vehicle_status_listener
-```
-
-该节点通过 `vehicle_status_topic` 参数选择 PX4 状态 topic，默认订阅：
+开始前应确认以下工程目录存在：
 
 ```text
+~/2025h/uav-vision-control
+~/2025h/PX4-Autopilot
+```
+
+---
+
+# 3. 工程编译
+
+进入 ROS 2 工程：
+
+```bash
+cd ~/2025h/uav-vision-control
+```
+
+加载 ROS 2 Jazzy：
+
+```bash
+source /opt/ros/jazzy/setup.bash
+```
+
+编译任务消息和控制包：
+
+```bash
+colcon build \
+  --packages-select mission_interfaces uav_control \
+  --symlink-install
+```
+
+加载本工作空间：
+
+```bash
+source install/setup.bash
+```
+
+检查 `uav_control` 可执行节点：
+
+```bash
+ros2 pkg executables uav_control
+```
+
+如果修改过 Python 节点，使用 `--symlink-install` 后通常无需重复复制源码，但新终端仍必须重新执行两条 `source` 命令。
+
+---
+
+# 4. 完整启动流程（重点）
+
+以下命令需要在 8 个终端中分别运行。除检查终端外，节点启动后都应保持窗口运行。
+
+## 终端1：启动MicroXRCE DDS
+
+加载 ROS 2：
+
+```bash
+source /opt/ros/jazzy/setup.bash
+```
+
+启动 Agent：
+
+```bash
+MicroXRCEAgent udp4 -p 8888
+```
+
+该窗口负责 PX4 与 ROS 2 DDS 网络通信，启动后不要关闭。
+
+---
+
+## 终端2：启动PX4 + Gazebo wildlife环境
+
+进入 PX4 工程：
+
+```bash
+cd ~/2025h/PX4-Autopilot
+```
+
+启动 PX4 SITL、下视相机机型和 wildlife 世界：
+
+```bash
+PX4_GZ_MODEL_POSE="20,-15,2,0,0,0" \
+PX4_GZ_WORLD=wildlife_inspection \
+make px4_sitl gz_x500_downward_camera
+```
+
+等待 PX4 控制台出现：
+
+```text
+Ready for takeoff!
+```
+
+不要关闭 PX4 或 Gazebo 窗口。
+
+无人机初始 Gazebo world ENU 位置为：
+
+```text
+x = 20
+y = -15
+z = 2
+```
+
+---
+
+## 终端3：检查PX4 ROS2通信
+
+加载 ROS 2：
+
+```bash
+source /opt/ros/jazzy/setup.bash
+```
+
+检查 PX4 topic：
+
+```bash
+ros2 topic list | grep fmu
+```
+
+正常情况下至少应出现：
+
+```text
+/fmu/out/vehicle_local_position
 /fmu/out/vehicle_status
 ```
 
-需要覆盖时可执行：
+如果没有输出，先检查终端1中的 MicroXRCEAgent 和终端2中的 PX4 是否仍在运行。
+
+---
+
+## 终端4：启动PX4位置转换节点
+
+进入工程并加载环境：
 
 ```bash
-ros2 run uav_control vehicle_status_listener --ros-args \
-  -p vehicle_status_topic:=/实际/PX4状态topic
+cd ~/2025h/uav-vision-control
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
 ```
 
-## 8. 当前能力与边界
+启动位置桥：
 
-### 当前版本支持
+```bash
+ros2 run uav_control px4_position_bridge_node \
+  --ros-args \
+  -p origin_north:=15.0 \
+  -p origin_east:=-20.0 \
+  -p origin_down:=0.0
+```
 
-- ROS 2 与 PX4 的 uXRCE-DDS topic 通信；
-- PX4 Offboard 控制框架；
-- `/control/vision_velocity` 视觉速度控制接口；
-- OpenMV H7Plus、模拟数据和 Gazebo 视觉输入；
-- 视觉目标滤波与输入超时保护；
-- FLU 到 NED 的速度转换；
-- Offboard 预流、固定高度起飞和视觉速度控制；
-- PX4 状态、本地位置和 failsafe 检查；
-- PX4 SITL 验证。
+该节点将 `/fmu/out/vehicle_local_position` 中的 PX4 local NED 坐标转换为任务使用的 Gazebo world ENU 坐标，并发布到：
 
-### 当前未实现
+```text
+/mission/current_position
+```
 
-- `mission_manager`；
-- `trajectory_generator`；
-- 通用航点任务；
-- 通用位置或速度轨迹规划；
-- 自动任务降落；
-- 完整真机自主飞行流程。
+---
 
-当前自动 Offboard 流程主要用于 PX4 SITL 验证。不要通过在真机设置
-`simulation_mode=true` 绕过仿真限制。
+## 终端5：启动任务管理节点
 
-Pixhawk 真机部署仍需进一步完成：
+进入工程并加载环境：
 
-- uXRCE-DDS client 与 Micro XRCE-DDS Agent 通信验证；
-- PX4与ROS 2 `px4_msgs` 版本匹配；
-- 飞控、串口、Offboard和failsafe参数检查；
-- 本地位置和heading来源验证；
-- 无桨台架、人工接管和异常链路安全测试。
+```bash
+cd ~/2025h/uav-vision-control
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+```
 
-## 9. 开发文档
+启动任务管理器：
 
-- [`docs/architecture.md`](docs/architecture.md)：当前系统架构、ROS 2节点关系、
-  PX4通信关系、文件职责和比赛扩展位置。
-- [`docs/developer_notes.md`](docs/developer_notes.md)：核心文件修改约束、比赛任务
-  开发位置、新任务接口和分级测试流程。
+```bash
+ros2 run uav_control mission_manager_node
+```
 
-当前仓库还没有独立任务规划层。比赛任务逻辑不应直接继续堆入
-`vision_offboard_controller.py`；后续应在稳定接口基础上增加
-`mission_manager.py` 和 `trajectory_generator.py`，并保持单一PX4控制发布者。
+正常启动后会看到类似信息：
 
-## 10. 后续开发说明
+```text
+任务管理节点已启动
+任务状态：IDLE
+```
 
-- 将 ROS 2 发行版、PX4 版本、`px4_msgs` 分支和 Gazebo 版本固定到可复现的
-  开发环境配置中。
-- 根据真实相机安装方向、视场角和飞行高度标定视觉伺服比例、符号、死区及限速。
-- 补充串口协议版本、消息时间戳和链路状态诊断，区分目标丢失、数据超时与设备
-  断开。
-- 在真实飞行前增加硬件在环测试、控制权限隔离、人工接管、地理围栏和降落策略
-  验证。
-- 保持视觉处理逻辑与 ROS 2 接口分离，并为协议解析、滤波、坐标转换、状态机和
-  failsafe 路径持续补充自动化测试。
+该节点负责生成覆盖路线、处理禁飞区域、发布当前任务目标并推进任务状态机。
+
+---
+
+## 终端6：启动Offboard控制
+
+进入工程并加载环境：
+
+```bash
+cd ~/2025h/uav-vision-control
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+```
+
+启动任务 Offboard 控制器：
+
+```bash
+ros2 run uav_control mission_offboard_controller \
+  --ros-args \
+  -p origin_north:=15.0 \
+  -p origin_east:=-20.0 \
+  -p origin_down:=0.0
+```
+
+Offboard 控制器将任务 ENU 目标转换为 PX4 local NED 位置设定值，并负责 Offboard 模式、解锁、起飞保持和自动降落控制。
+
+终端4和终端6的三个 `origin` 参数必须完全一致。
+
+---
+
+## 终端7：启动任务可视化
+
+进入工程并加载环境：
+
+```bash
+cd ~/2025h/uav-vision-control
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+```
+
+启动可视化节点：
+
+```bash
+ros2 run uav_control mission_visualizer
+```
+
+窗口显示：
+
+- 45 m × 35 m任务地图
+- 绿色起飞点
+- 橙色UAV实时位置
+- 实际任务目标路线
+- 禁飞区域
+
+实际任务路线来自 `/mission/trajectory_point`。该 topic 发布当前任务目标，因此路线会随任务执行逐步显示。
+
+---
+
+## 终端8：开始任务
+
+加载 ROS 2 和工程环境：
+
+```bash
+source /opt/ros/jazzy/setup.bash
+source ~/2025h/uav-vision-control/install/setup.bash
+```
+
+调用任务启动服务：
+
+```bash
+ros2 service call /mission/start std_srvs/srv/Trigger "{}"
+```
+
+任务状态按照以下顺序推进：
+
+```text
+IDLE
+  ↓
+TAKEOFF
+  ↓
+EXECUTE
+  ↓
+RETURN
+  ↓
+LAND
+  ↓
+COMPLETE
+```
+
+任务启动后不要重复调用 `/mission/start`。需要观察状态时，可以在新的终端执行：
+
+```bash
+ros2 topic echo /mission/status
+```
+
+---
+
+# 5. 当前任务参数
+
+| 参数 | 当前值 |
+| --- | --- |
+| 地图尺寸 | 45 m × 35 m |
+| 网格数量 | 9 × 7 |
+| 单格尺寸 | 5 m × 5 m |
+| Gazebo起飞点 | `(20, -15, 2)` |
+| 第一覆盖点 | `(-20, -15, 2)` |
+| 返航点 | `(20, -15, 2)` |
+| 巡航速度 | 5 m/s |
+| 禁飞格 | `A3B2`、`A3B3`、`A3B4` |
+
+覆盖规划器会跳过禁飞格，并为可能穿过禁飞区域的航段生成绕行点。
+
+---
+
+# 6. 坐标系统说明（重要）
+
+系统中存在两套实际坐标系。
+
+## Gazebo world / 任务地图：ENU
+
+```text
+x = East，向东为正
+y = North，向北为正
+z = Up，向上为正
+```
+
+任务规划、禁飞区、起飞点、返航点和可视化均使用 Gazebo world ENU 绝对坐标。
+
+## PX4 local：NED
+
+```text
+x = North，向北为正
+y = East，向东为正
+z = Down，向下为正
+```
+
+PX4 local NED 的水平原点位于无人机出生位置，而本任务的 Gazebo world ENU 原点位于地图中心。无人机出生在：
+
+```text
+Gazebo ENU = (20, -15, 2)
+```
+
+因此，ENU 与NED轴交换后还需要补偿水平原点偏移：
+
+```text
+origin_north = 15
+origin_east  = -20
+origin_down  = 0
+```
+
+任务坐标到 PX4 坐标的转换为：
+
+```text
+north = origin_north + gazebo_y
+east  = origin_east  + gazebo_x
+down  = origin_down  - gazebo_z
+```
+
+例如起飞目标：
+
+```text
+Gazebo ENU (20, -15, 2)
+        ↓
+PX4 NED    (0, 0, -2)
+```
+
+反向位置桥使用相同的 origin，把 PX4 local NED 位置恢复成 Gazebo world ENU。两个转换节点的 origin 不一致时，飞机位置显示、到达判定和飞行目标都会出现整体偏移。
+
+---
+
+# 7. 常见问题
+
+## ros2 run提示Package not found
+
+通常是当前终端没有加载编译后的工作空间。
+
+解决：
+
+```bash
+cd ~/2025h/uav-vision-control
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+```
+
+然后重新执行 `ros2 run`。
+
+## PX4提示already running
+
+说明上一次 PX4 进程没有正常退出。
+
+解决：
+
+```bash
+pkill px4
+```
+
+确认旧进程结束后，回到 PX4 工程重新启动。
+
+## Gazebo关闭异常
+
+如果 Gazebo 窗口关闭后后台进程仍然存在，可执行：
+
+```bash
+pkill gz
+```
+
+该命令会结束当前用户的同名 Gazebo 进程，执行前应确认没有其他需要保留的 Gazebo 仿真。
+
+## 飞机飞出地图
+
+首先检查位置桥和 Offboard 控制器是否使用了完全相同的参数：
+
+```text
+origin_north = 15
+origin_east  = -20
+origin_down  = 0
+```
+
+需要检查的两个节点：
+
+```text
+px4_position_bridge_node
+mission_offboard_controller
+```
+
+如果任一节点仍使用零偏移，Gazebo绝对目标会被错误解释成相对出生点的 PX4 目标，飞机可能飞向地图外。
+
+## 看不到UAV实时位置
+
+检查 PX4位置反馈和转换后的任务位置：
+
+```bash
+ros2 topic echo /fmu/out/vehicle_local_position --once
+ros2 topic echo /mission/current_position --once
+```
+
+无人机位于出生点附近时，`/mission/current_position` 的水平坐标应接近：
+
+```text
+x = 20
+y = -15
+```
+
+## 可视化路线刚启动时不完整
+
+`mission_visualizer` 订阅的是当前任务目标 `/mission/trajectory_point`，并从启动后开始累积路线。为了看到完整执行过程，应在调用 `/mission/start` 之前启动可视化节点。
+
+---
+
+# 8. 后续开发方向
+
+以下内容是未来规划，当前 H2025 v1.0 不声称已经完成。
+
+## 1. 基于摄像头自动识别禁飞区域
+
+计划流程：
+
+```text
+camera
+  ↓
+image processing
+  ↓
+obstacle detection
+  ↓
+no_fly_cells
+  ↓
+coverage planner
+```
+
+目标是将图像检测结果转换为网格禁飞区，再交给现有覆盖规划器重新生成安全路线。
+
+## 2. 动物识别统计
+
+计划流程：
+
+```text
+camera
+  ↓
+YOLO
+  ↓
+animal classification
+  ↓
+statistics
+```
+
+目标是识别不同动物类别、记录位置并生成巡检统计结果。
+
+---
+
+# 9. 版本信息
+
+当前稳定版本：
+
+```text
+H2025 v1.0
+```
+
+Git tag：
+
+```text
+h2025-v1.0
+```
