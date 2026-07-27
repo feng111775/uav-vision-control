@@ -7,12 +7,12 @@ class GridMap:
     """管理方格编号、地图坐标、禁飞区和巡查记录。
 
     内部行列索引从0开始，``row``对应B1到B7的y方向，``col``对应A1到A9
-    的x方向。地图原点位于A1B1方格的左下角，所有坐标单位均为米。
+    的x方向。地图原点位于地图中心，所有坐标单位均为米。
     """
 
     CELL_CODE_PATTERN = re.compile(r'^A([1-9][0-9]*)B([1-9][0-9]*)$')
 
-    def __init__(self, rows=7, cols=9, cell_size=0.5,
+    def __init__(self, rows=7, cols=9, cell_size=5.0,
                  no_fly_cells=None):
         """创建地图，并设置可选的禁飞方格列表。"""
         self._validate_dimensions(rows, cols, cell_size)
@@ -75,9 +75,29 @@ class GridMap:
     def cell_center(self, cell):
         """返回指定方格中心的地图坐标``(x, y)``。"""
         row, col = self.normalize_cell(cell)
-        x = (col + 0.5) * self.cell_size
-        y = (row + 0.5) * self.cell_size
+        x = (col + 0.5) * self.cell_size - self.width / 2.0
+        y = (row + 0.5) * self.cell_size - self.height / 2.0
         return x, y
+
+    @property
+    def width(self):
+        """返回地图东西方向总宽度。"""
+        return self.cols * self.cell_size
+
+    @property
+    def height(self):
+        """返回地图南北方向总高度。"""
+        return self.rows * self.cell_size
+
+    @property
+    def bounds(self):
+        """返回以地图中心为原点的``(x_min, x_max, y_min, y_max)``。"""
+        return (
+            -self.width / 2.0,
+            self.width / 2.0,
+            -self.height / 2.0,
+            self.height / 2.0,
+        )
 
     def validate_no_fly_cells(self, cells, require_contiguous=False):
         """验证禁飞区范围、重复项及可选的四邻域连续性。"""
@@ -157,8 +177,8 @@ def main():
     assert grid_map.parse_cell_code('A1B1') == (0, 0)
     assert grid_map.parse_cell_code('A9B7') == (6, 8)
     assert grid_map.format_cell_code(4, 2) == 'A3B5'
-    assert grid_map.cell_center('A1B1') == (0.25, 0.25)
-    assert grid_map.cell_center('A9B7') == (4.25, 3.25)
+    assert grid_map.cell_center('A1B1') == (-20.0, -15.0)
+    assert grid_map.cell_center('A9B7') == (20.0, 15.0)
     assert grid_map.is_no_fly('A5B3')
 
     grid_map.mark_visited('A1B1')

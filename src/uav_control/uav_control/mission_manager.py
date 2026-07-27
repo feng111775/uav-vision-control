@@ -24,7 +24,7 @@ class MissionState(Enum):
 class MissionManager:
     """管理起飞、轨迹执行、返回和降落的通用任务流程。"""
 
-    def __init__(self, arrival_radius=0.15):
+    def __init__(self, arrival_radius=1.0):
         """创建空闲任务管理器，并设置默认航点到达半径。"""
         self.arrival_radius = self._positive_float(
             arrival_radius, 'arrival_radius')
@@ -149,6 +149,7 @@ class MissionManager:
                     self.current_state = MissionState.EXECUTE
 
         elif self.current_state == MissionState.EXECUTE:
+            # 提前切换到下一插值点，使位置目标保持在飞机前方。
             if self._target_reached():
                 self.current_waypoint_index += 1
                 if self.current_waypoint_index >= len(self.trajectory):

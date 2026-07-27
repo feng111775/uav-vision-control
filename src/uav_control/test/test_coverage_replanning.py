@@ -12,17 +12,17 @@ def run_replanning_test():
     detoured = generate_coverage_path(NO_FLY_CELLS)
 
     blocked_bounds = (
-        1.0,
-        1.5,
-        0.5,
-        2.0,
+        -12.5,
+        -7.5,
+        -12.5,
+        2.5,
     )
     x_min, x_max, y_min, y_max = blocked_bounds
     crosses_blocked_area = any(
         x_min <= point.x <= x_max and y_min <= point.y <= y_max
         for point in detoured
     )
-    success = len(original) == 621 and not crosses_blocked_area
+    success = len(original) == 1551 and not crosses_blocked_area
 
     print('原航点数量：%d' % len(original))
     print('绕行后航点数量：%d' % len(detoured))

@@ -47,14 +47,28 @@ class MissionManagerNode(Node):
         """创建任务、ROS 2发布订阅接口和任务控制服务。"""
         super().__init__('mission_manager_node')
 
+        self.declare_parameter('takeoff_x', 20.0)
+        self.declare_parameter('takeoff_y', -15.0)
         self.declare_parameter('takeoff_height', 2.0)
         self.declare_parameter('patrol_height', 2.0)
+        self.declare_parameter('patrol_speed', 5.0)
+        self.declare_parameter(
+            'no_fly_cells', ['A3B2', 'A3B3', 'A3B4'])
         self.declare_parameter('demo_mode', False)
         self.declare_parameter('demo_waypoints', 20)
+        self.takeoff_x = float(self.get_parameter('takeoff_x').value)
+        self.takeoff_y = float(self.get_parameter('takeoff_y').value)
+        if not all(math.isfinite(value) for value in (
+                self.takeoff_x, self.takeoff_y)):
+            raise ValueError('起飞点坐标必须是有限数值')
         self.takeoff_height = self._positive_height_parameter(
             'takeoff_height')
         self.patrol_height = self._positive_height_parameter(
             'patrol_height')
+        self.patrol_speed = self._positive_height_parameter(
+            'patrol_speed')
+        self.no_fly_cells = list(
+            self.get_parameter('no_fly_cells').value)
         self.demo_mode = bool(self.get_parameter('demo_mode').value)
         self.demo_waypoints = int(
             self.get_parameter('demo_waypoints').value)
@@ -117,12 +131,16 @@ class MissionManagerNode(Node):
 
         self.get_logger().info(
             '任务管理节点已启动：覆盖航点=%d，轨迹点=%d，'
-            'takeoff_height=%.2f，patrol_height=%.2f，demo_mode=%s'
+            'takeoff=(%.2f, %.2f, %.2f)，patrol_height=%.2f，'
+            'patrol_speed=%.2f，demo_mode=%s'
             % (
                 self.loaded_coverage_waypoints,
                 len(self.trajectory),
+                self.takeoff_x,
+                self.takeoff_y,
                 self.takeoff_height,
                 self.patrol_height,
+                self.patrol_speed,
                 self.demo_mode,
             )
         )
@@ -136,21 +154,29 @@ class MissionManagerNode(Node):
 
     def _initialize_mission(self):
         """重新创建地图、规划器、轨迹生成器和任务管理器。"""
-        grid_map = GridMap(rows=7, cols=9, cell_size=0.5)
-        planner = CoveragePlanner(patrol_height=self.patrol_height)
+        grid_map = GridMap(
+            rows=7,
+            cols=9,
+            cell_size=5.0,
+            no_fly_cells=self.no_fly_cells,
+        )
+        planner = CoveragePlanner(
+            patrol_height=self.patrol_height,
+            speed=self.patrol_speed,
+        )
         plan_result = planner.plan(grid_map)
         if not plan_result.success:
             raise RuntimeError(
                 '覆盖规划失败：%s' % plan_result.failure_reason)
 
-        generator = TrajectoryGenerator(speed=planner.speed)
+        generator = TrajectoryGenerator(speed=self.patrol_speed)
         coverage_trajectory = generator.generate(plan_result.waypoints)
         if self.demo_mode:
             coverage_trajectory = coverage_trajectory[:self.demo_waypoints]
         takeoff_point = TrajectoryPoint(
             timestamp=0.0,
-            x=0.0,
-            y=0.0,
+            x=self.takeoff_x,
+            y=self.takeoff_y,
             z=self.takeoff_height,
             vx=0.0,
             vy=0.0,
@@ -163,8 +189,8 @@ class MissionManagerNode(Node):
         manager.load_trajectory(trajectory)
         manager.return_target = TrajectoryPoint(
             timestamp=0.0,
-            x=0.0,
-            y=0.0,
+            x=self.takeoff_x,
+            y=self.takeoff_y,
             z=self.takeoff_height,
             vx=0.0,
             vy=0.0,

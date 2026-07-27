@@ -62,8 +62,8 @@ class PX4PositionBridgeNode(Node):
         """创建转换参数、PX4订阅、地图位置发布和定时器。"""
         super().__init__('px4_position_bridge_node')
 
-        self.declare_parameter('origin_north', 0.0)
-        self.declare_parameter('origin_east', 0.0)
+        self.declare_parameter('origin_north', 15.0)
+        self.declare_parameter('origin_east', -20.0)
         self.declare_parameter('origin_down', 0.0)
         self.declare_parameter('yaw_offset', 0.0)
 

@@ -145,8 +145,8 @@ class MissionOffboardController(Node):
         """创建参数、任务接口、PX4接口和控制定时器。"""
         super().__init__('mission_offboard_controller')
 
-        self.declare_parameter('origin_north', 0.0)
-        self.declare_parameter('origin_east', 0.0)
+        self.declare_parameter('origin_north', 15.0)
+        self.declare_parameter('origin_east', -20.0)
         self.declare_parameter('origin_down', 0.0)
         self.declare_parameter('yaw_offset', 0.0)
         self.declare_parameter('target_timeout', 0.5)

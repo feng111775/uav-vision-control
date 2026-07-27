@@ -24,7 +24,7 @@ class CoveragePlanResult:
 class CoveragePlanner:
     """生成蛇形全覆盖航点，并检查禁飞区和任务时间。"""
 
-    def __init__(self, patrol_height=1.2, speed=0.5,
+    def __init__(self, patrol_height=1.2, speed=2.0,
                  max_duration=300.0):
         """保存巡航高度、速度和最大允许任务时间。"""
         self.patrol_height = self._positive_float(
@@ -109,11 +109,12 @@ class CoveragePlanner:
         """返回禁飞格的二维矩形边界。"""
         row, col = cell
         size = grid_map.cell_size
+        map_x_min, _, map_y_min, _ = grid_map.bounds
         return (
-            col * size,
-            (col + 1) * size,
-            row * size,
-            (row + 1) * size,
+            map_x_min + col * size,
+            map_x_min + (col + 1) * size,
+            map_y_min + row * size,
+            map_y_min + (row + 1) * size,
         )
 
     def _path_crosses_no_fly_cell(self, grid_map, waypoints):
@@ -158,8 +159,7 @@ class CoveragePlanner:
         y_min = min(bounds[2] for bounds in blocked_bounds)
         y_max = max(bounds[3] for bounds in blocked_bounds)
         margin = grid_map.cell_size * 0.1
-        map_width = grid_map.cols * grid_map.cell_size
-        map_height = grid_map.rows * grid_map.cell_size
+        map_x_min, map_x_max, map_y_min, map_y_max = grid_map.bounds
 
         candidates = [
             [(start[0], y_min - margin), (end[0], y_min - margin)],
@@ -172,8 +172,8 @@ class CoveragePlanner:
         for detour in candidates:
             route = [start] + detour + [end]
             inside_map = all(
-                0.0 <= point[0] <= map_width
-                and 0.0 <= point[1] <= map_height
+                map_x_min <= point[0] <= map_x_max
+                and map_y_min <= point[1] <= map_y_max
                 for point in detour
             )
             if inside_map and self._route_is_clear(grid_map, route):
@@ -278,7 +278,7 @@ def generate_coverage_path(no_fly_cells=[]):
     grid_map = GridMap(
         rows=7,
         cols=9,
-        cell_size=0.5,
+        cell_size=5.0,
         no_fly_cells=no_fly_cells,
     )
     if no_fly_cells:
