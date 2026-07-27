@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sdf version="1.9">
+  <world name="wildlife_inspection">
+    <physics type="ode">
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>250</real_time_update_rate>
+    </physics>
+
+    <plugin name="gz::sim::systems::Physics" filename="gz-sim-physics-system"/>
+    <plugin name="gz::sim::systems::UserCommands" filename="gz-sim-user-commands-system"/>
+    <plugin name="gz::sim::systems::SceneBroadcaster" filename="gz-sim-scene-broadcaster-system"/>
+    <plugin name="gz::sim::systems::Contact" filename="gz-sim-contact-system"/>
+    <plugin name="gz::sim::systems::Imu" filename="gz-sim-imu-system"/>
+    <plugin name="gz::sim::systems::AirPressure" filename="gz-sim-air-pressure-system"/>
+    <plugin name="gz::sim::systems::ApplyLinkWrench" filename="gz-sim-apply-link-wrench-system"/>
+    <plugin name="gz::sim::systems::NavSat" filename="gz-sim-navsat-system"/>
+    <plugin name="gz::sim::systems::Sensors" filename="gz-sim-sensors-system">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <gravity>0 0 -9.8</gravity>
+    <magnetic_field>6e-06 2.3e-05 -4.2e-05</magnetic_field>
+    <atmosphere type="adiabatic"/>
+
+    <scene>
+      <grid>false</grid>
+      <ambient>0.55 0.55 0.45 1</ambient>
+      <background>0.72 0.82 0.92 1</background>
+      <shadows>true</shadows>
+    </scene>
+
+    <!-- The 45 x 35 m simulation field represents the scaled 450 x 350 m
+         H2025 inspection area. -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="ground_link">
+        <collision name="ground_collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>45 35</size>
+            </plane>
+          </geometry>
+        </collision>
+        <visual name="grass_wilderness_surface">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>45 35</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.42 0.48 0.12 1</ambient>
+            <diffuse>0.52 0.55 0.16 1</diffuse>
+            <specular>0.02 0.02 0.01 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Grid coordinates: columns A1-A9 through rows G1-G9. Each cell is
+         5 x 5 m. A is the north row and cell 1 is the west column. -->
+    <model name="wildlife_inspection">
+      <static>true</static>
+      <link name="practice_markings">
+        <!-- Vertical grid lines separating columns 1 through 9. -->
+        <visual name="grid_v1"><pose>-17.5 0 0.012 0 0 0</pose><geometry><box><size>0.04 35 0.012</size></box></geometry><material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material></visual>
+        <visual name="grid_v2"><pose>-12.5 0 0.012 0 0 0</pose><geometry><box><size>0.04 35 0.012</size></box></geometry><material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material></visual>
+        <visual name="grid_v3"><pose>-7.5 0 0.012 0 0 0</pose><geometry><box><size>0.04 35 0.012</size></box></geometry><material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material></visual>
+        <visual name="grid_v4"><pose>-2.5 0 0.012 0 0 0</pose><geometry><box><size>0.04 35 0.012</size></box></geometry><material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material></visual>
+        <visual name="grid_v5"><pose>2.5 0 0.012 0 0 0</pose><geometry><box><size>0.04 35 0.012</size></box></geometry><material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material></visual>
+        <visual name="grid_v6"><pose>7.5 0 0.012 0 0 0</pose><geometry><box><size>0.04 35 0.012</size></box></geometry><material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material></visual>
+        <visual name="grid_v7"><pose>12.5 0 0.012 0 0 0</pose><geometry><box><size>0.04 35 0.012</size></box></geometry><material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material></visual>
+        <visual name="grid_v8"><pose>17.5 0 0.012 0 0 0</pose><geometry><box><size>0.04 35 0.012</size></box></geometry><material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material></visual>
+
+        <!-- Horizontal grid lines separating rows A through G. -->
+        <visual name="grid_h1"><pose>0 -12.5 0.012 0 0 0</pose><geometry><box><size>45 0.04 0.012</size></box></geometry><material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material></visual>
+        <visual name="grid_h2"><pose>0 -7.5 0.012 0 0 0</pose><geometry><box><size>45 0.04 0.012</size></box></geometry><material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material></visual>
+        <visual name="grid_h3"><pose>0 -2.5 0.012 0 0 0</pose><geometry><box><size>45 0.04 0.012</size></box></geometry><material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material></visual>
+        <visual name="grid_h4"><pose>0 2.5 0.012 0 0 0</pose><geometry><box><size>45 0.04 0.012</size></box></geometry><material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material></visual>
+        <visual name="grid_h5"><pose>0 7.5 0.012 0 0 0</pose><geometry><box><size>45 0.04 0.012</size></box></geometry><material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material></visual>
+        <visual name="grid_h6"><pose>0 12.5 0.012 0 0 0</pose><geometry><box><size>45 0.04 0.012</size></box></geometry><material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material></visual>
+
+        <!-- Semi-transparent no-fly region near the center. -->
+        <visual name="no_fly_zone">
+          <pose>0 0 0.02 0 0 0</pose>
+          <geometry><box><size>10 5 0.01</size></box></geometry>
+          <material>
+            <ambient>0.35 0.35 0.35 0.55</ambient>
+            <diffuse>0.45 0.45 0.45 0.55</diffuse>
+          </material>
+          <transparency>0.45</transparency>
+        </visual>
+
+        <!-- Red takeoff area in the south-east / lower-right corner. -->
+        <visual name="takeoff_area">
+          <pose>20 -15 0.02 0 0 0</pose>
+          <geometry><cylinder><radius>2</radius><length>0.02</length></cylinder></geometry>
+          <material>
+            <ambient>0.9 0.02 0.02 1</ambient>
+            <diffuse>1 0.03 0.03 1</diffuse>
+            <emissive>0.12 0 0 1</emissive>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Animal distribution: elephant A5, tiger C7, deer F3, monkey B2. -->
+    <include>
+      <name>elephant</name>
+      <uri>file:///home/a-corn/2025h/PX4-Autopilot/Tools/simulation/gz/models/wildlife/elephant/model.sdf</uri>
+      <pose>0 15 0 0 0 0</pose>
+    </include>
+    <include>
+      <name>tiger</name>
+      <uri>file:///home/a-corn/2025h/PX4-Autopilot/Tools/simulation/gz/models/wildlife/tiger/model.sdf</uri>
+      <pose>10 5 0 0 0 0.5</pose>
+    </include>
+    <include>
+      <name>deer</name>
+      <uri>file:///home/a-corn/2025h/PX4-Autopilot/Tools/simulation/gz/models/wildlife/deer/model.sdf</uri>
+      <pose>-10 -10 0 0 0 -0.5</pose>
+    </include>
+    <include>
+      <name>monkey</name>
+      <uri>file:///home/a-corn/2025h/PX4-Autopilot/Tools/simulation/gz/models/wildlife/monkey/model.sdf</uri>
+      <pose>-15 10 0 0 0 1.0</pose>
+    </include>
+
+    <light name="sun" type="directional">
+      <pose>0 0 500 0 0 0</pose>
+      <cast_shadows>true</cast_shadows>
+      <intensity>1</intensity>
+      <direction>-0.2 0.4 -0.88</direction>
+      <diffuse>0.95 0.92 0.82 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+    </light>
+
+    <spherical_coordinates>
+      <surface_model>EARTH_WGS84</surface_model>
+      <world_frame_orientation>ENU</world_frame_orientation>
+      <latitude_deg>47.397971057728974</latitude_deg>
+      <longitude_deg>8.546163739800146</longitude_deg>
+      <elevation>0</elevation>
+    </spherical_coordinates>
+  </world>
+</sdf>
