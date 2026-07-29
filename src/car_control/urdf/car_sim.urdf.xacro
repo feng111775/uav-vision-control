@@ -1,0 +1,140 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="car_sim">
+  <!-- Gazebo-only defaults, SI units. These are not measured vehicle dimensions. -->
+  <xacro:property name="chassis_length_m" value="0.40"/>
+  <xacro:property name="chassis_width_m" value="0.28"/>
+  <xacro:property name="chassis_height_m" value="0.10"/>
+  <xacro:property name="wheel_radius_m" value="0.065"/>
+  <xacro:property name="wheel_width_m" value="0.035"/>
+  <xacro:property name="wheel_separation_m" value="0.32"/>
+  <xacro:property name="caster_radius_m" value="0.035"/>
+  <xacro:property name="chassis_mass_kg" value="3.0"/>
+  <xacro:property name="wheel_mass_kg" value="0.25"/>
+  <xacro:property name="caster_mass_kg" value="0.10"/>
+  <xacro:arg name="controllers_file" default="car_controllers.yaml"/>
+
+  <xacro:macro name="box_inertia" params="mass x y z">
+    <inertia ixx="${mass * (y*y + z*z) / 12.0}" ixy="0" ixz="0"
+             iyy="${mass * (x*x + z*z) / 12.0}" iyz="0"
+             izz="${mass * (x*x + y*y) / 12.0}"/>
+  </xacro:macro>
+
+  <xacro:macro name="wheel" params="side y">
+    <link name="${side}_wheel_link">
+      <inertial>
+        <mass value="${wheel_mass_kg}"/>
+        <origin rpy="1.5707963267948966 0 0"/>
+        <inertia ixx="${wheel_mass_kg * (3*wheel_radius_m*wheel_radius_m + wheel_width_m*wheel_width_m) / 12.0}"
+                 ixy="0" ixz="0"
+                 iyy="${wheel_mass_kg * wheel_radius_m*wheel_radius_m / 2.0}"
+                 iyz="0"
+                 izz="${wheel_mass_kg * (3*wheel_radius_m*wheel_radius_m + wheel_width_m*wheel_width_m) / 12.0}"/>
+      </inertial>
+      <visual>
+        <origin rpy="1.5707963267948966 0 0"/>
+        <geometry><cylinder radius="${wheel_radius_m}" length="${wheel_width_m}"/></geometry>
+        <material name="wheel_black"><color rgba="0.05 0.05 0.05 1"/></material>
+      </visual>
+      <collision>
+        <origin rpy="1.5707963267948966 0 0"/>
+        <geometry><cylinder radius="${wheel_radius_m}" length="${wheel_width_m}"/></geometry>
+      </collision>
+    </link>
+    <joint name="${side}_wheel_joint" type="continuous">
+      <parent link="base_link"/>
+      <child link="${side}_wheel_link"/>
+      <origin xyz="0 ${y} 0" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <dynamics damping="0.05" friction="0.0"/>
+    </joint>
+    <gazebo reference="${side}_wheel_link">
+      <mu1>1.0</mu1>
+      <mu2>1.0</mu2>
+    </gazebo>
+  </xacro:macro>
+
+  <link name="base_footprint"/>
+  <link name="base_link">
+    <inertial>
+      <mass value="0.001"/>
+      <inertia ixx="0.000001" ixy="0" ixz="0" iyy="0.000001" iyz="0" izz="0.000001"/>
+    </inertial>
+  </link>
+  <joint name="base_footprint_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 ${wheel_radius_m}" rpy="0 0 0"/>
+  </joint>
+
+  <link name="chassis_link">
+    <inertial>
+      <origin xyz="0 0 ${chassis_height_m / 2.0}"/>
+      <mass value="${chassis_mass_kg}"/>
+      <xacro:box_inertia mass="${chassis_mass_kg}" x="${chassis_length_m}"
+                          y="${chassis_width_m}" z="${chassis_height_m}"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 ${chassis_height_m / 2.0}"/>
+      <geometry><box size="${chassis_length_m} ${chassis_width_m} ${chassis_height_m}"/></geometry>
+      <material name="chassis_blue"><color rgba="0.10 0.35 0.80 1"/></material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 ${chassis_height_m / 2.0}"/>
+      <geometry><box size="${chassis_length_m} ${chassis_width_m} ${chassis_height_m}"/></geometry>
+    </collision>
+  </link>
+  <joint name="chassis_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="chassis_link"/>
+    <origin xyz="0 0 0"/>
+  </joint>
+
+  <xacro:wheel side="left" y="${wheel_separation_m / 2.0}"/>
+  <xacro:wheel side="right" y="${-wheel_separation_m / 2.0}"/>
+
+  <link name="caster_link">
+    <inertial>
+      <mass value="${caster_mass_kg}"/>
+      <inertia ixx="${0.4*caster_mass_kg*caster_radius_m*caster_radius_m}" ixy="0" ixz="0"
+               iyy="${0.4*caster_mass_kg*caster_radius_m*caster_radius_m}" iyz="0"
+               izz="${0.4*caster_mass_kg*caster_radius_m*caster_radius_m}"/>
+    </inertial>
+    <visual>
+      <geometry><sphere radius="${caster_radius_m}"/></geometry>
+      <material name="caster_gray"><color rgba="0.5 0.5 0.5 1"/></material>
+    </visual>
+    <collision><geometry><sphere radius="${caster_radius_m}"/></geometry></collision>
+  </link>
+  <joint name="caster_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="caster_link"/>
+    <origin xyz="${-chassis_length_m * 0.35} 0 ${caster_radius_m - wheel_radius_m}" rpy="0 0 0"/>
+  </joint>
+  <gazebo reference="caster_link">
+    <mu1>0.02</mu1>
+    <mu2>0.02</mu2>
+  </gazebo>
+
+  <ros2_control name="GazeboSimSystem" type="system">
+    <hardware>
+      <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+    </hardware>
+    <joint name="left_wheel_joint">
+      <command_interface name="velocity"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="right_wheel_joint">
+      <command_interface name="velocity"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+  </ros2_control>
+
+  <gazebo>
+    <plugin filename="libgz_ros2_control-system.so"
+            name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+      <parameters>$(arg controllers_file)</parameters>
+    </plugin>
+  </gazebo>
+</robot>

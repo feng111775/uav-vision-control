@@ -7,6 +7,9 @@ endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(ament_cmake REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(rclcpp REQUIRED)
 
 add_library(car_control_health src/health.cpp)
 target_include_directories(car_control_health
@@ -25,6 +28,9 @@ add_library(car_control_core
   src/core/button_debouncer.cpp
   src/core/progress_state_machine.cpp
 )
+
+add_executable(car_motion_smoke_node src/sim/car_motion_smoke_node.cpp)
+ament_target_dependencies(car_motion_smoke_node rclcpp geometry_msgs nav_msgs)
 target_include_directories(car_control_core
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -38,6 +44,7 @@ install(
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
 )
+install(TARGETS car_motion_smoke_node DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY include/ DESTINATION include)
 install(DIRECTORY launch config urdf worlds firmware
   DESTINATION share/${PROJECT_NAME}
@@ -63,6 +70,14 @@ if(BUILD_TESTING)
     target_link_libraries(test_${module} PRIVATE car_control_core)
     add_test(NAME car_control_${module}_test COMMAND test_${module})
   endforeach()
+
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  add_test(
+    NAME car_control_sim_static_test
+    COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/test/test_car_sim_static.py
+      ${CMAKE_CURRENT_SOURCE_DIR}
+  )
 endif()
 
 ament_export_targets(export_car_control HAS_LIBRARY_TARGET)

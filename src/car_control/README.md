@@ -45,10 +45,60 @@ FINISHED` 推进，只接受 B、C、D、A 顺序。节点需要满足最小累�
 传感器数量、增益、速度和阈值均不是已确认的真车参数，不得直接用于真车。
 核心库不解析 YAML，调用方必须验证并显式传参。
 
+## Gazebo Harmonic 差速小车
+
+模型结构为 `base_footprint -> base_link -> chassis_link`，左右驱动轮通过连续关节
+连接到 `base_link`，后部球形支撑通过固定关节连接。坐标系遵循 ROS 约定：+x
+指向车头、+y 指向车体左侧、+z 向上；正角速度绕 +z 逆时针。左轮位于 +y，
+右轮位于 -y，两个轮轴均沿 y 轴。
+
+| Gazebo 仿真默认参数 | 数值 |
+|---|---:|
+| 车身长 / 宽 / 高 | 0.40 / 0.28 / 0.10 m |
+| 车轮半径 / 宽度 | 0.065 / 0.035 m |
+| 轮距 | 0.32 m |
+| 车身质量 | 3.0 kg |
+| 单个车轮质量 | 0.25 kg |
+
+这些尺寸和质量仅是基础运动仿真的默认值，不是最终真车参数。真车轮径、轮距、
+质量、惯量和控制限幅均仍待实测。
+
+启动无界面仿真：
+
+```bash
+source /opt/ros/jazzy/setup.bash
+cd /home/xixi/px4_ros2_ws
+source install/setup.bash
+ros2 launch car_control car_basic_sim.launch.py headless:=true
+```
+
+打开 Gazebo GUI 时使用 `headless:=false`。可通过 `x:=`、`y:=`、`z:=` 和
+`yaw:=` 设置初始位姿。另一个终端可检查：
+
+```bash
+ros2 control list_controllers
+ros2 topic type /diff_drive_controller/cmd_vel
+ros2 topic type /diff_drive_controller/odom
+ros2 topic hz /joint_states
+ros2 topic hz /diff_drive_controller/odom
+```
+
+速度命令话题 `/diff_drive_controller/cmd_vel` 使用
+`geometry_msgs/msg/TwistStamped`，必须填写有效时间戳；里程计话题是
+`/diff_drive_controller/odom`。基础运动与命令超时烟雾测试：
+
+```bash
+ros2 run car_control car_motion_smoke_node
+```
+
+测试会低速直行、转弯、停止并验证车轮反馈里程计和 0.5 s 命令超时。停止仿真时
+在 launch 终端按 `Ctrl-C`，等待 Gazebo、桥接和 ROS 节点全部退出。
+
 ## 当前完成与未实现内容
 
-当前已完成 8 个核心模块、输入保护、饱和/复位行为和 Ubuntu 单元测试。仍未完成
-Gazebo 差速模型、ROS 控制节点、MCU/HAL 驱动、真实传感器适配和现场调参。
+当前已完成 8 个核心模块及其 9 项测试，以及 Gazebo Harmonic 差速小车基础运动
+模型。灰度传感器、黑色循线赛道、A/B/C/D 比赛场地、自主循线 ROS 节点、
+无线通信、MCU 真车驱动、地面站界面和 PX4 联合仿真均不在本阶段实现范围。
 
 ## 构建、测试与运行
 
