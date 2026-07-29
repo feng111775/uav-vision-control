@@ -1,0 +1,35 @@
+# Simulation defaults only. They are not validated values for the real car.
+encoder:
+  counts_per_revolution: 1024.0  # count/revolution, simulation placeholder
+  wheel_radius_m: 0.03           # m, simulation placeholder
+pi:
+  kp: 1.0
+  ki: 0.5
+  output_min: -1.0               # normalized control
+  output_max: 1.0                # normalized control
+  integral_min: -0.5             # m
+  integral_max: 0.5              # m
+line:
+  black_line: true
+  minimum_activation: 0.2        # normalized activation sum
+pd:
+  kp: 0.8
+  kd: 0.05
+  output_limit: 0.5              # m/s differential correction
+  derivative_filter_alpha: 0.2   # dimensionless [0, 1)
+speed:
+  maximum_speed_m_s: 1.0
+  minimum_tracking_speed_m_s: 0.2
+  error_slowdown_gain_m_s: 0.4
+  maximum_wheel_speed_m_s: 1.2
+  recovery_speed_m_s: 0.15
+recovery:
+  fault_timeout_s: 1.0
+  search_steering: 0.2           # m/s differential correction
+button:
+  stable_time_s: 0.05
+progress:
+  minimum_node_distance_m: 0.5
+  node_lockout_s: 0.5
+  ab_target_s: 15.0
+  lap_target_s: 90.0
