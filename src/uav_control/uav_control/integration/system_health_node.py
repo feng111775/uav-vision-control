@@ -35,6 +35,9 @@ class SystemHealthNode(Node):  # noqa: D101
             "vision_error": WatchedSource(vision_timeout),
         })
         self.car_state = self.payload_state = "DISABLED"
+        self.vision_h7_state = "UNKNOWN"
+        self.target_valid = False
+        self.target_age_ms = None
         self.mission_state = self.mission_event = "UNKNOWN"
         self.px4_failsafe = self.px4_armed = self.px4_offboard = False
         self.started = time.monotonic()
@@ -60,12 +63,18 @@ class SystemHealthNode(Node):  # noqa: D101
         )
         for topic, name in (
             ("/vision/h7/detection", "vision_detection"),
-            ("/vision/target/tracked", "vision_tracked"),
             ("/vision/landing_error", "vision_error"),
         ):
             self.create_subscription(
                 Float32MultiArray, topic, lambda _, n=name: self._seen(n), 10
             )
+        self.create_subscription(
+            Float32MultiArray, "/vision/target/tracked", self._tracked, 10
+        )
+        self.create_subscription(
+            String, "/vision/h7/status",
+            lambda msg: setattr(self, "vision_h7_state", msg.data), 10
+        )
         self.create_subscription(
             String, "/car/link/status", lambda msg: setattr(
                 self, "car_state", self._json_state(msg.data)
@@ -104,6 +113,14 @@ class SystemHealthNode(Node):  # noqa: D101
             msg.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD
         )
 
+    def _tracked(self, msg: Float32MultiArray) -> None:
+        """Record freshness and schema-defined target validity/age."""
+        from uav_vision.d_task_schema import TARGET_AGE_MS, TRACKED_LENGTH, VALID
+        self._seen("vision_tracked")
+        if len(msg.data) == TRACKED_LENGTH:
+            self.target_valid = msg.data[VALID] == 1.0
+            self.target_age_ms = float(msg.data[TARGET_AGE_MS])
+
     def _publish(self) -> None:
         now = time.monotonic()
         states = self.model.snapshot(now)
@@ -133,6 +150,8 @@ class SystemHealthNode(Node):  # noqa: D101
             "states": states, "failsafe": self.px4_failsafe,
             "armed": self.px4_armed, "offboard": self.px4_offboard,
             "mission_state": self.mission_state, "mission_event": self.mission_event,
+            "vision_h7_status": self.vision_h7_state,
+            "target_valid": self.target_valid, "target_age_ms": self.target_age_ms,
             "cpu_temperature_c": temperature, "disk_free_fraction": disk_fraction,
             "memory_used_fraction": memory_fraction,
             "uptime_seconds": now - self.started,
