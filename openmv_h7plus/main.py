@@ -1,4 +1,4 @@
-"""OpenMV Cam H7 Plus 红色色块检测入口。"""
+"""OpenMV H7 Plus D-task detector entry (legacy detector adapter for now)."""
 
 import pyb
 import time

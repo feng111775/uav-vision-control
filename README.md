@@ -442,3 +442,44 @@ ros2 topic list | grep '/camera/'
 - 不得使用 `offboard_control.py` 代替正式控制器。
 - 输入无效、超时或 PX4 failsafe 时停止水平控制；控制故障请求正常降落。
 - 真机飞行仍需完成无桨台架、定位/航向、人工接管、地理围栏和 failsafe 验证。
+# 2026 全国大学生电子设计竞赛 D 题视觉链路（第一阶段）
+
+唯一基线：Ubuntu 24.04、ROS 2 Jazzy、PX4 Release 1.16.0
+（`6ea3539157ca358c70a515878b77077af7d4611d`，`px4_fmu-v6c_default`）、
+Micro XRCE-DDS Agent 2.4.3、`px4_msgs release/1.16`。硬件目标为 Pixhawk 6C
+Mini、Raspberry Pi 4B 和 OpenMV H7 Plus。
+
+正式链路为 `h7_bridge_node` 或 `fake_h7_node` → `target_filter_node` →
+`target_predictor_node` → `landing_error_node` → `vision_dashboard_node`。对应主要话题：
+`/vision/h7/detection`、`/vision/h7/filtered_detection`、
+`/vision/target/tracked`、`/vision/landing_error`、
+`/vision/debug/target_canvas` 和 `/vision/debug/status`。
+
+H7 正式串口协议为：
+
+```text
+D_TARGET,valid,cx,cy,outer_diameter_px,inner_diameter_px,angle_rad,confidence
+```
+
+默认只接受 `D_TARGET`。`allow_legacy_protocol:=true` 也只接受无歧义的旧
+`TARGET,0,0,0,0,0,0,0` 无目标心跳；旧有效检测仍会拒绝，绝不会把
+`width,height,area` 解释成内外圆与角度。
+
+构建并以假数据运行：
+
+```bash
+source /opt/ros/jazzy/setup.bash
+colcon build --symlink-install --packages-select uav_vision
+source install/setup.bash
+ros2 launch uav_vision d_task_vision.launch.py input_source:=fake
+```
+
+连接 H7 时将最后一行改为 `input_source:=h7`。查看画布可运行
+`rqt_image_view /vision/debug/target_canvas`；查看地面站友好状态可运行
+`ros2 topic echo /vision/debug/status`。同一 launch 只会启动一个原始数据源，且不会
+启动 PX4 控制节点。
+
+本阶段只输出像素误差和归一化误差，未伪造焦距或米制误差；尚未实现正式同心圆/
+十字检测、相机标定与高度融合、完整 PX4 任务状态机、SITL 闭环或真机飞行。后续
+先在 SITL 验证接口与失效保护，再进入带人工安全边界的真机测试；任何启动均不会
+在本阶段自动解锁。

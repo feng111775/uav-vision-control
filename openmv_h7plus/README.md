@@ -1,9 +1,10 @@
-# OpenMV Cam H7 Plus 红色色块检测
+# OpenMV Cam H7 Plus D题通信框架
 
 本目录是 OpenMV Cam H7 Plus 端的 MicroPython 程序，要求使用 **OpenMV 固件
 5.0 / MicroPython 1.28**。OV5640 摄像头通过固件 5.0 的 `csi` 接口访问，默认按
 竖直向下安装配置为 RGB565、QVGA（320×240），通过 USB CDC 虚拟串口以约
-20 Hz 输出检测结果。
+20 Hz 输出检测结果。当前 `detector.py` 仍是明确标记的 legacy 红色色块通信测试
+适配器，不是正式同心圆/十字算法。
 
 ## 上传到 OpenMV
 
@@ -28,12 +29,14 @@ LAB 六元组，然后替换文件中的起始阈值。不同光照、曝光和�
 协议每行均以换行符结束：
 
 ```text
-TARGET,valid,cx,cy,width,height,area,confidence
-TARGET,1,160,120,50,48,2400,90
-TARGET,0,0,0,0,0,0,0
+D_TARGET,valid,cx,cy,outer_diameter_px,inner_diameter_px,angle_rad,confidence
+D_TARGET,1,160,120,50,30,0.25,90
+D_TARGET,0,0,0,0,0,0,0
 ```
 
-`area` 是通过颜色阈值的实际像素数 `blob.pixels`。固件 5.0 的 Blob 检测结果是
+正式检测器接口必须提供中心、内外圆直径、90°周期十字角和置信度。当前 legacy
+适配器只用于检查摄像头/USB 链路，并显式输出相等直径与零角度，不能作为比赛
+检测结果。固件 5.0 的 Blob 检测结果是
 属性元组，因此代码使用 `blob.cx`、`blob.cy`、`blob.w`、`blob.h` 和
 `blob.pixels`，不使用旧式的括号调用。`confidence` 是依据色块填充率
 和画面占比计算的 **0～100 工程评分**，用于排序和状态观察，不是神经网络概率。

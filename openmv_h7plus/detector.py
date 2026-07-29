@@ -1,4 +1,4 @@
-"""基于 OpenMV find_blobs 的红色色块检测。"""
+"""Legacy red-blob communication test behind the D-task detector interface."""
 
 from thresholds import RED_THRESHOLDS
 
@@ -31,7 +31,7 @@ def _engineering_confidence(blob, frame_area):
 
 
 def detect_red(image):
-    """返回最大红色色块的协议字段字典；无目标时返回 None。"""
+    """Legacy-only approximation; not the formal concentric-circle detector."""
     blobs = image.find_blobs(
         RED_THRESHOLDS,
         pixels_threshold=PIXELS_THRESHOLD,
@@ -44,12 +44,16 @@ def detect_red(image):
     # pixels 是通过颜色阈值的实际像素数，用它选择目标并作为 area 输出。
     target = max(blobs, key=lambda blob: blob.pixels)
     frame_area = image.width() * image.height()
+    # This adapter deliberately exposes explicit D-task fields. The equal
+    # diameters and zero angle make its limitations visible; no area/box field
+    # is reinterpreted as a formal ring measurement.
+    outer = max(target.w, target.h)
     return {
         "valid": 1,
         "cx": target.cx,
         "cy": target.cy,
-        "width": target.w,
-        "height": target.h,
-        "area": target.pixels,
+        "outer_diameter_px": outer,
+        "inner_diameter_px": outer,
+        "angle_rad": 0.0,
         "confidence": _engineering_confidence(target, frame_area),
     }

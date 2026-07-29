@@ -3,7 +3,7 @@
 from pyb import USB_VCP
 
 
-NO_TARGET_LINE = "TARGET,0,0,0,0,0,0,0\n"
+NO_TARGET_LINE = "D_TARGET,0,0,0,0,0,0,0\n"
 
 
 class TargetProtocol:
@@ -17,13 +17,13 @@ class TargetProtocol:
         if result is None:
             self.send_no_target()
             return
-        line = "TARGET,%d,%d,%d,%d,%d,%d,%d\n" % (
+        line = "D_TARGET,%d,%d,%d,%d,%d,%.4f,%d\n" % (
             result["valid"],
             result["cx"],
             result["cy"],
-            result["width"],
-            result["height"],
-            result["area"],
+            result["outer_diameter_px"],
+            result["inner_diameter_px"],
+            result["angle_rad"],
             result["confidence"],
         )
         self._usb.send(line.encode("ascii"))
