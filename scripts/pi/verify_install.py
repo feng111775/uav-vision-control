@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import importlib
 import os
-import shutil
 import sys
 
 EXECUTABLES = (
@@ -12,15 +11,21 @@ EXECUTABLES = (
 
 def main() -> int:
     errors = []
+    prefixes = [
+        path for path in os.environ.get("AMENT_PREFIX_PATH", "").split(os.pathsep)
+        if path
+    ]
     for module in ("uav_control", "uav_vision", "px4_msgs.msg"):
         try:
             importlib.import_module(module)
         except ImportError as exc:
             errors.append(str(exc))
     for executable in EXECUTABLES:
-        if shutil.which(executable) is None:
+        if not any(os.path.isfile(os.path.join(
+                prefix, "lib/uav_control", executable
+        )) for prefix in prefixes):
             errors.append("missing executable: " + executable)
-    prefix = os.environ.get("AMENT_PREFIX_PATH", "").split(os.pathsep)[0]
+    prefix = prefixes[0] if prefixes else ""
     for name in ("d_task_observe.launch.py", "d_task_hardware_bench.launch.py",
                  "d_task_first_flight.launch.py", "d_task_competition.launch.py"):
         if prefix and not os.path.exists(os.path.join(prefix, "share/uav_control/launch", name)):
