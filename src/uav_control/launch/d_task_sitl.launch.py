@@ -32,10 +32,14 @@ def _launch(context):
              name='mission_dashboard_node',
              output='screen'),
              Node(package='uav_vision',
-             executable='d_task_sitl_scenario_node',
-             name='d_task_sitl_scenario_node',
-             parameters=[{'mission_mode': mode}],
-             output='screen')]
+                  executable='d_task_sitl_scenario_node',
+                  name='d_task_sitl_scenario_node',
+                  parameters=[{'mission_mode': mode}],
+                  # Temporary compatibility only. Remove after uav_vision
+                  # changes its stale PX4 v1.16 local-position topic name.
+                  remappings=[('/fmu/out/vehicle_local_position_v1',
+                               '/fmu/out/vehicle_local_position')],
+                  output='screen')]
     nodes.extend(
         Node(
             package='uav_vision',

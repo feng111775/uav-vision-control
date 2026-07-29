@@ -18,15 +18,42 @@ class VisualGuidance:
         self.camera_x_sign = float(camera_x_sign)
         self.camera_y_sign = float(camera_y_sign)
         self.max_error_jump = float(max_error_jump)
+        parameters = (
+            self.kp_forward, self.kp_left, self.deadband_x, self.deadband_y,
+            self.max_speed, self.min_confidence, self.max_age_ms,
+            self.camera_x_sign, self.camera_y_sign, self.max_error_jump)
+        if not all(math.isfinite(value) for value in parameters):
+            raise ValueError('visual-guidance parameters must be finite')
+        if min(self.kp_forward, self.kp_left, self.deadband_x,
+               self.deadband_y, self.max_speed, self.max_age_ms,
+               self.max_error_jump) < 0.0:
+            raise ValueError('visual-guidance limits and gains cannot be negative')
+        if not 0.0 <= self.min_confidence <= 100.0:
+            raise ValueError('min_confidence must be in [0, 100]')
+        if self.camera_x_sign not in (-1.0, 1.0) or self.camera_y_sign not in (-1.0, 1.0):
+            raise ValueError('camera signs must be -1 or 1')
         self.last_error = None
 
     @staticmethod
     def flu_to_ned(forward, left, heading):
+        values = (float(forward), float(left), float(heading))
+        if not all(math.isfinite(value) for value in values):
+            raise ValueError('FLU velocity and heading must be finite')
+        forward, left, heading = values
         right = -left
         return (math.cos(heading) * forward - math.sin(heading) * right,
                 math.sin(heading) * forward + math.cos(heading) * right)
 
     def velocity(self, valid, error_x, error_y, confidence, age_ms, heading):
+        values = (float(error_x), float(error_y), float(confidence),
+                  float(age_ms), float(heading))
+        if not all(math.isfinite(value) for value in values):
+            self.last_error = None
+            return 0.0, 0.0
+        error_x, error_y, confidence, age_ms, heading = values
+        if confidence < 0.0 or confidence > 100.0 or age_ms < 0.0:
+            self.last_error = None
+            return 0.0, 0.0
         if not valid or confidence < self.min_confidence or age_ms > self.max_age_ms:
             self.last_error = None
             return 0.0, 0.0

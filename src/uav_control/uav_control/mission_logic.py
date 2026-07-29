@@ -1,23 +1,29 @@
-"""ROS-independent safety and state machine for all D-task mission modes."""
+"""ROS-independent unified state machine for all D-task mission modes."""
 
 import math
 
-from .mission_schema import CarProgress, parse_mission_mode
+from .mission_schema import CarProgress, MissionState, parse_mission_mode
+
+
+S = MissionState
 
 
 class MissionLogic:
+    """Pure mission state machine; ROS callbacks only update its inputs."""
+
     def __init__(self, mission_mode='hover_test', target_altitude=1.5,
                  simulation_mode=False, competition_mode=False,
                  enable_control=False, enable_auto_arm=False,
                  enable_visual_follow=True, enable_payload_release=False,
-                 enable_dynamic_landing=False, enable_second_takeoff=False,
-                 prestream_seconds=1.0, hover_confirm_seconds=3.0,
-                 hover_test_seconds=10.0, dwell_on_car_seconds=5.0,
-                 mission_timeout_seconds=90.0, b_deadline_seconds=15.0,
-                 altitude_tolerance=0.1, stable_seconds=1.0,
-                 payload_ack_timeout=3.0):
+                 enable_dynamic_landing=False, enable_auto_disarm=False,
+                 enable_second_takeoff=False, prestream_cycles=40,
+                 hover_confirm_seconds=3.0, hover_test_seconds=10.0,
+                 dwell_on_car_seconds=5.0, mission_timeout_seconds=90.0,
+                 b_deadline_seconds=15.0, altitude_tolerance=0.1,
+                 stable_seconds=1.0, visual_stable_seconds=0.5,
+                 payload_ack_timeout=3.0, dynamic_near_height_m=0.6):
         self.mode = parse_mission_mode(mission_mode)
-        self.mode_name = mission_mode
+        self.mode_name = str(mission_mode)
         self.target_altitude = float(target_altitude)
         self.simulation_mode = bool(simulation_mode)
         self.competition_mode = bool(competition_mode)
@@ -26,8 +32,9 @@ class MissionLogic:
         self.enable_visual_follow = bool(enable_visual_follow)
         self.enable_payload_release = bool(enable_payload_release)
         self.enable_dynamic_landing = bool(enable_dynamic_landing)
+        self.enable_auto_disarm = bool(enable_auto_disarm)
         self.enable_second_takeoff = bool(enable_second_takeoff)
-        self.prestream_seconds = float(prestream_seconds)
+        self.prestream_cycles = int(prestream_cycles)
         self.hover_confirm_seconds = float(hover_confirm_seconds)
         self.hover_test_seconds = float(hover_test_seconds)
         self.dwell_on_car_seconds = max(5.0, float(dwell_on_car_seconds))
@@ -35,11 +42,42 @@ class MissionLogic:
         self.b_deadline_seconds = float(b_deadline_seconds)
         self.altitude_tolerance = float(altitude_tolerance)
         self.stable_seconds = float(stable_seconds)
+        self.visual_stable_seconds = float(visual_stable_seconds)
         self.payload_ack_timeout = float(payload_ack_timeout)
+        self.dynamic_near_height_m = float(dynamic_near_height_m)
+        self._handlers = {
+            S.WAIT_PX4.value: self._wait_px4,
+            S.WAIT_SAFETY.value: self._wait_safety,
+            S.WAIT_START.value: self._wait_start,
+            S.PRESTREAM.value: self._prestream,
+            S.REQUEST_OFFBOARD.value: self._request_offboard,
+            S.ARMING.value: self._wait_armed,
+            S.WAIT_MANUAL_ARM.value: self._wait_armed,
+            S.TAKEOFF.value: self._takeoff,
+            S.HOVER_150CM.value: self._hover_150,
+            S.HOVER_3S.value: self._hover_3s,
+            S.SEARCH_CAR.value: self._search_car,
+            S.VISION_FOLLOW.value: self._vision_follow,
+            S.ALIGN_FOR_DROP.value: self._align_for_drop,
+            S.PAYLOAD_RELEASE.value: self._payload_release,
+            S.WAIT_RELEASE_ACK.value: self._wait_release_ack,
+            S.ALIGN_PLATFORM.value: self._align_platform,
+            S.DYNAMIC_DESCENT_HIGH.value: self._descent_high,
+            S.DYNAMIC_DESCENT_NEAR.value: self._descent_near,
+            S.TOUCHDOWN_CHECK.value: self._touchdown_check,
+            S.LANDED_ON_CAR.value: self._landed_on_car,
+            S.DWELL_5S.value: self._dwell,
+            S.DISARM_ON_CAR.value: self._disarm_on_car,
+            S.SECOND_PRESTREAM.value: self._second_prestream,
+            S.SECOND_ARM.value: self._second_arm,
+            S.SECOND_TAKEOFF.value: self._second_takeoff,
+            S.RETURN_HOME.value: self._return_home,
+            S.FINAL_LAND.value: self._final_land,
+        }
         self.reset()
 
     def reset(self):
-        self.state = 'WAIT_PX4'
+        self.state = S.WAIT_PX4.value
         self.state_since = 0.0
         self.started_at = None
         self.h = None
@@ -51,6 +89,7 @@ class MissionLogic:
         self.abnormal_tilt = False
         self.failsafe = False
         self.armed = False
+        self.nav_state = 0
         self.offboard = False
         self.ever_offboard = False
         self.start_signal = False
@@ -59,14 +98,25 @@ class MissionLogic:
         self.car_regression = False
         self.target_ok = False
         self.aligned = False
+        self.visual_stable_since = None
+        self.aligned_stable_since = None
+        self.touchdown_candidate = False
         self.touchdown = False
         self.payload_sent = False
         self.payload_ack = False
+        self.formed_follow_before_b = False
+        self.completed_before_d = False
         self.second_cycle = False
+        self.disarm_confirmed = False
         self.event = 'RESET'
+        self.safety_block = 'WAIT_PX4'
         self.stable_since = None
+        self.prestream_count = 0
 
     def transition(self, state, now, event=None):
+        state = state.value if isinstance(state, MissionState) else str(state)
+        if state not in (item.value for item in MissionState):
+            raise ValueError('unknown mission state: ' + state)
         self.state = state
         self.state_since = float(now)
         self.stable_since = None
@@ -77,30 +127,104 @@ class MissionLogic:
     def cruise_z(self):
         return None if self.h is None else self.h[2] - self.target_altitude
 
-    def update_position(self, x, y, z, vx, vy, vz, heading, valid):
-        self.px4_fresh = bool(valid) and all(math.isfinite(v)
-                                             for v in (x, y, z, vx, vy, vz, heading))
-        if self.px4_fresh:
-            self.position = (float(x), float(y), float(z))
-            self.velocity = (float(vx), float(vy), float(vz))
-            self.heading = float(heading)
-            if self.h is None and math.hypot(vx, vy) < 0.15 and abs(vz) < 0.15:
-                self.h = (float(x), float(y), float(z), float(heading))
+    @property
+    def relative_h_height(self):
+        if self.h is None or self.position is None:
+            return 0.0
+        return self.h[2] - self.position[2]
 
-    def update_status(self, armed, offboard, failsafe):
-        self.armed, self.offboard, self.failsafe = bool(armed), bool(offboard), bool(failsafe)
+    def remaining_seconds(self, now):
+        if self.started_at is None:
+            return self.mission_timeout_seconds
+        return max(0.0, self.mission_timeout_seconds - (now - self.started_at))
+
+    def dwell_progress(self, now):
+        if self.state != S.DWELL_5S.value:
+            return 1.0 if self.state in (
+                S.DISARM_ON_CAR.value, S.SECOND_PRESTREAM.value,
+                S.SECOND_ARM.value, S.SECOND_TAKEOFF.value) else 0.0
+        return min(1.0, max(0.0, (now - self.state_since) /
+                            self.dwell_on_car_seconds))
+
+    def update_position(self, x, y, z, vx, vy, vz, heading, valid):
+        values = (x, y, z, vx, vy, vz, heading)
+        self.px4_fresh = bool(valid) and all(math.isfinite(v) for v in values)
+        if self.px4_fresh:
+            self.position = tuple(float(v) for v in (x, y, z))
+            self.velocity = tuple(float(v) for v in (vx, vy, vz))
+            self.heading = float(heading)
+
+    def update_visual(self, valid, aligned, now):
+        self.target_ok = bool(valid)
+        self.aligned = self.target_ok and bool(aligned)
+        if not self.target_ok:
+            self.visual_stable_since = None
+            self.aligned_stable_since = None
+            self.safety_block = 'VISION_INVALID'
+        elif self.visual_stable_since is None:
+            self.visual_stable_since = float(now)
+        if not self.aligned:
+            self.aligned_stable_since = None
+        elif self.aligned_stable_since is None:
+            self.aligned_stable_since = float(now)
+
+    def visual_stable(self, now):
+        return (self.target_ok and self.visual_stable_since is not None and
+                now - self.visual_stable_since + 1e-9 >=
+                self.visual_stable_seconds)
+
+    def alignment_stable(self, now):
+        return (self.visual_stable(now) and self.aligned and
+                self.aligned_stable_since is not None and
+                now - self.aligned_stable_since + 1e-9 >=
+                self.visual_stable_seconds)
+
+    def lock_home(self):
+        if self.h is not None:
+            return True
+        if not self.px4_fresh or self.position is None:
+            return False
+        if math.hypot(self.velocity[0], self.velocity[1]) >= 0.15:
+            return False
+        if abs(self.velocity[2]) >= 0.15:
+            return False
+        self.h = (*self.position, self.heading)
+        return True
+
+    def record_prestream_cycle(self):
+        if self.state in (S.PRESTREAM.value, S.SECOND_PRESTREAM.value):
+            self.prestream_count += 1
+
+    def update_status(self, armed, nav_state, offboard, failsafe, now=0.0):
+        self.armed = bool(armed)
+        self.nav_state = int(nav_state)
+        self.offboard = bool(offboard)
+        self.failsafe = bool(failsafe)
         if self.offboard:
             self.ever_offboard = True
-        elif (self.ever_offboard and self.state not in
-              ('WAIT_DISARM', 'COMPLETE', 'LAND_H', 'FAILSAFE_LAND')):
-            self.state = 'EXTERNAL_CONTROL'
-            self.event = 'PX4_EXITED_OFFBOARD'
+        elif self.ever_offboard and self.state not in (
+                S.LANDED_ON_CAR.value, S.DWELL_5S.value,
+                S.DISARM_ON_CAR.value, S.SECOND_PRESTREAM.value,
+                S.FINAL_LAND.value, S.COMPLETE.value,
+                S.DATA_TIMEOUT.value, S.FAILSAFE.value) and not (
+                    self.second_cycle and
+                    self.state == S.REQUEST_OFFBOARD.value and
+                    self.disarm_confirmed):
+            self.safety_block = 'OFFBOARD_EXIT'
+            self.transition(S.FAILSAFE, now, 'PX4_EXITED_OFFBOARD')
 
     def update_car_progress(self, value):
-        value = CarProgress(int(value))
+        try:
+            value = CarProgress(int(value))
+        except (TypeError, ValueError):
+            self.event = 'CAR_PROGRESS_INVALID'
+            return False
         if value < self.car_progress:
             self.car_regression = True
+            self.safety_block = 'CAR_PROGRESS_REGRESSION'
             self.event = 'CAR_PROGRESS_REGRESSION'
+            return False
+        if value == self.car_progress:
             return False
         self.car_progress = value
         return True
@@ -111,15 +235,27 @@ class MissionLogic:
                     not self.failsafe, not self.abnormal_tilt))
         if self.simulation_mode:
             return base
-        return base and self.competition_mode and self.safety_ready and self.attitude_valid
+        return (base and self.competition_mode and self.safety_ready and
+                self.attitude_valid)
+
+    def auto_disarm_allowed(self, physical_touchdown=False):
+        if not self.enable_auto_disarm:
+            self.safety_block = 'AUTO_DISARM_DISABLED'
+            return False
+        if not self.touchdown:
+            return False
+        if self.simulation_mode:
+            return True
+        if not physical_touchdown:
+            self.safety_block = 'PHYSICAL_TOUCHDOWN_REQUIRED'
+            return False
+        return True
 
     def altitude_reached(self):
-        return self.position is not None and abs(
-            self.position[2] -
-            self.cruise_z) <= self.altitude_tolerance and math.sqrt(
-            sum(
-                v *
-                v for v in self.velocity)) < 0.25
+        return (self.position is not None and self.cruise_z is not None and
+                abs(self.position[2] - self.cruise_z) <=
+                self.altitude_tolerance and
+                math.sqrt(sum(v * v for v in self.velocity)) < 0.25)
 
     def stable(self, condition, now, seconds):
         if not condition:
@@ -131,110 +267,271 @@ class MissionLogic:
 
     def step(self, now):
         now = float(now)
-        if self.state in ('EXTERNAL_CONTROL', 'COMPLETE'):
+        if self.state in (S.DATA_TIMEOUT.value, S.FAILSAFE.value,
+                          S.COMPLETE.value):
             return
-        if self.started_at is not None and now - self.started_at > self.mission_timeout_seconds:
-            self.transition('FAILSAFE_LAND', now, 'MISSION_TIMEOUT')
         if self.failsafe or self.abnormal_tilt or self.car_regression:
-            self.transition('FAILSAFE_LAND', now, 'SAFETY_FAULT')
-        if self.state == 'FAILSAFE_LAND':
+            reason = 'PX4_FAILSAFE' if self.failsafe else 'ABNORMAL_TILT'
+            if self.car_regression:
+                reason = 'CAR_PROGRESS_REGRESSION'
+            self.safety_block = reason
+            self.transition(S.FAILSAFE, now, reason)
             return
-        missed_b = (self.started_at is not None and
-                    now - self.started_at > self.b_deadline_seconds and
-                    self.car_progress < CarProgress.PASSED_B)
-        if missed_b:
-            self.event = 'B_DEADLINE_RISK'
-        if self.car_progress >= CarProgress.PASSED_D and self.state in (
-                'DROP_ALIGN', 'DROP_RELEASE', 'LANDING_ALIGN', 'DESCEND_ON_CAR'):
-            self.transition('ABORT_RETURN_H', now, 'D_PASSED_ABORT')
+        if (self.started_at is not None and
+                self.remaining_seconds(now) <= 0.0 and
+                self.state not in (S.RETURN_HOME.value, S.FINAL_LAND.value)):
+            self.safety_block = 'MISSION_DEADLINE_RETURN'
+            self.transition(S.RETURN_HOME, now, 'MISSION_DEADLINE_RETURN')
+        if (self.started_at is not None and
+                now - self.started_at >= self.b_deadline_seconds and
+                not self.formed_follow_before_b and
+                self.state != S.RETURN_HOME.value and
+                self.car_progress < CarProgress.PASSED_B):
+            self.event = 'B_FOLLOW_MILESTONE_MISSED'
+        if (self.car_progress >= CarProgress.PASSED_D and
+                not self.completed_before_d and self.state in (
+                    S.SEARCH_CAR.value, S.VISION_FOLLOW.value,
+                    S.ALIGN_FOR_DROP.value, S.PAYLOAD_RELEASE.value,
+                    S.ALIGN_PLATFORM.value, S.DYNAMIC_DESCENT_HIGH.value,
+                    S.DYNAMIC_DESCENT_NEAR.value,
+                    S.TOUCHDOWN_CHECK.value)):
+            self.safety_block = 'D_PASSED_ABORT'
+            self.transition(S.RETURN_HOME, now, 'D_PASSED_ABORT')
+        handler = self._handlers.get(self.state)
+        if handler is not None:
+            handler(now)
 
-        if self.state == 'WAIT_PX4' and self.px4_fresh and self.h is not None:
-            self.transition('WAIT_SAFETY', now)
-        elif self.state == 'WAIT_SAFETY':
-            safe = self.simulation_mode or (self.safety_ready and self.attitude_valid)
-            if safe:
-                self.transition('WAIT_START', now)
-        elif self.state == 'WAIT_START' and self.start_signal:
+    def _wait_px4(self, now):
+        self.safety_block = 'WAIT_PX4'
+        if self.px4_fresh and self.attitude_valid:
+            self.transition(S.WAIT_SAFETY, now)
+
+    def _wait_safety(self, now):
+        self.safety_block = 'WAIT_SAFETY'
+        if self.simulation_mode or (self.safety_ready and self.attitude_valid):
+            self.transition(S.WAIT_START, now)
+
+    def _wait_start(self, now):
+        self.safety_block = 'WAIT_START'
+        start_requested = (self.start_signal or
+                           (self.mode_name == 'hover_test' and
+                            self.enable_control))
+        if start_requested and self.lock_home():
+            self.start_signal = True
             self.started_at = now
-            self.transition('PRESTREAM', now, 'MISSION_STARTED')
-        elif (self.state in ('PRESTREAM', 'SECOND_PRESTREAM') and
-              now - self.state_since >= self.prestream_seconds):
-            self.transition('REQUEST_OFFBOARD', now)
-        elif self.state == 'REQUEST_OFFBOARD' and self.offboard:
+            self.prestream_count = 0
+            self.safety_block = 'NONE'
+            self.transition(S.PRESTREAM, now, 'MISSION_STARTED')
+
+    def _prestream(self, now):
+        if self.prestream_count >= self.prestream_cycles:
+            self.transition(S.REQUEST_OFFBOARD, now)
+
+    def _request_offboard(self, now):
+        if not self.offboard:
+            return
+        if self.second_cycle:
             if self.armed:
-                target = 'SECOND_TAKEOFF' if self.second_cycle else 'TAKEOFF'
-                self.transition(target, now)
-            elif self.auto_arm_allowed():
-                self.transition('SECOND_ARM' if self.second_cycle else 'ARMING', now)
+                self.transition(S.SECOND_TAKEOFF, now)
             else:
-                self.transition('WAIT_MANUAL_ARM', now)
-        elif (self.state in ('ARMING', 'WAIT_MANUAL_ARM', 'SECOND_ARM') and
-              self.armed and self.offboard):
-            self.transition('SECOND_TAKEOFF' if self.state == 'SECOND_ARM' else 'TAKEOFF', now)
-        elif (self.state in ('TAKEOFF', 'SECOND_TAKEOFF') and
-              self.stable(self.altitude_reached(), now,
-                          self.stable_seconds)):
-            if self.state == 'SECOND_TAKEOFF':
-                self.transition('RETURN_H', now)
-            elif self.mode_name == 'hover_test':
-                self.transition('HOVER_TEST', now)
-            else:
-                self.transition('HOVER_CONFIRM', now)
-        elif (self.state == 'HOVER_CONFIRM' and
-              now - self.state_since >= self.hover_confirm_seconds):
-            self.transition('SEARCH_TARGET', now)
-        elif self.state == 'HOVER_TEST' and now - self.state_since >= self.hover_test_seconds:
-            self.transition('LAND_H', now)
-        elif self.state == 'SEARCH_TARGET' and self.target_ok:
-            self.transition('FOLLOW_TARGET', now)
-        elif self.state == 'FOLLOW_TARGET' and self.aligned:
-            self.transition('DROP_ALIGN' if self.mode_name == 'drop' else 'LANDING_ALIGN', now)
-        elif (self.state == 'DROP_ALIGN' and self.aligned and
-              self.altitude_reached() and
-              self.enable_payload_release and not self.payload_sent):
+                self.transition(S.SECOND_ARM, now)
+            return
+        if self.armed:
+            self.transition(S.TAKEOFF, now)
+        elif self.auto_arm_allowed() and self.mode_name != 'hover_test':
+            self.transition(S.ARMING, now)
+        else:
+            self.transition(S.WAIT_MANUAL_ARM, now)
+
+    def _wait_armed(self, now):
+        if self.armed and self.offboard:
+            target = S.SECOND_TAKEOFF if self.second_cycle else S.TAKEOFF
+            self.transition(target, now)
+
+    def _takeoff(self, now):
+        if self.stable(self.altitude_reached(), now, self.stable_seconds):
+            self.transition(S.HOVER_150CM, now, 'TAKEOFF_STABLE')
+
+    def _hover_150(self, now):
+        if self.mode_name == 'hover_test':
+            if now - self.state_since >= self.hover_test_seconds:
+                self.transition(S.FINAL_LAND, now)
+        else:
+            self.transition(S.HOVER_3S, now)
+
+    def _hover_3s(self, now):
+        if now - self.state_since + 1e-9 >= max(
+                3.0, self.hover_confirm_seconds):
+            self.transition(S.SEARCH_CAR, now)
+
+    def _search_car(self, now):
+        if self.visual_stable(now):
+            self.transition(S.VISION_FOLLOW, now)
+            if self.car_progress < CarProgress.PASSED_B:
+                self.formed_follow_before_b = True
+
+    def _vision_follow(self, now):
+        if self.alignment_stable(now):
+            target = (S.ALIGN_FOR_DROP if self.mode_name == 'drop'
+                      else S.ALIGN_PLATFORM)
+            self.transition(target, now)
+
+    def _align_for_drop(self, now):
+        can_release = (self.alignment_stable(now) and
+                       self.altitude_reached() and
+                       self.car_progress < CarProgress.PASSED_D)
+        if can_release and self.enable_payload_release and not self.payload_sent:
             self.payload_sent = True
-            self.transition('DROP_RELEASE', now, 'PAYLOAD_RELEASE')
-        elif self.state == 'DROP_RELEASE' and self.payload_ack:
-            self.transition('RETURN_H', now, 'PAYLOAD_ACK')
-        elif (self.state == 'DROP_RELEASE' and
-              now - self.state_since >= self.payload_ack_timeout):
-            self.transition('ABORT_RETURN_H', now, 'PAYLOAD_ACK_TIMEOUT')
-        elif self.state == 'LANDING_ALIGN' and self.aligned and self.enable_dynamic_landing:
-            self.transition('DESCEND_ON_CAR', now)
-        elif self.state == 'DESCEND_ON_CAR' and self.touchdown:
-            self.transition('TOUCHDOWN_VERIFY', now)
-        elif self.state == 'TOUCHDOWN_VERIFY' and self.touchdown:
-            self.transition('DISARM_ON_CAR', now)
-        elif self.state == 'DISARM_ON_CAR' and not self.armed:
-            self.transition('DWELL_ON_CAR', now)
-        elif self.state == 'DWELL_ON_CAR' and now - self.state_since >= self.dwell_on_car_seconds:
+            self.completed_before_d = True
+            self.transition(S.PAYLOAD_RELEASE, now, 'PAYLOAD_RELEASE')
+
+    def _payload_release(self, now):
+        self.transition(S.WAIT_RELEASE_ACK, now)
+
+    def _wait_release_ack(self, now):
+        if self.payload_ack:
+            self.transition(S.RETURN_HOME, now, 'PAYLOAD_ACK')
+        elif now - self.state_since >= self.payload_ack_timeout:
+            self.transition(S.RETURN_HOME, now, 'PAYLOAD_ACK_TIMEOUT')
+
+    def _align_platform(self, now):
+        if (self.enable_dynamic_landing and self.alignment_stable(now) and
+                self.car_progress < CarProgress.PASSED_D):
+            self.transition(S.DYNAMIC_DESCENT_HIGH, now)
+
+    def _descent_high(self, now):
+        if self.touchdown_candidate:
+            self.transition(S.TOUCHDOWN_CHECK, now)
+        elif (self.visual_stable(now) and
+              self.relative_h_height <= self.dynamic_near_height_m):
+            self.transition(S.DYNAMIC_DESCENT_NEAR, now)
+
+    def _descent_near(self, now):
+        if self.touchdown_candidate:
+            self.transition(S.TOUCHDOWN_CHECK, now)
+
+    def _touchdown_check(self, now):
+        if self.touchdown:
+            self.completed_before_d = (
+                self.car_progress < CarProgress.PASSED_D)
+            self.transition(S.LANDED_ON_CAR, now, 'TOUCHDOWN_CONFIRMED')
+        elif not self.touchdown_candidate:
+            self.transition(S.DYNAMIC_DESCENT_NEAR, now)
+
+    def _landed_on_car(self, now):
+        self.transition(S.DWELL_5S, now)
+
+    def _dwell(self, now):
+        if now - self.state_since >= self.dwell_on_car_seconds:
+            self.transition(S.DISARM_ON_CAR, now)
+
+    def _disarm_on_car(self, now):
+        if not self.armed:
+            self.disarm_confirmed = True
             if self.enable_second_takeoff:
                 self.second_cycle = True
-                self.transition('SECOND_PRESTREAM', now)
+                self.prestream_count = 0
+                self.transition(S.SECOND_PRESTREAM, now)
             else:
-                self.transition('COMPLETE', now)
-        elif self.state == 'ABORT_RETURN_H':
-            self.transition('RETURN_H' if self.px4_fresh else 'FAILSAFE_LAND', now)
-        elif self.state == 'RETURN_H' and self.at_h():
-            self.transition('LAND_H', now)
-        elif self.state == 'LAND_H' and not self.armed:
-            self.transition('WAIT_DISARM', now)
-        elif self.state == 'WAIT_DISARM' and not self.armed:
-            self.transition('COMPLETE', now, 'MISSION_COMPLETE')
+                self.transition(S.COMPLETE, now)
+
+    def _second_prestream(self, now):
+        if not (self.disarm_confirmed and self.px4_fresh and
+                self.visual_stable(now)):
+            return
+        if self.prestream_count >= self.prestream_cycles:
+            # Disarming normally exits Offboard. Re-request it after the
+            # complete second prestream before issuing the second ARM.
+            self.transition(S.REQUEST_OFFBOARD, now)
+
+    def _second_arm(self, now):
+        if self.armed and self.offboard:
+            self.transition(S.SECOND_TAKEOFF, now)
+
+    def _second_takeoff(self, now):
+        if self.stable(self.altitude_reached(), now, self.stable_seconds):
+            self.transition(S.RETURN_HOME, now)
+
+    def _return_home(self, now):
+        if self.at_h():
+            self.transition(S.FINAL_LAND, now)
+
+    def _final_land(self, now):
+        if not self.armed:
+            self.transition(S.COMPLETE, now, 'MISSION_COMPLETE')
 
     def at_h(self):
         if self.h is None or self.position is None:
             return False
-        distance = math.hypot(self.position[0] - self.h[0], self.position[1] - self.h[1])
-        return distance <= 0.25 and abs(
-            self.position[2] -
-            self.cruise_z) <= self.altitude_tolerance and math.sqrt(
-            sum(
-                v *
-                v for v in self.velocity)) <= 0.25
+        distance = math.hypot(self.position[0] - self.h[0],
+                              self.position[1] - self.h[1])
+        speed = math.sqrt(sum(v * v for v in self.velocity))
+        return (distance <= 0.25 and
+                abs(self.position[2] - self.cruise_z) <=
+                self.altitude_tolerance and speed <= 0.25)
 
     def reset_if_safe(self):
-        if not self.armed and self.state in ('COMPLETE', 'WAIT_PX4', 'WAIT_START'):
+        if not self.armed and self.state in (
+                S.COMPLETE.value, S.WAIT_PX4.value, S.WAIT_START.value):
             self.reset()
             return True
         return False
+
+
+def quaternion_is_valid(values, norm_tolerance=0.1):
+    """Return whether values form a finite, approximately unit quaternion."""
+    try:
+        quaternion = tuple(float(value) for value in values)
+    except (TypeError, ValueError):
+        return False
+    if len(quaternion) != 4 or not all(math.isfinite(v) for v in quaternion):
+        return False
+    norm = math.sqrt(sum(value * value for value in quaternion))
+    return abs(norm - 1.0) <= float(norm_tolerance)
+
+
+def prestream_is_safe(enable_control, prestream_cycles):
+    """Flight may only be enabled with at least 20 actual cycles."""
+    return not bool(enable_control) or int(prestream_cycles) >= 20
+
+
+def control_output_allowed(state, px4_stale):
+    """No PX4 output is allowed after terminal safety faults."""
+    return not px4_stale and state not in (
+        S.DATA_TIMEOUT.value, S.FAILSAFE.value, S.COMPLETE.value)
+
+
+def vehicle_command_allowed(enable_control, state, px4_stale=False):
+    """Return whether the adapter may consider a PX4 command."""
+    command_states = (
+        S.REQUEST_OFFBOARD.value, S.ARMING.value, S.SECOND_ARM.value,
+        S.DISARM_ON_CAR.value, S.FINAL_LAND.value)
+    return (bool(enable_control) and
+            control_output_allowed(state, px4_stale) and
+            state in command_states)
+
+
+def descent_speed_for_state(state, high_speed, near_speed, contact_speed):
+    """Select the bounded descent phase speed; other states do not descend."""
+    speeds = {
+        S.DYNAMIC_DESCENT_HIGH.value: float(high_speed),
+        S.DYNAMIC_DESCENT_NEAR.value: float(near_speed),
+        S.TOUCHDOWN_CHECK.value: float(contact_speed),
+    }
+    return speeds.get(state, 0.0)
+
+
+def vision_is_fresh(now, received_at, target_age_ms, timeout_s,
+                    max_target_age_ms=250.0):
+    values = (now, target_age_ms, timeout_s, max_target_age_ms)
+    if received_at is None or not all(math.isfinite(float(v)) for v in values):
+        return False
+    if not math.isfinite(float(received_at)):
+        return False
+    return (0.0 <= now - received_at <= timeout_s and
+            0.0 <= target_age_ms <= max_target_age_ms)
+
+
+def payload_ack_is_new(release_time, ack_time, ack_value):
+    """Accept only a true acknowledgement received after release."""
+    return bool(ack_value) and release_time is not None and ack_time > release_time
