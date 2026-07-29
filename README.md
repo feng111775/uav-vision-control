@@ -479,6 +479,40 @@ ros2 topic list | grep '/camera/'
 
 **禁止直接带桨运行本软件。**
 
+## D题第三阶段A：正式同心圆与十字视觉
+
+正式目标是50 cm黑色外圆、30 cm黑色内圆（直径比0.6）和中央十字。OpenMV
+使用灰度直方图/Otsu自适应暗区、blob预筛、双圆比例与同心约束、中央两主方向十字
+评分，并在稳定后使用可恢复ROI；不再使用固定红色色块阈值。
+
+飞控视觉数组保持七字段不变：
+
+```text
+[valid,cx,cy,outer_diameter_px,inner_diameter_px,angle_rad,confidence]
+```
+
+新增`/vision/h7/status`只读诊断，使dashboard显示`TRACKING`、`LOST`、
+`CROSS_INVALID`或`DETECT_ERROR`，不被任务控制读取。正式链路仍是：
+
+```text
+h7_bridge → target_filter → target_predictor → landing_error → vision_dashboard
+```
+
+PC参考检测器仅用于离线调参与数据集评估：
+
+```bash
+PYTHONPATH=src/uav_vision python3 \
+  src/uav_vision/tools/generate_synthetic_d_target.py /tmp/d-synthetic
+PYTHONPATH=src/uav_vision python3 \
+  src/uav_vision/tools/evaluate_d_task_dataset.py /tmp/d-synthetic \
+  --debug-dir /tmp/d-debug
+```
+
+数据采集/标注见`docs/vision_dataset_protocol.md`，内参、安装方向和尺度标定见
+`docs/camera_calibration.md`，OpenMV部署见`docs/openmv_deployment.md`。当前仓库没有
+D题实拍或标注，且本机未检测到OpenMV H7 Plus，因此没有真实识别率、相机参数、
+米制误差、H7 FPS或真实串口频率结论。
+
 唯一基线：Ubuntu 24.04、ROS 2 Jazzy、PX4 Release 1.16.0
 （`6ea3539157ca358c70a515878b77077af7d4611d`，`px4_fmu-v6c_default`）、
 Micro XRCE-DDS Agent 2.4.3、`px4_msgs release/1.16`。硬件目标为 Pixhawk 6C

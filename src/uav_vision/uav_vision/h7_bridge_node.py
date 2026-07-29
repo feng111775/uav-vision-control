@@ -4,7 +4,7 @@ import rclpy
 from rclpy.node import Node
 import serial
 from serial import SerialException
-from std_msgs.msg import Float32MultiArray
+from std_msgs.msg import Float32MultiArray, String
 
 from .d_task_schema import validate_detection
 
@@ -28,12 +28,23 @@ def parse_detection_line(line, allow_legacy_protocol=False):
     return validate_detection(data)
 
 
+def parse_status_line(line):
+    fields = line.strip().split(',')
+    if len(fields) != 2 or fields[0] != 'D_STATUS':
+        raise ValueError('status protocol requires D_STATUS,state')
+    if fields[1] not in ('TRACKING', 'LOST', 'CROSS_INVALID',
+                         'DETECT_ERROR'):
+        raise ValueError('invalid D_STATUS value')
+    return fields[1]
+
+
 class H7BridgeNode(Node):
     def __init__(self):
         super().__init__('h7_bridge_node')
         self.declare_parameter('port', '/dev/ttyACM0')
         self.declare_parameter('baudrate', 115200)
         self.declare_parameter('detection_topic', '/vision/h7/detection')
+        self.declare_parameter('status_topic', '/vision/h7/status')
         self.declare_parameter('allow_legacy_protocol', False)
         self.port = self.get_parameter('port').value
         self.baudrate = self.get_parameter('baudrate').value
@@ -41,6 +52,8 @@ class H7BridgeNode(Node):
         self.publisher = self.create_publisher(
             Float32MultiArray,
             self.get_parameter('detection_topic').value, 10)
+        self.status_publisher = self.create_publisher(
+            String, self.get_parameter('status_topic').value, 10)
         self.serial_port = None
         self.create_timer(0.01, self._read_serial)
         self.create_timer(2.0, self._open_serial)
@@ -69,8 +82,14 @@ class H7BridgeNode(Node):
                 if not raw:
                     break
                 try:
-                    data = parse_detection_line(
-                        raw.decode('ascii'), self.allow_legacy)
+                    line = raw.decode('ascii').strip()
+                    if line.startswith('D_STATUS,'):
+                        status = parse_status_line(line)
+                        status_message = String()
+                        status_message.data = status
+                        self.status_publisher.publish(status_message)
+                        continue
+                    data = parse_detection_line(line, self.allow_legacy)
                 except (UnicodeDecodeError, TypeError, ValueError) as error:
                     self._warn('invalid H7 line ignored: %s' % error)
                     continue

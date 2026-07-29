@@ -120,9 +120,8 @@ PX4 uxrce_dds_client
 | --- | --- |
 | `openmv_h7plus/main.py` | 相机检测和协议发送主循环 |
 | `openmv_h7plus/camera_config.py` | CSI相机初始化 |
-| `openmv_h7plus/detector.py` | LAB红色色块检测 |
-| `openmv_h7plus/thresholds.py` | 现场颜色阈值 |
-| `openmv_h7plus/protocol.py` | USB CDC文本协议 |
+| `openmv_h7plus/detector.py` | 自适应黑色同心圆和中央十字检测 |
+| `openmv_h7plus/protocol.py` | USB CDC D_TARGET与D_STATUS文本协议 |
 
 ### 视觉包
 

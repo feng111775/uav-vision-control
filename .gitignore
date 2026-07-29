@@ -2,6 +2,9 @@
 build/
 install/
 log/
+build*/
+install*/
+log*/
 .colcon/
 
 # PX4 消息依赖，单独下载
@@ -22,6 +25,10 @@ test_results/
 *.bag
 *.active
 flight_telemetry*.csv
+
+# 本机采集数据与模型不进入源码提交
+datasets/
+models/
 
 # 外部工具、源码树和编译产物
 *.AppImage

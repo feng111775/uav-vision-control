@@ -4,6 +4,7 @@ h7_bridge_node:
     baudrate: 115200
     allow_legacy_protocol: false
     detection_topic: /vision/h7/detection
+    status_topic: /vision/h7/status
 
 fake_h7_node:
   ros__parameters:
@@ -46,6 +47,7 @@ vision_dashboard_node:
     landing_error_topic: /vision/landing_error
     canvas_topic: /vision/debug/target_canvas
     status_topic: /vision/debug/status
+    detector_status_topic: /vision/h7/status
     input_timeout_sec: 0.4
     publish_rate_hz: 10.0
     enable_local_window: false

@@ -21,6 +21,7 @@ class VisionDashboardNode(Node):
                     'landing_error_topic': '/vision/landing_error',
                     'canvas_topic': '/vision/debug/target_canvas',
                     'status_topic': '/vision/debug/status',
+                    'detector_status_topic': '/vision/h7/status',
                     'enable_local_window': False, 'input_timeout_sec': 0.4,
                     'publish_rate_hz': 10.0}
         for name, value in defaults.items():
@@ -29,6 +30,8 @@ class VisionDashboardNode(Node):
         self.tracked = None
         self.error = None
         self.last_input_time = None
+        self.detector_status = 'LOST'
+        self.last_detector_status_time = None
         self.image_publisher = self.create_publisher(
             Image, self.get_parameter('canvas_topic').value, 10)
         self.status_publisher = self.create_publisher(
@@ -40,6 +43,9 @@ class VisionDashboardNode(Node):
             Float32MultiArray,
             self.get_parameter('landing_error_topic').value,
             self._error_callback, 10)
+        self.create_subscription(
+            String, self.get_parameter('detector_status_topic').value,
+            self._detector_status_callback, 10)
         rate = float(self.get_parameter('publish_rate_hz').value)
         self.create_timer(1.0 / rate, self._render)
 
@@ -56,6 +62,12 @@ class VisionDashboardNode(Node):
         except (TypeError, ValueError):
             self.error = None
 
+    def _detector_status_callback(self, message):
+        if message.data in ('TRACKING', 'LOST', 'CROSS_INVALID',
+                            'DETECT_ERROR'):
+            self.detector_status = message.data
+            self.last_detector_status_time = self.get_clock().now()
+
     def _render(self):
         canvas = np.zeros((480, 640, 3), dtype=np.uint8)
         center = (320, 240)
@@ -65,7 +77,11 @@ class VisionDashboardNode(Node):
         fresh = (self.tracked is not None and self.last_input_time is not None
                  and (now - self.last_input_time).nanoseconds / 1e9 <= timeout)
         valid = fresh and self.tracked[schema.VALID] == 1.0
-        status = 'TRACKING' if valid else 'LOST'
+        detector_fresh = (
+            self.last_detector_status_time is not None and
+            (now - self.last_detector_status_time).nanoseconds / 1e9 <= timeout)
+        status = 'TRACKING' if valid else (
+            self.detector_status if detector_fresh else 'LOST')
         if valid:
             data = self.tracked
             target = (round(data[schema.CENTER_X] * 2),
@@ -96,10 +112,11 @@ class VisionDashboardNode(Node):
                     data[schema.PREDICTED_CENTER_Y], data[schema.VELOCITY_X],
                     data[schema.VELOCITY_Y])]
         else:
-            lines = ['valid=0 state=LOST', 'center=(0,0) diameter=(0,0)',
+            lines = ['valid=0 state=%s' % status,
+                     'center=(0,0) diameter=(0,0)',
                      'angle=0 confidence=0 age=0ms',
                      'predicted=(0,0) velocity=(0,0)px/s']
-            cv2.putText(canvas, 'LOST', (260, 260), cv2.FONT_HERSHEY_SIMPLEX,
+            cv2.putText(canvas, status, (220, 260), cv2.FONT_HERSHEY_SIMPLEX,
                         1.2, (0, 0, 255), 3)
         for index, line in enumerate(lines):
             cv2.putText(canvas, line, (12, 28 + 26 * index),
