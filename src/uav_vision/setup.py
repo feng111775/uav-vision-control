@@ -30,6 +30,8 @@ setup(
             'target_predictor_node = uav_vision.target_predictor_node:main',
             'landing_error_node = uav_vision.landing_error_node:main',
             'vision_dashboard_node = uav_vision.vision_dashboard_node:main',
+            'd_task_sitl_scenario_node = '
+            'uav_vision.d_task_sitl_scenario_node:main',
             'visual_servo_node = uav_vision.visual_servo_node:main',
             'camera_selector_node = '
             'uav_vision.camera_selector_node:main',

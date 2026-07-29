@@ -444,6 +444,40 @@ ros2 topic list | grep '/camera/'
 - 真机飞行仍需完成无桨台架、定位/航向、人工接管、地理围栏和 failsafe 验证。
 # 2026 全国大学生电子设计竞赛 D 题视觉链路（第一阶段）
 
+## 第二阶段：统一任务控制器
+
+第二阶段提供两个互相独立的评分任务 `drop`、`dynamic_land`，以及唯一首次上机路径
+`hover_test`。流程和安全状态见 `docs/d_task_state_machine.md`。正式控制launch只启动
+`mission_controller_node` 与只读 `mission_dashboard_node`，不会启动PX4、Agent、小车
+控制或模拟执行机构。
+
+| 输入 | 类型 | 用途 |
+|---|---|---|
+| `/car/mission_start` | `std_msgs/Bool` | A点启动事件 |
+| `/car/progress` | `std_msgs/UInt8` | A/B/C/D/A单调进度 |
+| `/uav/safety/ready` | `std_msgs/Bool` | 新鲜真机安全许可 |
+| `/uav/mission/reset` | `std_msgs/Bool` | 上锁且非运行态复位 |
+| `/uav/touchdown_sensor` | `std_msgs/Bool` | 可选接触输入 |
+| 第一阶段两个视觉话题 | `Float32MultiArray` | 原schema顺序不变 |
+| `/uav/payload/release_ack` | `std_msgs/Bool` | 执行机构确认 |
+
+输出包括 `/uav/payload/release`、`/uav/mission/state`、`event`、`telemetry`、
+`path` 和 `/uav/mission/debug_canvas`。PX4只使用批准的三个 `/fmu/in/` topic与四个
+`/fmu/out/` topic。可用 `rqt_image_view /uav/mission/debug_canvas` 查看任务画布，第一
+阶段目标画布仍为 `/vision/debug/target_canvas`；RViz添加Path并选择
+`/uav/mission/path` 可只读显示轨迹。
+
+无PX4测试使用 `first_flight_hover` 且保持 `enable_control=false`。精确PX4 v1.16 SITL
+可用后，另行启动PX4和Micro XRCE-DDS Agent，再运行
+`ros2 launch uav_control d_task_sitl.launch.py mission_mode:=drop` 或
+`dynamic_land`。未来真机必须遵循 `docs/first_flight_checklist.md`，默认配置不能控制或
+自动解锁。
+
+当前仍未完成正式同心圆/十字检测、相机标定、真实抛投GPIO、移动平台接触验证和
+带桨真机试飞。普通x500地面SITL不证明动态平台摩擦或二次起飞稳定性。
+
+**禁止直接带桨运行本软件。**
+
 唯一基线：Ubuntu 24.04、ROS 2 Jazzy、PX4 Release 1.16.0
 （`6ea3539157ca358c70a515878b77077af7d4611d`，`px4_fmu-v6c_default`）、
 Micro XRCE-DDS Agent 2.4.3、`px4_msgs release/1.16`。硬件目标为 Pixhawk 6C

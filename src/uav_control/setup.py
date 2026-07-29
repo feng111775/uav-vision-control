@@ -20,8 +20,8 @@ setup(
     zip_safe=True,
     maintainer='xixi',
     maintainer_email='xixi@todo.todo',
-    description='TODO: Package description',
-    license='TODO: License declaration',
+    description='PX4 v1.16 D-task mission controller and dashboard.',
+    license='Apache-2.0',
     extras_require={
         'test': [
             'pytest',
@@ -31,9 +31,10 @@ setup(
         'console_scripts': [
             'vehicle_status_listener = '
             'uav_control.vehicle_status_listener:main',
-            'offboard_control = uav_control.offboard_control:main',
-            'vision_offboard_controller = '
-            'uav_control.vision_offboard_controller:main',
+            'mission_controller_node = '
+            'uav_control.mission_controller_node:main',
+            'mission_dashboard_node = '
+            'uav_control.mission_dashboard_node:main',
         ],
     },
 )

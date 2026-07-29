@@ -1,0 +1,36 @@
+mission_controller_node:
+  ros__parameters:
+    # TODO: field-calibrate camera signs, gains and alignment thresholds.
+    # This profile is intentionally unable to arm or control a real aircraft.
+    mission_mode: drop
+    target_altitude: 1.5
+    altitude_tolerance: 0.1
+    prestream_seconds: 1.0
+    hover_confirm_seconds: 3.0
+    hover_test_seconds: 10.0
+    dwell_on_car_seconds: 5.0
+    mission_timeout_seconds: 90.0
+    b_deadline_seconds: 15.0
+    stable_seconds: 1.0
+    simulation_mode: false
+    competition_mode: true
+    enable_control: false
+    enable_auto_arm: false
+    enable_visual_follow: true
+    enable_payload_release: false
+    enable_dynamic_landing: false
+    enable_second_takeoff: false
+    status_timeout: 1.0
+    position_timeout: 0.5
+    attitude_timeout: 0.5
+    safety_timeout: 1.0
+    car_timeout: 2.0
+    max_tilt_rad: 0.45
+    control_rate_hz: 20.0
+    align_error: 0.10
+    descent_speed: 0.25
+    near_descent_speed: 0.10
+    command_timeout: 1.0
+    command_max_attempts: 3
+    payload_ack_timeout: 3.0
+    target_loss_abort_seconds: 1.0
