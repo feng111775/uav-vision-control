@@ -35,6 +35,18 @@ setup(
             'uav_control.mission_controller_node:main',
             'mission_dashboard_node = '
             'uav_control.mission_dashboard_node:main',
+            'car_link_bridge_node = '
+            'uav_control.hardware.car_link_bridge_node:main',
+            'car_link_simulator_node = '
+            'uav_control.hardware.car_link_simulator_node:main',
+            'payload_bridge_node = '
+            'uav_control.hardware.payload_bridge_node:main',
+            'payload_mock_node = '
+            'uav_control.hardware.payload_mock_node:main',
+            'system_health_node = '
+            'uav_control.integration.system_health_node:main',
+            'safety_gate_node = '
+            'uav_control.integration.safety_gate_node:main',
         ],
     },
 )

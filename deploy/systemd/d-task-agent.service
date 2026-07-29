@@ -1,0 +1,14 @@
+[Unit]
+Description=D-task Micro XRCE-DDS Agent
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/d-task/d-task.env
+WorkingDirectory=${D_TASK_WS}
+ExecStart=${D_TASK_WS}/scripts/pi/start_microxrce_agent.sh --transport serial --device ${XRCE_DEVICE} --baudrate ${XRCE_BAUDRATE}
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

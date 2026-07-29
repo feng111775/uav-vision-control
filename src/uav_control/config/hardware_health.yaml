@@ -1,0 +1,39 @@
+system_health_node:
+  ros__parameters:
+    px4_timeout_seconds: 1.0
+    vision_timeout_seconds: 1.0
+    disk_warn_fraction: 0.15
+safety_gate_node:
+  ros__parameters:
+    mode: observe
+    operator_timeout_seconds: 1.0
+    px4_timeout_seconds: 1.0
+    competition_configured: false
+car_link_bridge_node:
+  ros__parameters:
+    transport: disabled
+    device: ""
+    baudrate: 0
+    bind_address: ""
+    bind_port: 0
+    allowed_remote_ip: ""
+    replay_file: ""
+    timeout_seconds: 1.0
+    retry_count: 2
+    max_line_bytes: 256
+    enforce_device_identity: false
+    expected_vid: ""
+    expected_pid: ""
+    expected_serial: ""
+payload_bridge_node:
+  ros__parameters:
+    transport: disabled
+    device: ""
+    baudrate: 0
+    timeout_seconds: 1.0
+    retry_count: 2
+    allow_actions: false
+    enforce_device_identity: false
+    expected_vid: ""
+    expected_pid: ""
+    expected_serial: ""

@@ -1,0 +1,11 @@
+[Unit]
+Description=D-task read-only observe mode (control forced off)
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/d-task/d-task.env
+WorkingDirectory=${D_TASK_WS}
+ExecStart=/bin/bash -lc 'source /opt/ros/jazzy/setup.bash; source ${D_TASK_WS}/install/setup.bash; ros2 launch uav_control d_task_observe.launch.py'
+Restart=no
+
+# Deliberately no [Install] section: this template is not an auto-flight service.

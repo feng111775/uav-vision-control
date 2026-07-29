@@ -1,0 +1,32 @@
+# Copy values only after device inventory and electrical verification.
+openmv:
+  transport: disabled
+  device: null  # TODO: stable udev alias
+  baudrate: null  # TODO: measure and confirm
+  expected_vid: null
+  expected_pid: null
+  expected_serial: null
+px4_agent:
+  transport: disabled
+  device: null  # TODO: verified TELEM USB-UART or verified USB path
+  baudrate: null
+  expected_vid: null
+  expected_pid: null
+  expected_serial: null
+car:
+  transport: disabled
+  serial_port: null
+  baudrate: null
+  bind_address: null
+  bind_port: null
+  allowed_remote_ip: null
+payload:
+  transport: disabled
+  serial_port: null
+  baudrate: null
+  pulse_duration_ms: null  # intentionally unsupported until hardware is selected
+touchdown:
+  source: disabled
+  threshold: null
+platform:
+  height_m: null

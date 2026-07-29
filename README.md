@@ -552,3 +552,20 @@ ros2 launch uav_vision d_task_vision.launch.py input_source:=fake
 十字检测、相机标定与高度融合、完整 PX4 任务状态机、SITL 闭环或真机飞行。后续
 先在 SITL 验证接口与失效保护，再进入带人工安全边界的真机测试；任何启动均不会
 在本阶段自动解锁。
+# 第三阶段B1：硬件集成（安全默认）
+
+树莓派硬件集成架构见
+[`docs/system_integration_architecture.md`](docs/system_integration_architecture.md)。
+小车只读协议和抛投有限重试协议分别见
+[`docs/car_link_protocol.md`](docs/car_link_protocol.md) 与
+[`docs/payload_protocol.md`](docs/payload_protocol.md)。所有真实硬件值当前均
+未配置，transport 默认 `disabled`；disabled 不开设备、不发数据、不产生成功
+ack。
+
+四个正式入口是 observe、无桨 bench、唯一 first_flight 和 competition launch。
+它们都默认 `enable_control=false`、`enable_auto_arm=false`；competition 不含
+mock/SITL/legacy。部署见 [`docs/pi_deployment.md`](docs/pi_deployment.md)，运行
+记录使用 `scripts/recording/record_d_task_run.sh`，唯一人工调试入口是
+[`docs/manual_hardware_session.md`](docs/manual_hardware_session.md)。
+systemd 文件只是未安装模板，不包含开机自动飞行。**当前结果不得用于直接带桨
+运行。**
