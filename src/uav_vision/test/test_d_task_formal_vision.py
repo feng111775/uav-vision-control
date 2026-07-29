@@ -202,4 +202,3 @@ def test_mission_compatible_schema_remains_seven_fields():
     assert d_task_schema.validate_detection(
         [1, 160, 120, 100, 60, -0.2, 88]) == [
             1.0, 160.0, 120.0, 100.0, 60.0, -0.2, 88.0]
-
