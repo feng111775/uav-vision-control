@@ -113,7 +113,7 @@ Gazebo down camera  ─→ down detector ─┘        │
 | `/vision/selected_camera` | `std_msgs/msg/String` | `front` 或 `down` |
 | `/vision/selected_detection` | `std_msgs/msg/Float32MultiArray` | 唯一选中检测 |
 | `/control/vision_velocity` | `geometry_msgs/msg/TwistStamped` | FLU 水平速度 |
-| `/fmu/out/vehicle_local_position_v1` | `px4_msgs/msg/VehicleLocalPosition` | PX4 本地位置 |
+| `/fmu/out/vehicle_local_position` | `px4_msgs/msg/VehicleLocalPosition` | PX4 v1.16 实际本地位置（无 `_v1`） |
 | `/fmu/out/vehicle_status_v1` | `px4_msgs/msg/VehicleStatus` | PX4 状态 |
 | `/fmu/in/offboard_control_mode` | `px4_msgs/msg/OffboardControlMode` | Offboard 心跳 |
 | `/fmu/in/trajectory_setpoint` | `px4_msgs/msg/TrajectorySetpoint` | NED 速度设定值 |
@@ -400,7 +400,7 @@ ros2 topic list | grep '/camera/'
 
 ### 卡在 `WAITING`
 
-检查 `/fmu/out/vehicle_local_position_v1` 和 `/fmu/out/vehicle_status_v1` 是否持续
+检查 `/fmu/out/vehicle_local_position` 和 `/fmu/out/vehicle_status_v1` 是否持续
 发布，并确认位置、heading 和状态未超时。
 
 ### `Offboard signal lost`
@@ -467,10 +467,11 @@ ros2 topic list | grep '/camera/'
 阶段目标画布仍为 `/vision/debug/target_canvas`；RViz添加Path并选择
 `/uav/mission/path` 可只读显示轨迹。
 
-无PX4测试使用 `first_flight_hover` 且保持 `enable_control=false`。精确PX4 v1.16 SITL
-可用后，另行启动PX4和Micro XRCE-DDS Agent，再运行
+无PX4测试使用 `first_flight_hover` 且保持 `enable_control=false`。精确 PX4 v1.16.0
+源码位于 `/home/xixi/PX4-Autopilot-1.16.0`；另行启动 PX4 和 Micro XRCE-DDS Agent 后运行
 `ros2 launch uav_control d_task_sitl.launch.py mission_mode:=drop` 或
-`dynamic_land`。未来真机必须遵循 `docs/first_flight_checklist.md`，默认配置不能控制或
+`dynamic_land`。实际启动命令、DDS topic、闭环结果和故障注入见
+`docs/sitl_test_report.md`。未来真机必须遵循 `docs/first_flight_checklist.md`，默认配置不能控制或
 自动解锁。
 
 当前仍未完成正式同心圆/十字检测、相机标定、真实抛投GPIO、移动平台接触验证和

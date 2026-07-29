@@ -28,3 +28,11 @@
 没有文件满足“所有引用解除、测试替代完成、下一阶段无用途”的全部条件，本阶段未删除
 源码。旧 `offboard_control` 和 `vision_offboard_controller` 已从setup入口移除，不能再被
 当成安装后的正式可执行程序。
+
+## 2026-07-29 PX4 v1.16.0 实测复审
+
+正式 D 题 launch 没有引用 `offboard_control`、`vision_offboard_controller`、
+`visual_servo_node`、旧红色 Gazebo launch 或双相机选择 launch。它们仍有既有
+测试、诊断或历史硬件链路引用，本轮不强行删除。OpenMV legacy 通信测试和
+`pi_camera_vision` 均未修改。真实 SITL 修复仅涉及正式任务控制器和唯一
+`d_task_sitl_scenario_node`。

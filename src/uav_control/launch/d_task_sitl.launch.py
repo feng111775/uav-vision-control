@@ -17,6 +17,13 @@ def _launch(context):
         'uav_control'), 'config', 'sitl_' + mode + '.yaml')
     vision = os.path.join(get_package_share_directory(
         'uav_vision'), 'config', 'd_task_vision.yaml')
+    fault_mode = LaunchConfiguration('fault_mode').perform(context)
+    mission_timeout = float(
+        LaunchConfiguration('mission_timeout_seconds').perform(context))
+    control_parameters = [control]
+    if mission_timeout > 0.0:
+        control_parameters.append(
+            {'mission_timeout_seconds': mission_timeout})
     executables = [
         'target_filter_node',
         'target_predictor_node',
@@ -25,7 +32,7 @@ def _launch(context):
     nodes = [Node(package='uav_control',
                   executable='mission_controller_node',
                   name='mission_controller_node',
-                  parameters=[control],
+                  parameters=control_parameters,
                   output='screen'),
              Node(package='uav_control',
              executable='mission_dashboard_node',
@@ -34,7 +41,7 @@ def _launch(context):
              Node(package='uav_vision',
              executable='d_task_sitl_scenario_node',
              name='d_task_sitl_scenario_node',
-             parameters=[{'mission_mode': mode}],
+             parameters=[{'mission_mode': mode, 'fault_mode': fault_mode}],
              output='screen')]
     nodes.extend(
         Node(
@@ -47,5 +54,9 @@ def _launch(context):
 
 
 def generate_launch_description():
-    return LaunchDescription([DeclareLaunchArgument(
-        'mission_mode', default_value='drop'), OpaqueFunction(function=_launch)])
+    return LaunchDescription([
+        DeclareLaunchArgument('mission_mode', default_value='drop'),
+        DeclareLaunchArgument('fault_mode', default_value='none'),
+        DeclareLaunchArgument(
+            'mission_timeout_seconds', default_value='-1.0'),
+        OpaqueFunction(function=_launch)])

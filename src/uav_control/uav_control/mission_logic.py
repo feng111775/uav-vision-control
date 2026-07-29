@@ -15,7 +15,7 @@ class MissionLogic:
                  hover_test_seconds=10.0, dwell_on_car_seconds=5.0,
                  mission_timeout_seconds=90.0, b_deadline_seconds=15.0,
                  altitude_tolerance=0.1, stable_seconds=1.0,
-                 payload_ack_timeout=3.0):
+                 payload_ack_timeout=3.0, touchdown_verify_seconds=1.0):
         self.mode = parse_mission_mode(mission_mode)
         self.mode_name = mission_mode
         self.target_altitude = float(target_altitude)
@@ -36,6 +36,8 @@ class MissionLogic:
         self.altitude_tolerance = float(altitude_tolerance)
         self.stable_seconds = float(stable_seconds)
         self.payload_ack_timeout = float(payload_ack_timeout)
+        self.touchdown_verify_seconds = max(
+            0.0, float(touchdown_verify_seconds))
         self.reset()
 
     def reset(self):
@@ -63,6 +65,7 @@ class MissionLogic:
         self.payload_sent = False
         self.payload_ack = False
         self.second_cycle = False
+        self.second_takeoff_origin = None
         self.event = 'RESET'
         self.stable_since = None
 
@@ -92,7 +95,9 @@ class MissionLogic:
         if self.offboard:
             self.ever_offboard = True
         elif (self.ever_offboard and self.state not in
-              ('WAIT_DISARM', 'COMPLETE', 'LAND_H', 'FAILSAFE_LAND')):
+              ('TOUCHDOWN_VERIFY', 'DISARM_ON_CAR', 'DWELL_ON_CAR',
+               'SECOND_PRESTREAM', 'REQUEST_OFFBOARD', 'SECOND_ARM',
+               'WAIT_DISARM', 'COMPLETE', 'LAND_H', 'FAILSAFE_LAND')):
             self.state = 'EXTERNAL_CONTROL'
             self.event = 'PX4_EXITED_OFFBOARD'
 
@@ -114,12 +119,15 @@ class MissionLogic:
         return base and self.competition_mode and self.safety_ready and self.attitude_valid
 
     def altitude_reached(self):
-        return self.position is not None and abs(
-            self.position[2] -
-            self.cruise_z) <= self.altitude_tolerance and math.sqrt(
+        return self.at_cruise_altitude() and math.sqrt(
             sum(
                 v *
                 v for v in self.velocity)) < 0.25
+
+    def at_cruise_altitude(self):
+        return (self.position is not None and
+                abs(self.position[2] - self.cruise_z) <=
+                self.altitude_tolerance)
 
     def stable(self, condition, now, seconds):
         if not condition:
@@ -135,6 +143,10 @@ class MissionLogic:
             return
         if self.started_at is not None and now - self.started_at > self.mission_timeout_seconds:
             self.transition('FAILSAFE_LAND', now, 'MISSION_TIMEOUT')
+        if (self.started_at is not None and not self.px4_fresh and
+                self.state not in ('COMPLETE', 'EXTERNAL_CONTROL',
+                                   'FAILSAFE_LAND')):
+            self.transition('FAILSAFE_LAND', now, 'PX4_DATA_TIMEOUT')
         if self.failsafe or self.abnormal_tilt or self.car_regression:
             self.transition('FAILSAFE_LAND', now, 'SAFETY_FAULT')
         if self.state == 'FAILSAFE_LAND':
@@ -145,7 +157,8 @@ class MissionLogic:
         if missed_b:
             self.event = 'B_DEADLINE_RISK'
         if self.car_progress >= CarProgress.PASSED_D and self.state in (
-                'DROP_ALIGN', 'DROP_RELEASE', 'LANDING_ALIGN', 'DESCEND_ON_CAR'):
+                'SEARCH_TARGET', 'FOLLOW_TARGET', 'DROP_ALIGN',
+                'DROP_RELEASE', 'LANDING_ALIGN', 'DESCEND_ON_CAR'):
             self.transition('ABORT_RETURN_H', now, 'D_PASSED_ABORT')
 
         if self.state == 'WAIT_PX4' and self.px4_fresh and self.h is not None:
@@ -190,7 +203,7 @@ class MissionLogic:
         elif self.state == 'FOLLOW_TARGET' and self.aligned:
             self.transition('DROP_ALIGN' if self.mode_name == 'drop' else 'LANDING_ALIGN', now)
         elif (self.state == 'DROP_ALIGN' and self.aligned and
-              self.altitude_reached() and
+              self.at_cruise_altitude() and
               self.enable_payload_release and not self.payload_sent):
             self.payload_sent = True
             self.transition('DROP_RELEASE', now, 'PAYLOAD_RELEASE')
@@ -203,9 +216,13 @@ class MissionLogic:
             self.transition('DESCEND_ON_CAR', now)
         elif self.state == 'DESCEND_ON_CAR' and self.touchdown:
             self.transition('TOUCHDOWN_VERIFY', now)
-        elif self.state == 'TOUCHDOWN_VERIFY' and self.touchdown:
+        elif (self.state == 'TOUCHDOWN_VERIFY' and self.touchdown and
+              now - self.state_since >= self.touchdown_verify_seconds):
             self.transition('DISARM_ON_CAR', now)
         elif self.state == 'DISARM_ON_CAR' and not self.armed:
+            if self.position is not None:
+                self.second_takeoff_origin = (
+                    self.position[0], self.position[1], self.position[2])
             self.transition('DWELL_ON_CAR', now)
         elif self.state == 'DWELL_ON_CAR' and now - self.state_since >= self.dwell_on_car_seconds:
             if self.enable_second_takeoff:

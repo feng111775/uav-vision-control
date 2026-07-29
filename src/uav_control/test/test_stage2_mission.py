@@ -1,9 +1,12 @@
 import math
+from pathlib import Path
 
 import pytest
 
 from uav_control.mission_logic import MissionLogic
 from uav_control.mission_schema import CarProgress, parse_mission_mode
+from uav_control.mission_schema import PX4_LOCAL_POSITION_TOPIC
+from uav_control.mission_schema import state_allows_flight_setpoint
 from uav_control.mission_schema import STATE_ID, TELEMETRY_LENGTH
 from uav_control.px4_command_tracker import CommandTracker
 from uav_control.touchdown_detector import TouchdownDetector
@@ -97,6 +100,15 @@ def test_d_passed_aborts_actions(state):
     assert logic.state == 'RETURN_H'
 
 
+@pytest.mark.parametrize('state', ['SEARCH_TARGET', 'FOLLOW_TARGET'])
+def test_d_passed_aborts_search_and_follow(state):
+    logic = ready_logic()
+    logic.state = state
+    logic.car_progress = CarProgress.PASSED_D
+    logic.step(1)
+    assert logic.state == 'RETURN_H'
+
+
 def test_mission_timeout():
     logic = ready_logic()
     logic.started_at = 0
@@ -122,6 +134,16 @@ def test_manual_offboard_exit():
     logic.update_status(True, True, False)
     logic.update_status(True, False, False)
     assert logic.state == 'EXTERNAL_CONTROL'
+
+
+def test_expected_offboard_exit_during_platform_disarm_is_not_manual_takeover():
+    for state in ('TOUCHDOWN_VERIFY', 'DISARM_ON_CAR', 'DWELL_ON_CAR',
+                  'SECOND_PRESTREAM', 'REQUEST_OFFBOARD', 'SECOND_ARM'):
+        logic = ready_logic()
+        logic.state = state
+        logic.ever_offboard = True
+        logic.update_status(False, False, False)
+        assert logic.state == state
 
 
 def test_hover_three_seconds():
@@ -157,6 +179,16 @@ def test_payload_once_and_ack():
     assert logic.state == 'RETURN_H'
 
 
+def test_drop_altitude_gate_allows_horizontal_follow_velocity():
+    logic = ready_logic(enable_payload_release=True)
+    logic.state = 'DROP_ALIGN'
+    logic.aligned = True
+    logic.position = (2, 3, logic.cruise_z)
+    logic.velocity = (0.5, 0.0, 0.0)
+    logic.step(1)
+    assert logic.state == 'DROP_RELEASE'
+
+
 def test_payload_ack_timeout_aborts():
     logic = ready_logic(enable_payload_release=True, payload_ack_timeout=2)
     logic.state = 'DROP_RELEASE'
@@ -179,14 +211,16 @@ def test_touchdown_to_dwell_and_five_seconds():
     logic.touchdown = True
     logic.step(1)
     assert logic.state == 'TOUCHDOWN_VERIFY'
-    logic.step(1.1)
+    logic.step(1.9)
+    assert logic.state == 'TOUCHDOWN_VERIFY'
+    logic.step(2.0)
     assert logic.state == 'DISARM_ON_CAR'
     logic.armed = False
-    logic.step(2)
+    logic.step(2.1)
     assert logic.state == 'DWELL_ON_CAR'
-    logic.step(6.9)
+    logic.step(7.0)
     assert logic.state == 'DWELL_ON_CAR'
-    logic.step(7)
+    logic.step(7.1)
     assert logic.state == 'SECOND_PRESTREAM'
 
 
@@ -198,6 +232,24 @@ def test_second_takeoff_returns_h():
     logic.step(0)
     logic.step(.11)
     assert logic.state == 'RETURN_H'
+
+
+def test_platform_landing_records_second_takeoff_origin():
+    logic = ready_logic(
+        'dynamic_land', enable_dynamic_landing=True,
+        enable_second_takeoff=True)
+    logic.state = 'DISARM_ON_CAR'
+    logic.position = (2.0, -3.0, 0.1)
+    logic.armed = False
+    logic.step(1.0)
+    assert logic.state == 'DWELL_ON_CAR'
+    assert logic.second_takeoff_origin == (2.0, -3.0, 0.1)
+
+
+def test_second_prestream_resets_all_reused_command_trackers():
+    source = (Path(__file__).parents[1] / 'uav_control' /
+              'mission_controller_node.py').read_text()
+    assert "('mode', 'arm', 'land', 'disarm')" in source
 
 
 def test_at_h_requires_position_velocity_altitude():
@@ -298,6 +350,12 @@ def test_visual_deadband_stops_both_axes():
         True, 0.01, 0.01, 90, 0, 0) == (0, 0)
 
 
+def test_image_right_error_commands_body_right():
+    north, east = VisualGuidance().velocity(True, 0.2, 0.0, 90, 0, 0)
+    assert north == pytest.approx(0.0)
+    assert east > 0.0
+
+
 def test_visual_invalid_immediately_stops():
     guide = VisualGuidance()
     guide.velocity(True, 0.2, 0.2, 90, 0, 0)
@@ -321,3 +379,57 @@ def test_unfresh_px4_cannot_leave_wait_px4():
     logic.px4_fresh = False
     logic.step(1)
     assert logic.state == 'WAIT_PX4'
+
+
+def test_px4_data_timeout_during_active_mission_enters_failsafe():
+    logic = ready_logic()
+    logic.state = 'TAKEOFF'
+    logic.started_at = 1.0
+    logic.px4_fresh = False
+    logic.step(2.0)
+    assert logic.state == 'FAILSAFE_LAND'
+    assert logic.event == 'PX4_DATA_TIMEOUT'
+
+
+def test_px4_v116_local_position_topic_has_no_version_suffix():
+    assert PX4_LOCAL_POSITION_TOPIC == '/fmu/out/vehicle_local_position'
+
+
+def test_disarm_and_landing_states_publish_no_flight_setpoints():
+    for state in ('LAND_H', 'WAIT_DISARM', 'DWELL_ON_CAR'):
+        assert not state_allows_flight_setpoint(state)
+    assert state_allows_flight_setpoint('TOUCHDOWN_VERIFY')
+    assert state_allows_flight_setpoint('DISARM_ON_CAR')
+    assert state_allows_flight_setpoint('TAKEOFF')
+
+
+def test_sitl_touchdown_verification_window_reaches_ground_conservatively():
+    config = (Path(__file__).parents[1] / 'config' /
+              'sitl_dynamic_land.yaml').read_text()
+    assert 'touchdown_verify_seconds: 2.0' in config
+    assert 'kinematic_touchdown_height_tolerance: 0.03' in config
+    assert 'command_max_attempts: 8' in config
+    assert 'sitl_nav_land_after_touchdown: true' in config
+    competition = (Path(__file__).parents[1] / 'config' /
+                   'competition_dynamic_land.yaml').read_text()
+    assert 'sitl_nav_land_after_touchdown: true' not in competition
+    source = (Path(__file__).parents[1] / 'uav_control' /
+              'mission_controller_node.py').read_text()
+    assert "self.get_parameter('near_descent_speed').value" in source
+
+
+def test_sitl_scenario_uses_px4_best_effort_qos():
+    source = (Path(__file__).parents[2] / 'uav_vision' / 'uav_vision' /
+              'd_task_sitl_scenario_node.py').read_text()
+    assert 'ReliabilityPolicy.BEST_EFFORT' in source
+
+
+def test_sitl_fault_modes_are_explicit_and_do_not_affect_competition_launch():
+    scenario = (Path(__file__).parents[2] / 'uav_vision' / 'uav_vision' /
+                'd_task_sitl_scenario_node.py').read_text()
+    for mode in ('early_d', 'short_vision_loss',
+                 'sustained_vision_loss', 'payload_ack_loss'):
+        assert mode in scenario
+    competition_launch = (Path(__file__).parents[1] / 'launch' /
+                          'd_task_control.launch.py').read_text()
+    assert 'fault_mode' not in competition_launch

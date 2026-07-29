@@ -7,6 +7,7 @@ mission_controller_node:
     altitude_tolerance: 0.1
     prestream_seconds: 1.0
     hover_confirm_seconds: 3.0
+    touchdown_verify_seconds: 1.0
     hover_test_seconds: 10.0
     dwell_on_car_seconds: 5.0
     mission_timeout_seconds: 90.0
@@ -34,3 +35,8 @@ mission_controller_node:
     command_max_attempts: 3
     payload_ack_timeout: 3.0
     target_loss_abort_seconds: 1.0
+    guidance_kp_forward: 0.3
+    guidance_kp_left: 0.3
+    guidance_max_speed: 0.5
+    camera_x_sign: -1.0
+    camera_y_sign: -1.0

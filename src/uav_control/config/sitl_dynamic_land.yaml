@@ -23,12 +23,20 @@ mission_controller_node:
     attitude_timeout: 0.5
     safety_timeout: 1.0
     car_timeout: 2.0
-    max_tilt_rad: 0.45
+    max_tilt_rad: 0.8
     control_rate_hz: 20.0
-    align_error: 0.10
+    align_error: 0.18
     descent_speed: 0.25
     near_descent_speed: 0.10
     command_timeout: 1.0
-    command_max_attempts: 3
+    command_max_attempts: 8
     payload_ack_timeout: 3.0
     target_loss_abort_seconds: 1.0
+    touchdown_verify_seconds: 2.0
+    kinematic_touchdown_height_tolerance: 0.03
+    sitl_nav_land_after_touchdown: true
+    guidance_kp_forward: 1.2
+    guidance_kp_left: 1.2
+    guidance_max_speed: 1.0
+    camera_x_sign: -1.0
+    camera_y_sign: -1.0

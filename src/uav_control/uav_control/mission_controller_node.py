@@ -14,6 +14,8 @@ from std_msgs.msg import Bool, Float32MultiArray, String, UInt8
 from uav_vision import d_task_schema as vision_schema
 
 from .mission_logic import MissionLogic
+from .mission_schema import PX4_LOCAL_POSITION_TOPIC
+from .mission_schema import state_allows_flight_setpoint
 from .mission_schema import STATE_ID, TELEMETRY, TELEMETRY_LENGTH
 from .px4_command_tracker import CommandTracker
 from .touchdown_detector import TouchdownDetector
@@ -40,7 +42,15 @@ class MissionControllerNode(Node):
             'descent_speed': 0.25, 'near_descent_speed': 0.10,
             'command_timeout': 1.0, 'command_max_attempts': 3}
         defaults['payload_ack_timeout'] = 3.0
+        defaults['touchdown_verify_seconds'] = 1.0
         defaults['target_loss_abort_seconds'] = 1.0
+        defaults['kinematic_touchdown_height_tolerance'] = 0.0
+        defaults['sitl_nav_land_after_touchdown'] = False
+        defaults['guidance_kp_forward'] = 0.3
+        defaults['guidance_kp_left'] = 0.3
+        defaults['guidance_max_speed'] = 0.5
+        defaults['camera_x_sign'] = -1.0
+        defaults['camera_y_sign'] = -1.0
         for name, value in defaults.items():
             self.declare_parameter(name, value)
         logic_names = ('mission_mode', 'target_altitude', 'simulation_mode',
@@ -51,9 +61,15 @@ class MissionControllerNode(Node):
                        'hover_test_seconds', 'dwell_on_car_seconds',
                        'mission_timeout_seconds', 'b_deadline_seconds',
                        'altitude_tolerance', 'stable_seconds')
-        logic_names = logic_names + ('payload_ack_timeout',)
+        logic_names = logic_names + (
+            'payload_ack_timeout', 'touchdown_verify_seconds')
         self.logic = MissionLogic(**{n: self.get_parameter(n).value for n in logic_names})
-        self.guidance = VisualGuidance()
+        self.guidance = VisualGuidance(
+            kp_forward=self.get_parameter('guidance_kp_forward').value,
+            kp_left=self.get_parameter('guidance_kp_left').value,
+            max_speed=self.get_parameter('guidance_max_speed').value,
+            camera_x_sign=self.get_parameter('camera_x_sign').value,
+            camera_y_sign=self.get_parameter('camera_y_sign').value)
         self.touchdown = TouchdownDetector()
         timeout = self.get_parameter('command_timeout').value
         attempts = self.get_parameter('command_max_attempts').value
@@ -93,7 +109,7 @@ class MissionControllerNode(Node):
             px4_qos)
         self.create_subscription(
             VehicleLocalPosition,
-            '/fmu/out/vehicle_local_position_v1',
+            PX4_LOCAL_POSITION_TOPIC,
             self._position,
             px4_qos)
         self.create_subscription(
@@ -270,20 +286,25 @@ class MissionControllerNode(Node):
                 (self.last_car is None or
                  now - self.last_car > self.get_parameter('car_timeout').value)):
             self.logic.transition('ABORT_RETURN_H', now, 'CAR_DATA_TIMEOUT')
-        kinematic = (self.logic.state == 'DESCEND_ON_CAR' and
-                     self.logic.position is not None and
-                     self.logic.position[2] >= self.logic.h[2] - 0.12)
-        self.logic.touchdown = self.touchdown.update(
-            now,
-            self.touchdown_sensor,
-            kinematic,
-            self.logic.velocity[2],
-            self.roll,
-            self.pitch)
+        if self.logic.state == 'DESCEND_ON_CAR':
+            kinematic = (self.logic.position is not None and
+                         self.logic.position[2] >= self.logic.h[2] -
+                         self.get_parameter(
+                             'kinematic_touchdown_height_tolerance').value)
+            self.logic.touchdown = self.touchdown.update(
+                now,
+                self.touchdown_sensor,
+                kinematic,
+                self.logic.velocity[2],
+                self.roll,
+                self.pitch)
+        elif self.logic.state not in (
+                'TOUCHDOWN_VERIFY', 'DISARM_ON_CAR', 'DWELL_ON_CAR'):
+            self.logic.touchdown = False
         self.logic.step(now)
         if self.logic.state == 'SECOND_PRESTREAM' and self.last_state != self.logic.state:
-            self.trackers['mode'].reset()
-            self.trackers['arm'].reset()
+            for name in ('mode', 'arm', 'land', 'disarm'):
+                self.trackers[name].reset()
             self.payload_pulse_sent = False
         if self.logic.enable_control and self.logic.state not in (
             'WAIT_PX4',
@@ -299,26 +320,49 @@ class MissionControllerNode(Node):
                 self._publish_command(
                     'arm', VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, now, 1.0)
             if self.logic.state == 'DISARM_ON_CAR':
-                self._publish_command(
-                    'disarm', VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, now, 0.0)
+                if self.get_parameter(
+                        'sitl_nav_land_after_touchdown').value:
+                    self._publish_command(
+                        'land', VehicleCommand.VEHICLE_CMD_NAV_LAND, now)
+                else:
+                    self._publish_command(
+                        'disarm',
+                        VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM,
+                        now, 0.0)
             if self.logic.state == 'LAND_H':
                 self._publish_command('land', VehicleCommand.VEHICLE_CMD_NAV_LAND, now)
             if self.logic.state in (
                 'FOLLOW_TARGET',
                 'DROP_ALIGN',
                 'LANDING_ALIGN',
-                    'DESCEND_ON_CAR'):
-                n, e = self.guidance.velocity(valid, ex, ey, confidence, age, self.logic.heading)
+                    'DESCEND_ON_CAR', 'TOUCHDOWN_VERIFY', 'DISARM_ON_CAR'):
+                n, e = self.guidance.velocity(
+                    valid, ex, ey, confidence, age, self.logic.heading)
                 down = 0.0
                 if self.logic.state == 'DESCEND_ON_CAR' and self.logic.aligned:
                     down = self.get_parameter('descent_speed').value
-                self._publish_control('velocity', velocity=(n, e, down))
-            elif self.logic.h is not None:
+                elif self.logic.state in (
+                        'TOUCHDOWN_VERIFY', 'DISARM_ON_CAR'):
+                    n = e = 0.0
+                    down = self.get_parameter('near_descent_speed').value
+                if not (self.logic.state == 'DISARM_ON_CAR' and
+                        self.get_parameter(
+                            'sitl_nav_land_after_touchdown').value):
+                    self._publish_control('velocity', velocity=(n, e, down))
+            elif (self.logic.h is not None and
+                  state_allows_flight_setpoint(self.logic.state)):
+                x, y = self.logic.h[0], self.logic.h[1]
+                if (self.logic.second_cycle and
+                        self.logic.state in (
+                            'SECOND_PRESTREAM', 'REQUEST_OFFBOARD',
+                            'SECOND_ARM', 'SECOND_TAKEOFF') and
+                        self.logic.second_takeoff_origin is not None):
+                    x, y = self.logic.second_takeoff_origin[:2]
                 self._publish_control(
                     'position',
                     position=(
-                        self.logic.h[0],
-                        self.logic.h[1],
+                        x,
+                        y,
                         self.logic.cruise_z))
         elif (self.logic.enable_control and
               self.logic.state == 'FAILSAFE_LAND' and

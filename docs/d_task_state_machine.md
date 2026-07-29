@@ -1,5 +1,10 @@
 # D题统一任务状态机
 
+> PX4 v1.16.0 实测说明：dynamic_land 的 SITL profile 在逻辑触地后使用
+> `sitl_nav_land_after_touchdown=true` 请求 PX4 原生 NAV_LAND，以适配普通
+> x500 地面模型；competition profile 不启用。二次起飞先在记录的落点 x/y
+> 垂直升至巡航高度，再进入 RETURN_H。
+
 三个模式共用安全入口：`WAIT_PX4 → WAIT_SAFETY → WAIT_START → PRESTREAM →
 REQUEST_OFFBOARD → ARMING/WAIT_MANUAL_ARM → TAKEOFF`。状态由新鲜PX4状态、位置、
 姿态、CommandAck、视觉误差、小车进度和连续稳定时间推进，不使用阻塞sleep。

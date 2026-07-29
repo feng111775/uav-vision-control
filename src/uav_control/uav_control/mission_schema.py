@@ -42,6 +42,19 @@ TELEMETRY_FIELDS = (
 TELEMETRY = {name: index for index, name in enumerate(TELEMETRY_FIELDS)}
 TELEMETRY_LENGTH = len(TELEMETRY_FIELDS)
 
+# PX4 v1.16 VehicleLocalPosition has MESSAGE_VERSION=0, so the DDS runtime
+# does not append the version suffix used by VehicleStatus.
+PX4_LOCAL_POSITION_TOPIC = '/fmu/out/vehicle_local_position'
+
+NO_FLIGHT_SETPOINT_STATES = {
+    'WAIT_PX4', 'WAIT_SAFETY', 'WAIT_START', 'DWELL_ON_CAR',
+    'LAND_H', 'WAIT_DISARM',
+    'COMPLETE', 'FAILSAFE_LAND', 'EXTERNAL_CONTROL'}
+
+
+def state_allows_flight_setpoint(state):
+    return state not in NO_FLIGHT_SETPOINT_STATES
+
 
 def parse_mission_mode(name):
     try:

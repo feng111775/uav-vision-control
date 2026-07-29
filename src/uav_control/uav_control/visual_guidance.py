@@ -6,7 +6,7 @@ import math
 class VisualGuidance:
     def __init__(self, kp_forward=0.3, kp_left=0.3, deadband_x=0.04,
                  deadband_y=0.04, max_speed=0.5, min_confidence=60.0,
-                 max_age_ms=250.0, camera_x_sign=1.0, camera_y_sign=-1.0,
+                 max_age_ms=250.0, camera_x_sign=-1.0, camera_y_sign=-1.0,
                  max_error_jump=0.8):
         self.kp_forward = float(kp_forward)
         self.kp_left = float(kp_left)
