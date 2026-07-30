@@ -14,6 +14,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/config', glob('config/*.yaml')),
         ('share/' + package_name + '/launch', glob('launch/*.launch.py')),
+        ('share/' + package_name + '/scripts', glob('scripts/*')),
     ],
     install_requires=['setuptools'],
     tests_require=['pytest'],
@@ -35,6 +36,20 @@ setup(
             'uav_control.mission_controller_node:main',
             'mission_dashboard_node = '
             'uav_control.mission_dashboard_node:main',
+            'sitl_result_recorder = '
+            'uav_control.sitl_result_recorder:main',
+            'sitl_preflight_gate = '
+            'uav_control.sitl_preflight_gate:main',
+            'sitl_mode_recovery = '
+            'uav_control.sitl_mode_recovery:main',
+            'd_task_mock_node = '
+            'uav_control.d_task_mock_node:main',
+            'readiness_gate = '
+            'uav_control.readiness_gate_node:main',
+            'stage_observer = '
+            'uav_control.stage_observer:main',
+            'odom_freeze_relay = '
+            'uav_control.odom_freeze_relay:main',
         ],
     },
 )

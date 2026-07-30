@@ -8,6 +8,74 @@ from .mission_schema import CarProgress, MissionState, parse_mission_mode
 S = MissionState
 
 
+class OdomFrameGate:
+    """Require consecutive, fresh PX4 odometry samples before flight."""
+
+    def __init__(self, min_frames=20, min_source_span_seconds=1.0,
+                 timeout_seconds=0.5):
+        self.min_frames = int(min_frames)
+        self.min_source_span_us = int(
+            float(min_source_span_seconds) * 1_000_000)
+        self.timeout_seconds = float(timeout_seconds)
+        if self.min_frames < 20:
+            raise ValueError('odom gate requires at least 20 new frames')
+        if self.min_source_span_us < 1_000_000:
+            raise ValueError('odom gate source span must be at least 1 second')
+        if self.timeout_seconds <= 0.0:
+            raise ValueError('odom gate timeout must be positive')
+        self.reset()
+
+    def reset(self):
+        """Discard the complete consecutive-frame window."""
+        self.consecutive_frames = 0
+        self.first_source_timestamp = None
+        self.last_source_timestamp = None
+        self.last_new_frame_received = None
+
+    @property
+    def ready(self):
+        """Return whether both the count and PX4 source-time gates passed."""
+        return (
+            self.consecutive_frames >= self.min_frames and
+            self.first_source_timestamp is not None and
+            self.last_source_timestamp - self.first_source_timestamp >=
+            self.min_source_span_us)
+
+    def expire(self, received_at):
+        """Reset when no strictly newer source frame arrived in time."""
+        if (self.last_new_frame_received is not None and
+                float(received_at) - self.last_new_frame_received >
+                self.timeout_seconds):
+            last_source_timestamp = self.last_source_timestamp
+            self.reset()
+            # Keep the monotonic watermark so a repeated stale frame cannot
+            # become the first frame of a new window after timeout.
+            self.last_source_timestamp = last_source_timestamp
+            return True
+        return False
+
+    def update(self, source_timestamp, received_at, valid):
+        """Consume one callback and report whether it was a new source frame."""
+        received_at = float(received_at)
+        self.expire(received_at)
+        if not valid:
+            self.reset()
+            return False
+        source_timestamp = int(source_timestamp)
+        if source_timestamp <= 0:
+            self.reset()
+            return False
+        if (self.last_source_timestamp is not None and
+                source_timestamp <= self.last_source_timestamp):
+            return False
+        if self.consecutive_frames == 0:
+            self.first_source_timestamp = source_timestamp
+        self.last_source_timestamp = source_timestamp
+        self.last_new_frame_received = received_at
+        self.consecutive_frames += 1
+        return True
+
+
 class MissionLogic:
     """Pure mission state machine; ROS callbacks only update its inputs."""
 
@@ -85,6 +153,7 @@ class MissionLogic:
         self.velocity = (0.0, 0.0, 0.0)
         self.heading = 0.0
         self.px4_fresh = False
+        self.odom_ready = False
         self.attitude_valid = False
         self.abnormal_tilt = False
         self.failsafe = False
@@ -182,7 +251,8 @@ class MissionLogic:
     def lock_home(self):
         if self.h is not None:
             return True
-        if not self.px4_fresh or self.position is None:
+        if (not self.px4_fresh or not self.odom_ready or
+                self.position is None):
             return False
         if math.hypot(self.velocity[0], self.velocity[1]) >= 0.15:
             return False
@@ -338,7 +408,8 @@ class MissionLogic:
             return
         if self.armed:
             self.transition(S.TAKEOFF, now)
-        elif self.auto_arm_allowed() and self.mode_name != 'hover_test':
+        elif self.auto_arm_allowed() and (
+                self.mode_name != 'hover_test' or self.simulation_mode):
             self.transition(S.ARMING, now)
         else:
             self.transition(S.WAIT_MANUAL_ARM, now)
@@ -477,6 +548,19 @@ class MissionLogic:
             return True
         return False
 
+    def request_safe_abort(self, now):
+        """Route an active armed mission through return and normal landing."""
+        if not self.armed or self.state in (
+                S.COMPLETE.value, S.DATA_TIMEOUT.value, S.FAILSAFE.value,
+                S.FINAL_LAND.value):
+            return False
+        target = (
+            S.RETURN_HOME if self.h is not None and self.position is not None
+            else S.FINAL_LAND)
+        self.safety_block = 'MISSION_ABORT_REQUESTED'
+        self.transition(target, now, 'MISSION_ABORT_REQUESTED')
+        return True
+
 
 def quaternion_is_valid(values, norm_tolerance=0.1):
     """Return whether values form a finite, approximately unit quaternion."""
@@ -499,6 +583,13 @@ def control_output_allowed(state, px4_stale):
     """No PX4 output is allowed after terminal safety faults."""
     return not px4_stale and state not in (
         S.DATA_TIMEOUT.value, S.FAILSAFE.value, S.COMPLETE.value)
+
+
+def data_loss_action(armed, status_stale):
+    """Choose the bounded response to critical PX4 input loss."""
+    if bool(armed) and not bool(status_stale):
+        return S.FINAL_LAND.value
+    return S.DATA_TIMEOUT.value
 
 
 def vehicle_command_allowed(enable_control, state, px4_stale=False):

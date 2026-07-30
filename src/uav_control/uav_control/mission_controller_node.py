@@ -14,8 +14,10 @@ from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPo
 from std_msgs.msg import Bool, Float32MultiArray, String, UInt8
 
 from . import vision_contract as vision_schema
-from .mission_logic import (control_output_allowed, descent_speed_for_state,
-                            MissionLogic, payload_ack_is_new,
+from .mission_logic import (control_output_allowed, data_loss_action,
+                            descent_speed_for_state, MissionLogic,
+                            OdomFrameGate,
+                            payload_ack_is_new,
                             prestream_is_safe, quaternion_is_valid,
                             vehicle_command_allowed, vision_is_fresh)
 from .mission_schema import (SAFETY_BLOCK_CODES, STATE_ID, TELEMETRY,
@@ -62,6 +64,8 @@ class MissionControllerNode(Node):
             'dynamic_near_height_m': 0.6, 'visual_stable_seconds': 0.5,
             'min_target_altitude': 0.5, 'max_target_altitude': 2.0,
             'command_timeout': 1.0, 'command_max_attempts': 3}
+        defaults['odom_gate_min_frames'] = 20
+        defaults['odom_gate_min_source_span_seconds'] = 1.0
         defaults['payload_ack_timeout'] = 3.0
         defaults['target_loss_abort_seconds'] = 1.0
         defaults['vision_timeout'] = 0.5
@@ -79,6 +83,11 @@ class MissionControllerNode(Node):
                        'visual_stable_seconds', 'dynamic_near_height_m')
         logic_names = logic_names + ('payload_ack_timeout',)
         self.logic = MissionLogic(**{n: self.get_parameter(n).value for n in logic_names})
+        self.odom_gate = OdomFrameGate(
+            self.get_parameter('odom_gate_min_frames').value,
+            self.get_parameter(
+                'odom_gate_min_source_span_seconds').value,
+            self.get_parameter('position_timeout').value)
         if abs(float(self.get_parameter('control_rate_hz').value) - 20.0) > 1e-6:
             raise ValueError('formal mission control_rate_hz must be 20.0')
         if not prestream_is_safe(
@@ -163,6 +172,8 @@ class MissionControllerNode(Node):
         self.create_subscription(Bool, '/car/mission_start', self._start, 10)
         self.create_subscription(UInt8, '/car/progress', self._car, 10)
         self.create_subscription(Bool, '/uav/safety/ready', self._safety, 10)
+        self.create_subscription(
+            Bool, '/uav/mission/abort', self._abort, 10)
         self.create_subscription(Bool, '/uav/mission/reset', self._reset, 10)
         self.create_subscription(Bool, '/uav/touchdown_sensor', self._touchdown_sensor, 10)
         self.create_subscription(Bool, '/uav/payload/release_ack', self._payload_ack, 10)
@@ -186,13 +197,24 @@ class MissionControllerNode(Node):
                                  received)
 
     def _position(self, msg):
-        self.last_position = self.now()
+        received = self.now()
         bypass = (self.logic.simulation_mode and
                   self.get_parameter('allow_sitl_heading_quality_bypass').value)
-        valid = (msg.xy_valid and msg.z_valid and msg.v_xy_valid and msg.v_z_valid and
-                 (msg.heading_good_for_control or bypass) and math.isfinite(msg.heading))
+        values = (msg.x, msg.y, msg.z, msg.vx, msg.vy, msg.vz, msg.heading)
+        valid = (
+            msg.xy_valid and msg.z_valid and msg.v_xy_valid and msg.v_z_valid and
+            (msg.heading_good_for_control or bypass) and
+            all(math.isfinite(value) for value in values))
+        source_timestamp = (
+            msg.timestamp_sample if msg.timestamp_sample != 0
+            else msg.timestamp)
+        new_frame = self.odom_gate.update(
+            source_timestamp, received, valid)
+        if new_frame:
+            self.last_position = received
         self.logic.update_position(msg.x, msg.y, msg.z, msg.vx, msg.vy, msg.vz, msg.heading, valid)
-        if valid:
+        self.logic.odom_ready = self.odom_gate.ready
+        if valid and new_frame:
             pose = PoseStamped()
             pose.header.stamp = self.get_clock().now().to_msg()
             pose.header.frame_id = 'map_ned'
@@ -238,6 +260,10 @@ class MissionControllerNode(Node):
     def _reset(self, msg):
         if msg.data:
             self.logic.reset_if_safe()
+
+    def _abort(self, msg):
+        if msg.data:
+            self.logic.request_safe_abort(self.now())
 
     def _touchdown_sensor(self, msg): self.touchdown_sensor = bool(msg.data)
 
@@ -313,16 +339,36 @@ class MissionControllerNode(Node):
                         now - self.last_status > status_timeout)
         position_stale = (self.last_position is None or
                           now - self.last_position > position_timeout)
+        self.odom_gate.expire(now)
+        self.logic.odom_ready = self.odom_gate.ready
+        position_invalid = not self.logic.px4_fresh
         attitude_stale = (self.last_attitude is None or
                           now - self.last_attitude > attitude_timeout)
-        if status_stale or position_stale:
+        if status_stale or position_stale or position_invalid:
             self.logic.px4_fresh = False
         if attitude_stale:
             self.logic.attitude_valid = False
-        px4_stale = status_stale or position_stale or attitude_stale
-        if px4_stale and self.logic.state not in WAITING_STATES + TERMINAL_NO_OUTPUT_STATES:
+        px4_stale = (
+            status_stale or position_stale or position_invalid or
+            (self.logic.state not in WAITING_STATES and
+             not self.logic.odom_ready) or attitude_stale)
+        if px4_stale and self.logic.state not in (
+                WAITING_STATES + TERMINAL_NO_OUTPUT_STATES +
+                ('FINAL_LAND',)):
             self.logic.safety_block = 'PX4_DATA_TIMEOUT'
-            self.logic.transition('DATA_TIMEOUT', now, 'PX4_DATA_TIMEOUT')
+            action = data_loss_action(self.logic.armed, status_stale)
+            event = ('PX4_DATA_TIMEOUT_LAND' if action == 'FINAL_LAND'
+                     else 'PX4_DATA_TIMEOUT')
+            self.logic.transition(action, now, event)
+        if (px4_stale and self.logic.state == 'FINAL_LAND' and
+                self.logic.armed and not status_stale):
+            # Position/attitude loss in flight must first hand control to
+            # PX4's own landing mode. Do not silently stop Offboard output.
+            self._publish_command(
+                'land', VehicleCommand.VEHICLE_CMD_NAV_LAND, now)
+            self._publish_observability(now)
+            self.last_state = self.logic.state
+            return
         if self.logic.state == 'DATA_TIMEOUT':
             self._publish_observability(now)
             self.last_state = self.logic.state

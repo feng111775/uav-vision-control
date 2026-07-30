@@ -25,6 +25,8 @@ mission_controller_node:
     allow_sitl_heading_quality_bypass: false
     status_timeout: 1.0
     position_timeout: 0.5
+    odom_gate_min_frames: 20
+    odom_gate_min_source_span_seconds: 1.0
     attitude_timeout: 0.5
     safety_timeout: 1.0
     car_timeout: 2.0

@@ -1,0 +1,20 @@
+mission_controller_node:
+  ros__parameters:
+    mission_mode: hover_test
+    simulation_mode: true
+    competition_mode: false
+    enable_control: true
+    enable_auto_arm: true
+    enable_auto_disarm: true
+    allow_sitl_heading_quality_bypass: true
+    target_altitude: 1.0
+    hover_test_seconds: 10.0
+    prestream_cycles: 40
+    control_rate_hz: 20.0
+    status_timeout: 1.0
+    position_timeout: 0.5
+    odom_gate_min_frames: 20
+    odom_gate_min_source_span_seconds: 1.0
+    attitude_timeout: 0.5
+    min_target_altitude: 0.5
+    max_target_altitude: 2.0

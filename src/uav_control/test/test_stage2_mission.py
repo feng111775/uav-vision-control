@@ -4,7 +4,8 @@ from pathlib import Path
 import pytest
 
 from uav_control.mission_logic import (
-    control_output_allowed, descent_speed_for_state, MissionLogic,
+    control_output_allowed, data_loss_action, descent_speed_for_state,
+    MissionLogic,
     payload_ack_is_new, prestream_is_safe, quaternion_is_valid,
     vehicle_command_allowed, vision_is_fresh)
 from uav_control.mission_schema import (
@@ -33,6 +34,7 @@ def ready_logic(mode='drop', **kwargs):
         enable_auto_arm=mode != 'hover_test', prestream_cycles=40,
         stable_seconds=0.1, visual_stable_seconds=0.2, **kwargs)
     logic.update_position(2, 3, 4, 0, 0, 0, 0.2, True)
+    logic.odom_ready = True
     logic.attitude_valid = True
     logic.update_status(False, 0, False, False, 0)
     logic.step(0)
@@ -56,6 +58,46 @@ def enter_takeoff(logic, now=1.0):
     logic.update_status(True, 14, True, False, now + 0.2)
     logic.step(now + 0.2)
     assert logic.state == S.TAKEOFF.value
+
+
+def request_offboard_logic(mode, simulation_mode, enable_auto_arm):
+    logic = MissionLogic(
+        mode, simulation_mode=simulation_mode, competition_mode=True,
+        enable_control=True, enable_auto_arm=enable_auto_arm)
+    logic.state = S.REQUEST_OFFBOARD.value
+    logic.start_signal = True
+    logic.px4_fresh = True
+    logic.h = (0.0, 0.0, 0.0, 0.0)
+    logic.safety_ready = True
+    logic.attitude_valid = True
+    logic.offboard = True
+    return logic
+
+
+def test_sitl_hover_test_with_auto_arm_enters_arming():
+    logic = request_offboard_logic('hover_test', True, True)
+    logic.step(1.0)
+    assert logic.state == S.ARMING.value
+
+
+def test_hardware_hover_test_with_auto_arm_requires_manual_arm():
+    logic = request_offboard_logic('hover_test', False, True)
+    assert logic.auto_arm_allowed()
+    logic.step(1.0)
+    assert logic.state == S.WAIT_MANUAL_ARM.value
+
+
+def test_sitl_hover_test_without_auto_arm_requires_manual_arm():
+    logic = request_offboard_logic('hover_test', True, False)
+    logic.step(1.0)
+    assert logic.state == S.WAIT_MANUAL_ARM.value
+
+
+@pytest.mark.parametrize('mode', ['drop', 'dynamic_land'])
+def test_non_hover_auto_arm_behavior_is_unchanged(mode):
+    logic = request_offboard_logic(mode, False, True)
+    logic.step(1.0)
+    assert logic.state == S.ARMING.value
 
 
 def reach_cruise(logic, now=2.0):
@@ -91,6 +133,7 @@ def test_hover_control_enable_is_explicit_start_without_car_topic():
     logic = MissionLogic(
         'hover_test', simulation_mode=True, enable_control=True)
     logic.update_position(0, 0, 0, 0, 0, 0, 0, True)
+    logic.odom_ready = True
     logic.attitude_valid = True
     logic.step(0)
     logic.step(0.1)
@@ -395,6 +438,40 @@ def test_px4_timeout_and_failsafe_block_output():
     assert S.DATA_TIMEOUT.value in STATE_ID
 
 
+@pytest.mark.parametrize('lost_input', ['position', 'attitude'])
+def test_airborne_critical_data_loss_requests_safe_land(lost_input):
+    assert lost_input
+    assert data_loss_action(True, False) == S.FINAL_LAND.value
+
+
+def test_status_loss_cannot_issue_blind_flight_command():
+    assert data_loss_action(True, True) == S.DATA_TIMEOUT.value
+
+
+def test_disarmed_data_loss_never_progresses_or_arms():
+    assert data_loss_action(False, False) == S.DATA_TIMEOUT.value
+
+
+def test_airborne_abort_uses_return_and_normal_land_path():
+    logic = ready_logic('hover_test')
+    logic.armed = True
+    logic.state = S.HOVER_150CM.value
+    assert logic.request_safe_abort(5.0)
+    assert logic.state == S.RETURN_HOME.value
+    assert logic.event == 'MISSION_ABORT_REQUESTED'
+
+
+def test_disarmed_or_terminal_abort_does_not_advance():
+    logic = ready_logic('hover_test')
+    before = logic.state
+    assert not logic.request_safe_abort(5.0)
+    assert logic.state == before
+    logic.armed = True
+    logic.state = S.FAILSAFE.value
+    assert not logic.request_safe_abort(5.1)
+    assert logic.state == S.FAILSAFE.value
+
+
 def test_offboard_exit_enters_failsafe():
     logic = ready_logic()
     logic.state = S.TAKEOFF.value
@@ -466,7 +543,7 @@ def test_every_installed_launch_uses_only_the_unified_controller():
     launch_text = '\n'.join(
         path.read_text() for path in
         (PACKAGE_ROOT / 'launch').glob('*.launch.py'))
-    assert launch_text.count("executable='mission_controller_node'") == 2
+    assert launch_text.count("executable='mission_controller_node'") == 4
     assert 'offboard_control' not in launch_text
     assert 'vision_offboard_controller' not in launch_text
 
