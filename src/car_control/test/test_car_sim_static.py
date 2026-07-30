@@ -18,6 +18,10 @@ WORLD = PACKAGE / "worlds" / "car_empty_test.sdf"
 DESCRIPTION_HELPER = PACKAGE / "python" / "car_control_launch" / "robot_description.py"
 BASIC_LAUNCH = PACKAGE / "launch" / "car_basic_sim.launch.py"
 D_TASK_LAUNCH = PACKAGE.parent / "d_system_sim" / "launch" / "d_task_car_sensor.launch.py"
+LINE_NODE = PACKAGE / "src" / "sim" / "line_follow_controller_node.cpp"
+ACCEPTANCE_NODE = PACKAGE / "src" / "sim" / "car_to_b_acceptance_node.cpp"
+FULL_LAP_ACCEPTANCE_NODE = (
+    PACKAGE / "src" / "sim" / "car_full_lap_acceptance_node.cpp")
 
 
 class CarSimulationStaticTest(unittest.TestCase):
@@ -121,6 +125,31 @@ class CarSimulationStaticTest(unittest.TestCase):
             self.assertNotIn('"robot_description": Command(', text)
         self.assertIn("<robot", self.urdf_text)
         ET.fromstring(self.urdf_text)
+
+    def test_line_controller_uses_stage2_core_and_twist_stamped(self):
+        text = LINE_NODE.read_text(encoding="utf-8")
+        for core in (
+                "line_pd_controller.hpp", "line_recovery.hpp",
+                "progress_state_machine.hpp", "speed_planner.hpp"):
+            self.assertIn(f'car_control/core/{core}', text)
+        self.assertIn("geometry_msgs/msg/twist_stamped.hpp", text)
+        self.assertNotIn("geometry_msgs/msg/twist.hpp", text)
+        self.assertIn("cmd.header.stamp = stamp", text)
+        self.assertIn("wheel_targets_to_chassis(", text)
+        self.assertIn("if (dt == 0.0)", text)
+        self.assertIn("dt < 0.0", text)
+        self.assertNotIn("px4_" + "msgs", text)
+        acceptance = ACCEPTANCE_NODE.read_text(encoding="utf-8")
+        self.assertNotIn("create_publisher<geometry_msgs", acceptance)
+        self.assertNotIn("/diff_drive_controller/cmd_vel", acceptance)
+        full_lap = FULL_LAP_ACCEPTANCE_NODE.read_text(encoding="utf-8")
+        self.assertNotIn("create_publisher<", full_lap)
+        self.assertIn(
+            'create_subscription<geometry_msgs::msg::TwistStamped>', full_lap)
+        for topic in (
+                "/car/progress/lap_time_s", "/car/progress/a_to_b_pass",
+                "/car/progress/lap_pass", "/car/progress/finished"):
+            self.assertIn(topic, text)
 
 
 if __name__ == "__main__":

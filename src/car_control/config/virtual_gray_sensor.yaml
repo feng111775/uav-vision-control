@@ -2,6 +2,9 @@ virtual_gray_sensor_node:
   ros__parameters:
     use_sim_time: true  # 使用 Gazebo /clock。
     odom_topic: /diff_drive_controller/odom  # 车体局部里程计输入。
+    ground_truth_pose_topic: /world/d_task_field/dynamic_pose/info
+    sampled_ground_truth_pose_topic: /car/ground_truth_pose
+    sampled_ground_truth_odom_topic: /car/ground_truth_odom
     values_topic: /car/line_sensor/values  # 各路归一化灰度值 [0,1]。
     error_topic: /car/line_sensor/error  # 阶段2估计器输出的归一化横向误差。
     detected_topic: /car/line_sensor/detected  # 是否达到最小激活量。

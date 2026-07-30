@@ -120,8 +120,17 @@ D题默认 `base_link=(1.50,1.80)`、车头参考点与灰度阵列中心均在�
 ## 当前完成与未实现内容
 
 当前已完成 8 个核心模块及其 9 项测试，以及 Gazebo Harmonic 差速小车基础运动
-模型及确定性虚拟灰度阵列。自主循线 ROS 节点、无线通信、MCU 真车驱动、
-地面站界面和 PX4 联合仿真均不在本阶段实现范围。
+模型、确定性虚拟灰度阵列及阶段4B-1 A到B自主循线ROS节点。完整整圈、无线通信、
+MCU真车驱动、地面站界面和PX4联合仿真尚未实现。
+
+## 阶段4B-1自主循线节点
+
+`line_follow_controller_node` 把虚拟灰度与 odom 接入阶段2既有
+`LinePDController`、`SpeedPlanner`、`LineRecovery` 和
+`ProgressStateMachine`，发布带仿真时间戳的 `TwistStamped`。默认不自动启动，
+可调用 `/car/start`；测试可设置 `auto_start:=true`。候选检测器先将局部 odom
+按初始 yaw 旋转到场地世界坐标，再按 B/C/D/A 顺序向核心状态机提交候选。
+这里的速度、PD、恢复和节点半径均为仿真默认值，不是真车最终参数。
 
 ## 构建、测试与运行
 
@@ -133,5 +142,5 @@ colcon test --packages-select car_control --return-code-on-test-failure
 colcon test-result --verbose
 ```
 
-本阶段核心库没有可执行控制节点。地面站必须保持离线只读；联合仿真由
-`d_system_sim` 编排；无人机基线必须固定为 PX4 v1.16.0。
+地面站必须保持离线只读；联合仿真由 `d_system_sim` 编排；无人机基线必须固定为
+PX4 v1.16.0。

@@ -216,3 +216,29 @@ def test_arc_chords_are_dense_connected_and_generation_is_deterministic():
         output = Path(temporary) / "field.sdf"
         module.generate(CONFIG, output)
         assert output.read_bytes() == WORLD.read_bytes()
+
+
+def test_line_follow_launch_reuses_sensor_launch_and_field_coordinates():
+    launch = (PACKAGE / "launch/d_task_car_line_follow.launch.py").read_text(
+        encoding="utf-8")
+    assert "d_task_car_sensor.launch.py" in launch
+    assert 'package="car_control"' in launch
+    assert 'executable="line_follow_controller_node"' in launch
+    assert '"auto_start": LaunchConfiguration("auto_start")' in launch
+    assert '"initial_base_x": LaunchConfiguration("initial_base_x")' in launch
+    assert '"progress.a_x": field["left_x_m"]' in launch
+    assert '"progress.b_y": field["upper_y_m"]' in launch
+    assert "gz_sim.launch.py" not in launch
+
+
+def test_autonomous_launch_reuses_line_follow_with_standard_defaults():
+    launch = (PACKAGE / "launch/d_task_car_autonomous.launch.py").read_text(
+        encoding="utf-8")
+    assert "d_task_car_line_follow.launch.py" in launch
+    assert 'DeclareLaunchArgument("headless", default_value="true")' in launch
+    assert 'DeclareLaunchArgument("auto_start", default_value="true")' in launch
+    assert 'DeclareLaunchArgument("stop_after_finish", default_value="true")' in launch
+    assert 'DeclareLaunchArgument("initial_base_x", default_value="1.50")' in launch
+    assert 'DeclareLaunchArgument("initial_base_y", default_value="1.80")' in launch
+    assert "d_task_car_sensor.launch.py" not in launch
+    assert "gz_sim.launch.py" not in launch

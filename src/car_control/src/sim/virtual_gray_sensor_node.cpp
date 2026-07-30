@@ -1,5 +1,7 @@
 #include "car_control/sim/virtual_gray_sensor.hpp"
 
+#include <geometry_msgs/msg/pose_array.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/bool.hpp>
@@ -22,6 +24,12 @@ public:
   : Node("virtual_gray_sensor_node")
   {
     const std::string odom_topic = declare_parameter("odom_topic", "/diff_drive_controller/odom");
+    const std::string pose_topic = declare_parameter(
+      "ground_truth_pose_topic", "/world/d_task_field/dynamic_pose/info");
+    const std::string sampled_pose_topic = declare_parameter(
+      "sampled_ground_truth_pose_topic", "/car/ground_truth_pose");
+    const std::string sampled_odom_topic = declare_parameter(
+      "sampled_ground_truth_odom_topic", "/car/ground_truth_odom");
     const std::string values_topic = declare_parameter("values_topic", "/car/line_sensor/values");
     const std::string error_topic = declare_parameter("error_topic", "/car/line_sensor/error");
     const std::string detected_topic = declare_parameter("detected_topic", "/car/line_sensor/detected");
@@ -56,11 +64,24 @@ public:
     error_pub_ = create_publisher<std_msgs::msg::Float64>(error_topic, 10);
     detected_pub_ = create_publisher<std_msgs::msg::Bool>(detected_topic, 10);
     activation_pub_ = create_publisher<std_msgs::msg::Float64>(activation_topic, 10);
+    sampled_pose_pub_ =
+      create_publisher<geometry_msgs::msg::PoseStamped>(sampled_pose_topic, 10);
+    sampled_odom_pub_ =
+      create_publisher<nav_msgs::msg::Odometry>(sampled_odom_topic, 10);
     odom_sub_ = create_subscription<nav_msgs::msg::Odometry>(
       odom_topic, rclcpp::SensorDataQoS(),
       [this](nav_msgs::msg::Odometry::ConstSharedPtr msg) {
         std::lock_guard<std::mutex> lock(mutex_);
         odom_ = std::move(msg);
+      });
+    pose_sub_ = create_subscription<geometry_msgs::msg::PoseArray>(
+      pose_topic, rclcpp::SensorDataQoS(),
+      [this](geometry_msgs::msg::PoseArray::ConstSharedPtr msg) {
+        if (!msg->poses.empty()) {
+          std::lock_guard<std::mutex> lock(mutex_);
+          ground_truth_pose_ = msg->poses.front();
+          ground_truth_received_ = true;
+        }
       });
     timer_ = create_wall_timer(
       std::chrono::duration<double>(1.0 / rate), [this]() {publish_sample();});
@@ -69,24 +90,31 @@ public:
 private:
   void publish_sample()
   {
-    nav_msgs::msg::Odometry::ConstSharedPtr odom;
+    geometry_msgs::msg::Pose pose;
+    bool ground_truth_received = false;
     {
       std::lock_guard<std::mutex> lock(mutex_);
-      odom = odom_;
+      pose = ground_truth_pose_;
+      ground_truth_received = ground_truth_received_;
     }
-    if (!odom) {
+    if (!ground_truth_received) {
       return;
     }
-    const auto & p = odom->pose.pose.position;
-    const auto & q = odom->pose.pose.orientation;
-    const double odom_yaw = std::atan2(
+    geometry_msgs::msg::PoseStamped sampled_pose;
+    sampled_pose.header.stamp = now();
+    sampled_pose.header.frame_id = "world";
+    sampled_pose.pose = pose;
+    sampled_pose_pub_->publish(sampled_pose);
+    nav_msgs::msg::Odometry sampled_odom;
+    sampled_odom.header = sampled_pose.header;
+    sampled_odom.child_frame_id = "base_link";
+    sampled_odom.pose.pose = pose;
+    sampled_odom_pub_->publish(sampled_odom);
+    const auto & p = pose.position;
+    const auto & q = pose.orientation;
+    const double world_yaw = std::atan2(
       2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z));
-    const double c = std::cos(initial_yaw_);
-    const double s = std::sin(initial_yaw_);
-    const auto result = sensor_->sample(
-      initial_x_ + c * p.x - s * p.y,
-      initial_y_ + s * p.x + c * p.y,
-      initial_yaw_ + odom_yaw);
+    const auto result = sensor_->sample(p.x, p.y, world_yaw);
     if (!result.valid) {
       return;
     }
@@ -113,11 +141,16 @@ private:
   std::unique_ptr<VirtualGraySensor> sensor_;
   std::mutex mutex_;
   nav_msgs::msg::Odometry::ConstSharedPtr odom_;
+  geometry_msgs::msg::Pose ground_truth_pose_;
+  bool ground_truth_received_{false};
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseArray>::SharedPtr pose_sub_;
   rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr values_pub_;
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr error_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr detected_pub_;
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr activation_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr sampled_pose_pub_;
+  rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr sampled_odom_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
 };
 

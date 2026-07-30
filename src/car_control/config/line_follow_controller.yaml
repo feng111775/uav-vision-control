@@ -1,0 +1,43 @@
+line_follow_controller_node:
+  ros__parameters:
+    use_sim_time: true
+    odom_topic: /car/ground_truth_odom
+    auto_start: false
+    control_rate_hz: 50.0  # Hz
+    sensor_timeout_s: 0.20  # s
+    odom_timeout_s: 0.30  # s
+    startup_fresh_cycles: 3  # consecutive distinct odom and complete sensor snapshots
+    base_speed_mps: 0.25  # m/s, simulation default
+    maximum_speed_mps: 0.35  # m/s
+    minimum_tracking_speed_mps: 0.12  # m/s
+    recovery_speed_mps: 0.10  # m/s
+    wheel_separation_m: 0.32  # m, matches stage-3 model
+    initial_base_x: 1.50  # m, field world frame
+    initial_base_y: 1.80  # m, field world frame
+    initial_yaw: 1.5707963267948966  # rad
+    stop_after_finish: true
+    line_pd:
+      kp: 0.08
+      kd: 0.004
+      derivative_filter: 0.7
+      output_limit: 0.12  # m/s differential correction
+    speed_planner:
+      error_slowdown_gain: 0.08
+      maximum_wheel_speed_mps: 0.45
+    recovery:
+      timeout_s: 1.0
+      steering_command: 0.07  # m/s differential correction
+    progress:
+      node_radius_m: 0.25  # m
+      minimum_distance_m: 0.50  # m
+      lockout_time_s: 0.50  # s
+      a_to_b_limit_s: 15.0
+      lap_limit_s: 90.0
+      a_x: 1.50
+      a_y: 2.00
+      b_x: 1.50
+      b_y: 3.50
+      c_x: 3.00
+      c_y: 3.50
+      d_x: 3.00
+      d_y: 2.00

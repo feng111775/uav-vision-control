@@ -3,6 +3,7 @@ import math
 
 from ament_index_python.packages import get_package_share_directory
 from car_control_launch.robot_description import make_robot_description
+from d_system_sim.field_config import load_field_parameters
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, EmitEvent, IncludeLaunchDescription, LogInfo, RegisterEventHandler
 from launch.conditions import IfCondition, UnlessCondition
@@ -11,17 +12,6 @@ from launch.events import Shutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-
-
-def load_field_parameters(path):
-    values = {}
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.split("#", 1)[0].strip()
-        if line:
-            key, value = line.split(":", 1)
-            values[key.strip()] = float(value.strip())
-    return values
-
 
 def generate_launch_description():
     car_share = Path(get_package_share_directory("car_control"))
@@ -62,7 +52,11 @@ def generate_launch_description():
         output="screen")
     bridge = Node(
         package="ros_gz_bridge", executable="parameter_bridge",
-        arguments=["/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock"],
+        arguments=[
+            "/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock",
+            "/world/d_task_field/dynamic_pose/info"
+            "@geometry_msgs/msg/PoseArray[gz.msgs.Pose_V",
+        ],
         parameters=[{"use_sim_time": True}], output="screen")
     spawner = Node(
         package="controller_manager", executable="spawner",
@@ -81,6 +75,8 @@ def generate_launch_description():
                 "initial_world_y": LaunchConfiguration("y"),
                 "initial_world_yaw": LaunchConfiguration("yaw"),
                 "sensor_forward_offset_m": front_offset,
+                "ground_truth_pose_topic":
+                    "/world/d_task_field/dynamic_pose/info",
                 "use_sim_time": True,
             }],
         output="screen")
@@ -94,15 +90,23 @@ def generate_launch_description():
                 EmitEvent(event=Shutdown(reason=f"{label} failed with code {event.returncode}"))]
         return handler
 
+    def start_sensor_after_controllers(event, _context):
+        if event.returncode == 0:
+            return [sensor]
+        return [
+            LogInfo(msg="ERROR: controller spawner failed; shutting down."),
+            EmitEvent(event=Shutdown(
+                reason=f"controller spawner failed with code {event.returncode}"))]
+
     return LaunchDescription([
         DeclareLaunchArgument("headless", default_value="true"),
         DeclareLaunchArgument("x", default_value=f"{base_x_default:.12f}"),
         DeclareLaunchArgument("y", default_value=f"{base_y_default:.12f}"),
         DeclareLaunchArgument("z", default_value="0.02"),
         DeclareLaunchArgument("yaw", default_value=f"{yaw_default:.16f}"),
-        gazebo, gazebo_gui, state_publisher, bridge, spawn, spawner, sensor,
+        gazebo, gazebo_gui, state_publisher, bridge, spawn, spawner,
         RegisterEventHandler(OnProcessExit(
             target_action=spawn, on_exit=shutdown_on_failure("ros_gz_sim create"))),
         RegisterEventHandler(OnProcessExit(
-            target_action=spawner, on_exit=shutdown_on_failure("controller spawner"))),
+            target_action=spawner, on_exit=start_sensor_after_controllers)),
     ])

@@ -12,6 +12,7 @@ find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 
 add_library(car_control_health src/health.cpp)
 target_include_directories(car_control_health
@@ -34,7 +35,10 @@ add_library(car_control_core
 add_executable(car_motion_smoke_node src/sim/car_motion_smoke_node.cpp)
 ament_target_dependencies(car_motion_smoke_node rclcpp geometry_msgs nav_msgs)
 add_library(car_control_sim
+  src/sim/control_safety.cpp
   src/sim/d_task_track_geometry.cpp
+  src/sim/final_lap_metrics.cpp
+  src/sim/progress_detector.cpp
   src/sim/virtual_gray_sensor.cpp
 )
 target_include_directories(car_control_sim
@@ -46,6 +50,16 @@ target_link_libraries(car_control_sim PUBLIC car_control_core)
 add_executable(virtual_gray_sensor_node src/sim/virtual_gray_sensor_node.cpp)
 ament_target_dependencies(virtual_gray_sensor_node rclcpp nav_msgs std_msgs)
 target_link_libraries(virtual_gray_sensor_node car_control_sim)
+add_executable(line_follow_controller_node src/sim/line_follow_controller_node.cpp)
+ament_target_dependencies(
+  line_follow_controller_node rclcpp geometry_msgs nav_msgs std_msgs std_srvs)
+target_link_libraries(line_follow_controller_node car_control_sim)
+add_executable(car_to_b_acceptance_node src/sim/car_to_b_acceptance_node.cpp)
+ament_target_dependencies(car_to_b_acceptance_node rclcpp nav_msgs std_msgs)
+add_executable(car_full_lap_acceptance_node src/sim/car_full_lap_acceptance_node.cpp)
+ament_target_dependencies(
+  car_full_lap_acceptance_node rclcpp geometry_msgs nav_msgs std_msgs)
+target_link_libraries(car_full_lap_acceptance_node car_control_sim)
 target_include_directories(car_control_core
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -59,11 +73,17 @@ install(
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
 )
-install(TARGETS car_motion_smoke_node virtual_gray_sensor_node DESTINATION lib/${PROJECT_NAME})
+install(
+  TARGETS car_motion_smoke_node virtual_gray_sensor_node
+    line_follow_controller_node car_to_b_acceptance_node
+    car_full_lap_acceptance_node
+  DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY include/ DESTINATION include)
 install(DIRECTORY launch config urdf worlds firmware
   DESTINATION share/${PROJECT_NAME}
 )
+install(PROGRAMS scripts/run_car_robustness_matrix.py
+  DESTINATION lib/${PROJECT_NAME})
 ament_python_install_package(car_control_launch PACKAGE_DIR python/car_control_launch)
 
 if(BUILD_TESTING)
@@ -94,10 +114,20 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/test/test_car_sim_static.py
       ${CMAKE_CURRENT_SOURCE_DIR}
   )
+  add_test(
+    NAME car_control_robustness_runner_test
+    COMMAND ${Python3_EXECUTABLE}
+      ${CMAKE_CURRENT_SOURCE_DIR}/test/test_car_robustness_runner.py
+      ${CMAKE_CURRENT_SOURCE_DIR}
+  )
   add_executable(test_virtual_gray_sensor test/test_virtual_gray_sensor.cpp)
   target_include_directories(test_virtual_gray_sensor PRIVATE test)
   target_link_libraries(test_virtual_gray_sensor PRIVATE car_control_sim)
   add_test(NAME car_control_virtual_gray_sensor_test COMMAND test_virtual_gray_sensor)
+  add_executable(test_line_follow_support test/test_line_follow_support.cpp)
+  target_include_directories(test_line_follow_support PRIVATE test)
+  target_link_libraries(test_line_follow_support PRIVATE car_control_sim)
+  add_test(NAME car_control_line_follow_support_test COMMAND test_line_follow_support)
 endif()
 
 ament_export_targets(export_car_control HAS_LIBRARY_TARGET)

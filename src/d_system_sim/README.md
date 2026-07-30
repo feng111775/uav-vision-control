@@ -34,7 +34,17 @@ ros2 launch d_system_sim d_task_car_sensor.launch.py headless:=true
 GUI 观察使用 `headless:=false`；可用 `x:=`、`y:=`、`z:=`、`yaw:=` 覆盖初始位姿。
 GUI 使用项目内 `config/d_task_gui.config` 的固定俯视相机：屏幕右侧对应世界 +x，
 屏幕上方对应世界 +y，因而场地左下角也显示在屏幕左下。
-本阶段只验证场地、差速小车和虚拟灰度输出，尚未实现自主循线、状态机或整圈运行。
+场地、小车、灰度输出和A到B自主循线已经接入；尚未实现完整整圈运行。
+
+阶段4B-1的 A 到 B 自主循线组合启动：
+
+```bash
+ros2 launch d_system_sim d_task_car_line_follow.launch.py \
+  headless:=true auto_start:=true
+```
+
+该 launch 直接包含既有场地/小车/传感器 launch，再追加控制节点，不复制另一套
+Gazebo启动流程。本阶段只验收到 B 并继续进入上弯道至少1秒，不代表完整整圈通过。
 
 ## 尚未实现内容
 
