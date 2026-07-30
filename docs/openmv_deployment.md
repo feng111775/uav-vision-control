@@ -1,40 +1,38 @@
-# OpenMV H7 Plus部署与回滚
+# OpenMV H7 Plus终端部署与回滚
 
-本机2026-07-29未检测到OpenMV；`/dev/ttyACM0`是Pixhawk 6C，禁止向该设备复制文件。
-以下步骤必须在OpenMV IDE确认设备型号和固件5.0.0后人工执行。
+正式设备使用固定别名`/dev/dtask_openmv`、115200波特率。任何串口访问前必须用
+`scripts/hardware/check_device_identity.py`核对VID、PID和设备私有序列号；禁止
+按`/dev/ttyACM*`猜测设备，禁止连接Pixhawk。
 
-## 文件清单
+## 文件和工具
 
-复制到OpenMV板根目录：
+正式板载文件仅为`camera_config.py`、`detector.py`、`protocol.py`和`main.py`。
+旧`thresholds.py`不参与正式算法，也不由部署工具复制。
 
-1. `camera_config.py`
-2. `detector.py`
-3. `protocol.py`
-4. `main.py`
+```bash
+python3 scripts/hardware/deploy_openmv.py --dry-run
+python3 scripts/hardware/deploy_openmv.py
+python3 scripts/hardware/openmv_repl.py --exec "import os; print(os.listdir('/flash'))"
+python3 scripts/hardware/validate_openmv_live.py --duration 20
+```
 
-`thresholds.py`已删除，正式算法不使用旧红色阈值。
+部署工具先把包含隐藏文件的完整磁盘复制到`~/openmv_backups`，再复制四文件、
+执行`sync`和SHA256校验，最后用`udisksctl`安全卸载并软重启。只有显式传入
+`--rollback BACKUP`才会回滚；不会更新固件、格式化或擦除文件系统。
 
-## 部署
+## OpenMV v5.0启动语义
 
-1. 拆桨，不启动PX4控制器，拔除Pixhawk USB避免选错端口。
-2. 在OpenMV IDE确认H7 Plus、Firmware 5.0.0、MicroPython 1.28。
-3. 先下载/另存板上现有全部`.py`为带日期备份。
-4. 逐个复制上述四个文件，先在IDE运行但不保存为开机脚本。
-5. 查看串口应周期出现：
-   `D_TARGET,...`和`D_STATUS,TRACKING|LOST|CROSS_INVALID|DETECT_ERROR`。
-6. 依次测试无目标、静止目标、移动、旋转、不均匀光照和短暂遮挡。
-7. 确认无异常后才将`main.py`保存到板根目录并软重启。
-8. 关闭OpenMV IDE串口，再启动ROS H7模式，避免USB CDC抢占。
+本机随OpenMV IDE安装的v5.0.0离线文档明确说明：`boot.py`在软重启执行，
+`main.py`只在冷启动执行。因此Ctrl-D后直接出现REPL是正常行为，不能据此判断
+`main.py`部署失败。部署后可先手动`exec(open('/flash/main.py').read(), {})`
+诊断，再用安全整板复位或重新上电验证自动启动。复位前必须安全卸载USB磁盘。
 
-回滚时删除本次四个文件并恢复备份；不要更新固件或擦除其他资产。
+## 当前性能边界
 
-## 验收与调优
+2026-07-30无目标实测显示，全帧Hough圆搜索是主要瓶颈。当前实现只在尚未锁定
+目标时每8帧执行一次全帧圆搜索；七字段协议、圆环几何、十字规则和全部阈值
+未改变。无目标平均输出仍低于15Hz，不能声称已达到最终性能。首次捕获延迟与
+正样本效果必须等待真实目标制作完成后复测。
 
-- 无目标持续发送合法`valid=0`心跳。
-- 缺少可靠十字时D_TARGET必须无效，D_STATUS显示`CROSS_INVALID`。
-- 目标移动时中心/直径变化，旋转时角度按90度周期变化。
-- 丢失后不能永久保持valid=1。
-- 记录`D_VISION`日志的FPS和ROS topic频率，目标尽量≥15 Hz。
-
-需要IDE实测调整：Hough circle/line阈值、最小尺寸、内存峰值、曝光稳定时间。
-未实测前不得声称H7达到15 Hz或正式识别率。
+真实目标尚未完成，以下项目均为“待真实目标制作完成后补测”：valid=1正样本、
+中心位置变化、角度变化、遮挡恢复和移除目标后的LOST时间。

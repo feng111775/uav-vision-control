@@ -1,6 +1,13 @@
 # 所有 null 项必须由人工实测填写；本文件不是可直接运行配置。
 pixhawk: {vid: null, pid: null, serial: null, device_alias: null, telem_port: null, baudrate: null}
-openmv: {vid: null, pid: null, serial: null, device_alias: null, baudrate: null, measured_fps: null}
+openmv:
+  vid: "37c5"
+  pid: "124a"
+  serial: "<private-device-serial>"
+  device_alias: /dev/dtask_openmv
+  baudrate: 115200
+  measured_fps: 3.67  # 无目标优化后5分钟D_VISION均值；非正样本识别率
+  positive_target_validation: pending_real_target
 car: {transport: disabled, ip: null, udp_port: null, serial_alias: null, baudrate: null}
 payload: {controller: null, transport: disabled, serial_alias: null, baudrate: null, pulse_ms: null}
 touchdown: {source: disabled, threshold: null}

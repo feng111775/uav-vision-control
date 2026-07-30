@@ -1,6 +1,6 @@
 h7_bridge_node:
   ros__parameters:
-    port: /dev/ttyACM0
+    port: /dev/dtask_openmv
     baudrate: 115200
     allow_legacy_protocol: false
     detection_topic: /vision/h7/detection

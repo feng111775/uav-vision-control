@@ -18,6 +18,10 @@ MIN_CROSS_SCORE = 0.45
 MIN_CONFIDENCE = 55
 ROI_SCALE_PERCENT = 165
 ROI_FAILURE_LIMIT = 3
+# Full-frame Hough search dominates a no-target frame on H7 Plus. Keep the
+# heartbeat responsive by scanning every eighth frame until a target is first
+# acquired. Tracking and recovery ROI searches remain frame-by-frame.
+FULL_SEARCH_INTERVAL = 8
 MIN_BLOB_PIXELS = 30
 MIN_BLOB_AREA = 80
 HALF_PI = math.pi / 2
@@ -57,6 +61,7 @@ class DTaskDetector:
         self.last = None
         self.roi_failures = 0
         self.last_status = "LOST"
+        self.full_search_countdown = 0
 
     def _tracking_roi(self, image):
         if self.last is None:
@@ -226,6 +231,10 @@ class DTaskDetector:
     def detect(self, image):
         roi = self._tracking_roi(image)
         result = None
+        if roi is None and self.full_search_countdown > 0:
+            self.full_search_countdown -= 1
+            self.last_status = "CROSS_INVALID"
+            return _invalid(self.last_status)
         if roi is not None and self.roi_failures < ROI_FAILURE_LIMIT:
             result = self._detect_roi(image, roi)
             if result is None or not result["valid"]:
@@ -234,6 +243,8 @@ class DTaskDetector:
                 roi is None or self.roi_failures >= ROI_FAILURE_LIMIT):
             result = self._detect_roi(
                 image, (0, 0, image.width(), image.height()))
+            if roi is None:
+                self.full_search_countdown = FULL_SEARCH_INTERVAL - 1
         if result is None:
             self.last_status = "CROSS_INVALID"
             return _invalid(self.last_status)

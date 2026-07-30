@@ -1,6 +1,7 @@
 """Receive validated D_TARGET detections from OpenMV H7 Plus."""
 
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 import serial
 from serial import SerialException
@@ -37,6 +38,10 @@ def parse_status_line(line):
         raise ValueError('invalid D_STATUS value')
     return fields[1]
 
+def is_diagnostic_line(line):
+    """Identify non-protocol performance diagnostics from OpenMV."""
+    return line.startswith('D_VISION,')
+
 
 class H7BridgeNode(Node):
     def __init__(self):
@@ -62,6 +67,11 @@ class H7BridgeNode(Node):
     def _warn(self, message):
         self.get_logger().warning(message, throttle_duration_sec=5.0)
 
+    def _publish_status(self, status):
+        message = String()
+        message.data = status
+        self.status_publisher.publish(message)
+
     def _open_serial(self):
         if self.serial_port is not None and self.serial_port.is_open:
             return
@@ -71,6 +81,7 @@ class H7BridgeNode(Node):
             self.get_logger().info('H7 serial connected: %s' % self.port)
         except (SerialException, OSError, ValueError) as error:
             self.serial_port = None
+            self._publish_status('DISCONNECTED')
             self._warn('H7 serial unavailable: %s' % error)
 
     def _read_serial(self):
@@ -83,11 +94,11 @@ class H7BridgeNode(Node):
                     break
                 try:
                     line = raw.decode('ascii').strip()
+                    if is_diagnostic_line(line):
+                        continue
                     if line.startswith('D_STATUS,'):
                         status = parse_status_line(line)
-                        status_message = String()
-                        status_message.data = status
-                        self.status_publisher.publish(status_message)
+                        self._publish_status(status)
                         continue
                     data = parse_detection_line(line, self.allow_legacy)
                 except (UnicodeDecodeError, TypeError, ValueError) as error:
@@ -103,6 +114,7 @@ class H7BridgeNode(Node):
             except (SerialException, OSError):
                 pass
             self.serial_port = None
+            self._publish_status('DISCONNECTED')
 
     def destroy_node(self):
         if self.serial_port is not None and self.serial_port.is_open:
@@ -115,7 +127,7 @@ def main(args=None):
     node = H7BridgeNode()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.destroy_node()
