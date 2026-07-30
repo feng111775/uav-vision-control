@@ -3,7 +3,7 @@
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
-from std_msgs.msg import Float32MultiArray
+from std_msgs.msg import Float32MultiArray, String
 
 from .d_task_schema import ANGLE, CONFIDENCE, VALID
 from .d_task_schema import invalid_detection, periodic_angle_difference
@@ -24,6 +24,12 @@ class TargetFilter:
         self.min_confidence = float(min_confidence)
         self.confirm_frames = int(confirm_frames)
         self.lost_frames = int(lost_frames)
+        self.confirm_count = 0
+        self.lost_count = 0
+        self.confirmed = False
+        self.filtered_values = None
+
+    def reset(self):
         self.confirm_count = 0
         self.lost_count = 0
         self.confirmed = False
@@ -75,6 +81,7 @@ class TargetFilterNode(Node):
             'alpha': 0.35, 'angle_alpha': 0.35, 'min_confidence': 50.0,
             'confirm_frames': 3, 'lost_frames': 3,
             'detection_topic': '/vision/h7/detection',
+            'status_topic': '/vision/h7/status',
             'filtered_detection_topic': '/vision/h7/filtered_detection'}
         for name, value in defaults.items():
             self.declare_parameter(name, value)
@@ -88,6 +95,9 @@ class TargetFilterNode(Node):
         self.subscription = self.create_subscription(
             Float32MultiArray, self.get_parameter('detection_topic').value,
             self._callback, 10)
+        self.status_subscription = self.create_subscription(
+            String, self.get_parameter('status_topic').value,
+            self._status_callback, 10)
 
     def _callback(self, message):
         try:
@@ -97,6 +107,14 @@ class TargetFilterNode(Node):
             return
         output = Float32MultiArray()
         output.data = data
+        self.publisher.publish(output)
+
+    def _status_callback(self, message):
+        if message.data not in ('DISCONNECTED', 'STALE'):
+            return
+        self.filter.reset()
+        output = Float32MultiArray()
+        output.data = invalid_detection()
         self.publisher.publish(output)
 
 

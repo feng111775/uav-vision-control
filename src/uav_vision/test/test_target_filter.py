@@ -35,3 +35,10 @@ def test_ninety_degree_periodic_filter_avoids_false_45_degrees():
 def test_negative_angle_allowed():
     result = TargetFilter(confirm_frames=1).process(detection(-0.2))
     assert result[5] == pytest.approx(-0.2)
+
+
+def test_reset_immediately_discards_confirmed_target():
+    target_filter = TargetFilter(confirm_frames=1)
+    assert target_filter.process(detection())[0] == 1.0
+    target_filter.reset()
+    assert target_filter.process(detection(valid=0.0))[0] == 0.0

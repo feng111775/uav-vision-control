@@ -23,6 +23,19 @@ MicroPython v1.28.0-49。设备序列号仅经工具私下核验，本文不记�
 - ROS真实串口：四个正式话题均为Float32MultiArray/String预期类型，30秒各
   226条、7.510Hz；最终样本均为无目标；未启动mission controller或legacy
   visual servo；三个PX4输入话题均不存在，项目控制输出为0。
+- USB物理断开重连：同一桥进程实测状态序列为
+  `CROSS_INVALID → DISCONNECTED → CROSS_INVALID`；固定别名恢复后自动重连。
+- PC PTY链：真实桥、滤波、预测和落点误差节点通过；覆盖无目标、中央目标、
+  左右上下协议坐标、0/0.785/1.57角度、低置信度、乱码、半包、静默超时和
+  关闭/重建PTY后的重连。该结果是协议模拟，不是实体目标检测。
+- PTY链未出现mission controller、visual servo或Offboard控制器，三个PX4
+  输入话题发布者均为0。
+- 树莓派：`corn-pi.local`无法解析，未建立SSH会话，未执行远端备份、rosdep、
+  编译、5分钟串口测试或systemd安装。
+- systemd脚本完成bash语法、dry-run及隔离HOME下的安装、unit生成、状态/日志
+  命令和卸载生命周期；Pi端真实systemd启停、重启和冷启动仍待SSH可达。
+- 最终本机隔离回归：uav_vision 112项通过，uav_control 158项通过、1项版权
+  检查skip；合计271项、0 error、0 failure、1 skip。PTY端到端连续两次通过。
 
 ## 诊断中见到的Traceback
 
@@ -36,9 +49,7 @@ SyntaxError；ROS监测器首次把ROS array直接JSON编码导致主机TypeErro
 - 真实目标不存在：valid=1正样本、中心位置变化、角度变化、遮挡恢复、目标
   移除后的LOST时间均待真实目标制作完成后补测。
 - 十字检测阶段耗时需在真实圆对候选出现后测量。
+- 默认关闭的分阶段计时已进入仓库，但本轮遵守“不重复部署”要求，尚未再次
+  写入板端。普通复杂背景和人工遮镜场景也未远程改变，不能伪造三场景数据。
 - 当前无目标输出与FPS低于15Hz，不能宣称性能达标。
-- USB物理断开重连：同一桥进程实测状态序列为
-  `CROSS_INVALID → DISCONNECTED → CROSS_INVALID`；固定别名消失期间节点保持
-  运行，重新插入后自动打开`/dev/dtask_openmv`。受控关闭后所有视觉节点正常
-  退出。
 - 最终目标识别率、误检率和比赛场地光照鲁棒性尚未验证。

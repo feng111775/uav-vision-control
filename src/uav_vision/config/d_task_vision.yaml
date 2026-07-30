@@ -5,6 +5,8 @@ h7_bridge_node:
     allow_legacy_protocol: false
     detection_topic: /vision/h7/detection
     status_topic: /vision/h7/status
+    target_age_topic: /vision/h7/target_age_ms
+    data_timeout_sec: 0.5
 
 fake_h7_node:
   ros__parameters:

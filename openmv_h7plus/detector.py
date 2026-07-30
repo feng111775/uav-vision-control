@@ -7,6 +7,10 @@ OpenCV reference tool; this implementation still requires IDE/hardware tuning.
 
 import math
 
+try:
+    import pyb
+except ImportError:
+    pyb = None
 
 RATIO_MIN = 0.52
 RATIO_MAX = 0.68
@@ -25,6 +29,35 @@ FULL_SEARCH_INTERVAL = 8
 MIN_BLOB_PIXELS = 30
 MIN_BLOB_AREA = 80
 HALF_PI = math.pi / 2
+
+
+class StageTiming:
+    """Bounded timing samples; disabled instances add no clock calls."""
+
+    def __init__(self, enabled=False, window=64):
+        self.enabled = bool(enabled and pyb is not None)
+        self.window = max(8, int(window))
+        self.samples = {}
+
+    def begin(self):
+        return pyb.micros() if self.enabled else None
+
+    def end(self, name, start):
+        if start is None:
+            return
+        values = self.samples.setdefault(name, [])
+        values.append(pyb.elapsed_micros(start) / 1000.0)
+        if len(values) > self.window:
+            del values[0]
+
+    def summary(self):
+        result = {}
+        for name, values in self.samples.items():
+            ordered = sorted(values)
+            p95 = ordered[min(len(ordered) - 1, int(len(ordered) * 0.95))]
+            result[name] = (
+                sum(values) / len(values), p95, max(values), len(values))
+        return result
 
 
 def _value(item, name, index):
@@ -57,11 +90,12 @@ def _invalid(status="LOST"):
 class DTaskDetector:
     """Layered adaptive full-frame/ROI detector with finite recovery."""
 
-    def __init__(self):
+    def __init__(self, enable_timing=False):
         self.last = None
         self.roi_failures = 0
         self.last_status = "LOST"
         self.full_search_countdown = 0
+        self.timing = StageTiming(enable_timing)
 
     def _tracking_roi(self, image):
         if self.last is None:
@@ -77,8 +111,10 @@ class DTaskDetector:
         return (x0, y0, x1 - x0, y1 - y0)
 
     def _adaptive_dark_threshold(self, image, roi):
+        started = self.timing.begin()
         histogram = image.get_histogram(roi=roi)
         threshold = histogram.get_threshold()
+        self.timing.end("histogram_otsu", started)
         value = int(_value(threshold, "value", 0))
         # Otsu is frame/ROI adaptive. The bounded margin tolerates dark ring
         # antialiasing without becoming a fixed scene threshold.
@@ -86,9 +122,11 @@ class DTaskDetector:
 
     def _search_regions(self, image, roi):
         thresholds = self._adaptive_dark_threshold(image, roi)
+        started = self.timing.begin()
         blobs = image.find_blobs(
             thresholds, roi=roi, pixels_threshold=MIN_BLOB_PIXELS,
             area_threshold=MIN_BLOB_AREA, merge=True, margin=4)
+        self.timing.end("find_blobs", started)
         regions = []
         for blob in blobs:
             x = int(_value(blob, "x", 0))
@@ -113,10 +151,13 @@ class DTaskDetector:
 
     def _circle_pairs(self, image, region):
         max_radius = min(region[2], region[3]) // 2
+        started = self.timing.begin()
         circles = image.find_circles(
             roi=region, x_stride=2, y_stride=2, threshold=1800,
             x_margin=6, y_margin=6, r_margin=6, r_min=6,
             r_max=max_radius, r_step=2)
+        self.timing.end("find_circles", started)
+        started = self.timing.begin()
         values = []
         for circle in circles:
             radius = int(_value(circle, "r", 2))
@@ -141,6 +182,7 @@ class DTaskDetector:
                 if RATIO_MIN <= ratio <= RATIO_MAX and (
                         concentric <= MAX_CONCENTRIC_ERROR):
                     pairs.append((outer, inner, ratio, concentric))
+        self.timing.end("circle_pair_scoring", started)
         return pairs
 
     def _cross(self, image, cx, cy, inner_diameter):
@@ -148,9 +190,12 @@ class DTaskDetector:
         roi = (max(0, cx - radius), max(0, cy - radius),
                min(image.width(), cx + radius) - max(0, cx - radius),
                min(image.height(), cy + radius) - max(0, cy - radius))
+        started = self.timing.begin()
         lines = image.find_lines(
             roi=roi, x_stride=2, y_stride=1, threshold=700,
             theta_margin=8, rho_margin=8)
+        self.timing.end("find_lines", started)
+        started = self.timing.begin()
         usable = []
         for line in lines:
             x1, y1 = _value(line, "x1", 0), _value(line, "y1", 1)
@@ -181,8 +226,10 @@ class DTaskDetector:
                 if best is None or score > best[0]:
                     best = (score, first[0])
         if best is None or best[0] < MIN_CROSS_SCORE:
+            self.timing.end("cross_scoring", started)
             return None, 0.0
         angle = (best[1] + HALF_PI / 2) % HALF_PI - HALF_PI / 2
+        self.timing.end("cross_scoring", started)
         return angle, _clamp(best[0])
 
     def _detect_roi(self, image, roi):
@@ -229,11 +276,13 @@ class DTaskDetector:
         return best
 
     def detect(self, image):
+        frame_started = self.timing.begin()
         roi = self._tracking_roi(image)
         result = None
         if roi is None and self.full_search_countdown > 0:
             self.full_search_countdown -= 1
             self.last_status = "CROSS_INVALID"
+            self.timing.end("detector_total", frame_started)
             return _invalid(self.last_status)
         if roi is not None and self.roi_failures < ROI_FAILURE_LIMIT:
             result = self._detect_roi(image, roi)
@@ -247,6 +296,7 @@ class DTaskDetector:
                 self.full_search_countdown = FULL_SEARCH_INTERVAL - 1
         if result is None:
             self.last_status = "CROSS_INVALID"
+            self.timing.end("detector_total", frame_started)
             return _invalid(self.last_status)
         if result["valid"]:
             self.last = result
@@ -254,4 +304,5 @@ class DTaskDetector:
             self.last_status = "TRACKING"
         else:
             self.last_status = result["status"]
+        self.timing.end("detector_total", frame_started)
         return result

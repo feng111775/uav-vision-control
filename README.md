@@ -1,5 +1,20 @@
 # UAV Vision Control
 
+## 2026 D题当前硬件基线
+
+当前D题硬件链固定使用PX4 v1.16.0、`px4_msgs release/1.16`和ROS 2 Jazzy。
+OpenMV H7 Plus经`/dev/dtask_openmv`输出：
+
+```text
+[valid, center_x_px, center_y_px, outer_diameter_px,
+ inner_diameter_px, angle_rad, confidence]
+```
+
+无目标真机、ROS串口及物理断线重连结果见
+[OpenMV验证报告](docs/openmv_live_validation_report.md)。真实同心圆十字目标
+尚未制作，valid=1、位置/角度精度、遮挡和飞行闭环仍未验证。下文PX4 v1.17
+内容是早期SITL历史记录，不是当前D题硬件基线。
+
 ROS 2 无人机视觉控制工程，包含 Raspberry Pi/OpenMV 视觉输入、目标检测与滤波、
 视觉伺服，以及经过 PX4 SITL 实飞验证的前视/下视双摄闭环。
 

@@ -1,11 +1,12 @@
 """Constant-velocity tracking and prediction for filtered D-task targets."""
 
 import math
+import time
 
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
-from std_msgs.msg import Float32MultiArray
+from std_msgs.msg import Float32MultiArray, String
 
 from .d_task_schema import CENTER_X, CENTER_Y, VALID
 from .d_task_schema import invalid_tracked, validate_detection
@@ -22,6 +23,12 @@ class TargetPredictor:
         self.max_velocity = float(max_velocity)
         self.max_jump = float(max_jump)
         self.loss_timeout = float(loss_timeout)
+        self.last_detection = None
+        self.last_time = None
+        self.velocity_x = 0.0
+        self.velocity_y = 0.0
+
+    def reset(self):
         self.last_detection = None
         self.last_time = None
         self.velocity_x = 0.0
@@ -79,7 +86,9 @@ class TargetPredictorNode(Node):
         defaults = {
             'prediction_horizon': 0.08, 'max_velocity_px_s': 800.0,
             'max_jump_px': 80.0, 'loss_timeout_sec': 0.3,
+            'input_timeout_sec': 0.3,
             'filtered_detection_topic': '/vision/h7/filtered_detection',
+            'status_topic': '/vision/h7/status',
             'tracked_topic': '/vision/target/tracked'}
         for name, value in defaults.items():
             self.declare_parameter(name, value)
@@ -90,12 +99,21 @@ class TargetPredictorNode(Node):
             self.get_parameter('loss_timeout_sec').value)
         self.publisher = self.create_publisher(
             Float32MultiArray, self.get_parameter('tracked_topic').value, 10)
+        self.input_timeout = self.get_parameter('input_timeout_sec').value
+        self.last_input_time = None
+        self.timeout_published = False
         self.subscription = self.create_subscription(
             Float32MultiArray,
             self.get_parameter('filtered_detection_topic').value,
             self._callback, 10)
+        self.status_subscription = self.create_subscription(
+            String, self.get_parameter('status_topic').value,
+            self._status_callback, 10)
+        self.create_timer(0.05, self._check_timeout)
 
     def _callback(self, message):
+        self.last_input_time = time.monotonic()
+        self.timeout_published = False
         now = self.get_clock().now().nanoseconds / 1e9
         try:
             data = self.predictor.process(message.data, now)
@@ -105,6 +123,27 @@ class TargetPredictorNode(Node):
         output = Float32MultiArray()
         output.data = data
         self.publisher.publish(output)
+
+    def _publish_invalid(self):
+        output = Float32MultiArray()
+        output.data = invalid_tracked()
+        self.publisher.publish(output)
+
+    def _check_timeout(self):
+        if self.last_input_time is None or self.timeout_published:
+            return
+        if time.monotonic() - self.last_input_time <= self.input_timeout:
+            return
+        self.predictor.reset()
+        self._publish_invalid()
+        self.timeout_published = True
+
+    def _status_callback(self, message):
+        if message.data not in ('DISCONNECTED', 'STALE'):
+            return
+        self.predictor.reset()
+        self._publish_invalid()
+        self.timeout_published = True
 
 
 def main(args=None):

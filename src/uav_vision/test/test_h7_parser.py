@@ -47,4 +47,5 @@ def test_invalid_diagnostic_status_does_not_break_detection_parser():
 
 def test_fps_diagnostic_is_not_treated_as_protocol_data():
     assert is_diagnostic_line('D_VISION,status=CROSS_INVALID,fps=3.4')
+    assert is_diagnostic_line('D_TIMING,find_circles,avg_ms=289.449')
     assert not is_diagnostic_line('D_TARGET,0,0,0,0,0,0,0')

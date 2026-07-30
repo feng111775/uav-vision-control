@@ -14,6 +14,7 @@ python3 scripts/hardware/deploy_openmv.py --dry-run
 python3 scripts/hardware/deploy_openmv.py
 python3 scripts/hardware/openmv_repl.py --exec "import os; print(os.listdir('/flash'))"
 python3 scripts/hardware/validate_openmv_live.py --duration 20
+python3 scripts/hardware/test_visual_pipeline_pty.py
 ```
 
 部署工具先把包含隐藏文件的完整磁盘复制到`~/openmv_backups`，再复制四文件、
@@ -33,6 +34,23 @@ python3 scripts/hardware/validate_openmv_live.py --duration 20
 目标时每8帧执行一次全帧圆搜索；七字段协议、圆环几何、十字规则和全部阈值
 未改变。无目标平均输出仍低于15Hz，不能声称已达到最终性能。首次捕获延迟与
 正样本效果必须等待真实目标制作完成后复测。
+
+## 树莓派离线自启动
+
+三个`scripts/deploy/*_vision_service.sh`脚本管理只读D题视觉链，不启动任务
+控制器、Offboard控制器、自动解锁或自动起飞：
+
+```bash
+D_TASK_WORKSPACE="$HOME/px4_ros2_ws" \
+  scripts/deploy/install_vision_service.sh --dry-run
+scripts/deploy/install_vision_service.sh
+scripts/deploy/check_vision_service.sh
+scripts/deploy/uninstall_vision_service.sh
+```
+
+用户systemd服务不依赖网络，允许OpenMV晚插入，异常退出自动重启，并使用
+journald限频。若`corn-pi.local`不可达，只能验证脚本语法和dry-run，不能声称
+已在树莓派安装或完成冷启动验证。
 
 真实目标尚未完成，以下项目均为“待真实目标制作完成后补测”：valid=1正样本、
 中心位置变化、角度变化、遮挡恢复和移除目标后的LOST时间。
