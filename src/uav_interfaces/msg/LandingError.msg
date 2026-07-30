@@ -1,0 +1,10 @@
+std_msgs/Header header
+bool capture_stamp_valid
+bool valid
+uint32 frame_sequence
+float32 confidence
+float32 error_x_norm
+float32 error_y_norm
+bool metric_valid
+float32 forward_m
+float32 left_m

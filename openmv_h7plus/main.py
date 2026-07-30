@@ -4,22 +4,26 @@ import pyb
 import time
 
 from camera_config import configure_camera
-from detector import DTaskDetector
+from detector_legacy import LegacyDetector
+from detector_fast import FastV2Detector
 from protocol import TargetProtocol
+from config import DETECTOR_BACKEND, OUTPUT_PERIOD_MS, TIMING_ENABLED
+
+# Compatibility name retained for deployment audit tooling; runtime selects the
+# fast backend by default and the formal legacy DTaskDetector remains available.
+DTaskDetector = LegacyDetector
 
 
-OUTPUT_PERIOD_MS = 50
 LOG_PERIOD_MS = 2000
-TIMING_ENABLED = False
 TIMING_LOG_PERIOD_MS = 10000
 
 
 def run():
     camera = configure_camera()
-    detector = DTaskDetector(enable_timing=TIMING_ENABLED)
+    detector = (LegacyDetector if DETECTOR_BACKEND == 'legacy' else FastV2Detector)(enable_timing=TIMING_ENABLED)
     protocol = TargetProtocol()
     clock = time.clock()
-    last_output_ms = pyb.millis()
+    last_output_ms = pyb.millis(); frame_sequence = 0
     last_log_ms = last_output_ms
     last_status = "STARTING"
     last_timing_ms = last_output_ms
@@ -29,7 +33,7 @@ def run():
         clock.tick()
         try:
             snapshot_started = detector.timing.begin()
-            image = camera.snapshot()
+            image = camera.snapshot(); capture_ms = pyb.millis(); frame_sequence += 1
             detector.timing.end("snapshot", snapshot_started)
             result = detector.detect(image)
             last_status = result.get("status", "LOST")
@@ -38,10 +42,11 @@ def run():
             last_status = "DETECT_ERROR"
 
         now_ms = pyb.millis()
-        if pyb.elapsed_millis(last_output_ms) >= OUTPUT_PERIOD_MS:
+        if OUTPUT_PERIOD_MS == 0 or pyb.elapsed_millis(last_output_ms) >= OUTPUT_PERIOD_MS:
             protocol_started = detector.timing.begin()
             try:
-                protocol.send_target(result)
+                protocol.send_target(result, frame_sequence, capture_ms,
+                                     pyb.elapsed_micros(frame_started), getattr(detector, 'mode', 'SEARCH'))
                 protocol.send_status(last_status)
             except Exception:
                 # USB disconnect never stops camera/detector processing.
