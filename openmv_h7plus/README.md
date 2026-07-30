@@ -31,5 +31,31 @@ protocol.py
 main.py
 ```
 
+## 实验性红色中心辅助
+
+`red_detector.py` 是独立的实验模块，面向原50 cm外圆、30 cm内圆和中央十字
+目标中心新增的红色圆形贴纸。它在 **LAB** 颜色空间中找出形状、填充率和面积均
+合理的红色区域，输出仅包含：
+
+```text
+{valid, cx, cy, area, confidence}
+```
+
+红色结果只可作为中心定位的辅助观测或未来的候选ROI提示，不能替代黑色同心圆
+比例、同心约束和十字验证；因此也不生成或改变 `D_TARGET` 七字段协议。
+
+当前正式相机为灰度模式，正式 `main.py` 未导入本模块、未改变主循环。待真实
+红色贴纸到位后，先在 RGB565 实机帧上独立标定并验证，再决定是否让主流程同时
+运行原几何验证和红色辅助。任何接入都必须保留原检测器作为最终验收条件。
+
+离线查看单张测试图片中的候选红色区域（不连接 ROS 或 OpenMV）可运行：
+
+```bash
+python3 openmv_h7plus/tools/red_detector_offline.py path/to/test_image.jpg
+```
+
+该可选桌面工具使用已有的 `cv2`/`numpy` 环境，仅用于查看对应 LAB 色段的中心；
+板载模块本身没有新增依赖。
+
 详细备份、部署、回滚和验收步骤见`docs/openmv_deployment.md`。OpenMV IDE与ROS桥
 不能同时占用USB CDC。未完成H7真机测试前，参数只是保守起点，不能声称达到15 Hz。
