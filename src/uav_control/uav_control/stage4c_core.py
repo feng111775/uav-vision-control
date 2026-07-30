@@ -57,6 +57,8 @@ class MissionConfig:
     field_yaw_rad: float = 0.0
     field_offset_x_m: float = 0.0
     field_offset_y_m: float = 0.0
+    intercept_tolerance_m: float = 0.25
+    px4_data_timeout_s: float = 1.0
 
 
 @dataclass
@@ -201,14 +203,23 @@ class MissionFlow:
     def update(self, now: float, position=(0.0, 0.0, 0.0),
                px4_ok=True, failsafe=False, observation=None,
                intercept_reached=False, payload_result=None,
-               landed=False):
+               landed=False, offboard_lost=False):
         """Advance one non-blocking state-machine tick."""
         if self.state in (MissionState.INITIALIZING,
                           MissionState.WAIT_FOR_START,
                           MissionState.COMPLETE):
             return
+        if self.state == MissionState.EMERGENCY_LAND and landed:
+            self.transition(MissionState.COMPLETE, now, 'emergency_landed')
+            return
         if failsafe:
             self.transition(MissionState.EMERGENCY_LAND, now, 'px4_failsafe')
+            return
+        if (offboard_lost and self.state not in (
+                MissionState.ABORT_RETURN, MissionState.EMERGENCY_LAND,
+                MissionState.LAND)):
+            self.transition(
+                MissionState.ABORT_RETURN, now, 'offboard_unexpected_exit')
             return
         if not px4_ok:
             destination = (MissionState.ABORT_RETURN if self.home is not None
@@ -321,7 +332,8 @@ class MissionFlow:
             local_x, local_y = self.field_to_local(
                 field_x, self.config.intercept_y_m)
             return {'mode': 'POSITION',
-                    'target': (local_x, local_y,
+                    'target': (self.home[0] + local_x,
+                               self.home[1] + local_y,
                                self.home[2] - self.config.takeoff_height_m)}
         if (self.state in (MissionState.ACQUIRE_CAR,
                            MissionState.FOLLOW_CAR,

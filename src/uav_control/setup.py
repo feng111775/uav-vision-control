@@ -60,6 +60,8 @@ setup(
             'uav_control.payload_release:main',
             'mission_manager = '
             'uav_control.mission_manager:main',
+            'sitl_acceptance_driver = '
+            'uav_control.sitl_acceptance_driver:main',
         ],
     },
 )

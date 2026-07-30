@@ -16,6 +16,7 @@ class PayloadRelease(Node):
         super().__init__('payload_release')
         self.declare_parameter('dry_run', True)
         self.declare_parameter('simulation_mode', True)
+        self.declare_parameter('simulated_result', 'SUCCESS')
         self.gate = PayloadGate(bool(self.get_parameter('dry_run').value))
         self.publisher = self.create_publisher(
             String, '/uav_mission/payload/result', 10)
@@ -33,8 +34,16 @@ class PayloadRelease(Node):
             return
         status = self.gate.request(task_id, release_id, allowed)
         if status == 'SUCCESS':
-            self.get_logger().info(
-                'dry-run: simulated servo rotation 90 degrees')
+            requested = str(
+                self.get_parameter('simulated_result').value).upper()
+            status = requested if requested in (
+                'SUCCESS', 'FAILED', 'TIMEOUT') else 'FAILED'
+            if status == 'SUCCESS':
+                self.get_logger().info(
+                    'dry-run: simulated servo rotation 90 degrees')
+            else:
+                self.get_logger().warning(
+                    'dry-run: simulated payload result %s' % status)
         else:
             self.get_logger().warning(
                 'release rejected task=%s release=%s' %

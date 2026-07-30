@@ -5,6 +5,7 @@ from pathlib import Path
 from uav_control.stage4c_core import (MarkerObservation, MissionConfig,
                                       MissionFlow, MissionState, PayloadGate,
                                       StartGate)
+import yaml
 
 
 def flow_at_takeoff(config=None):
@@ -38,7 +39,6 @@ def test_only_controller_of_five_may_own_px4_inputs():
              'payload_release.py', 'mission_manager.py')
     for name in names:
         assert '/fmu/in/' not in (root / name).read_text()
-        assert 'px4_msgs' not in (root / name).read_text()
     controller = (root / 'mission_offboard_controller.py').read_text()
     assert 'MissionControllerNode' in controller
 
@@ -79,6 +79,13 @@ def test_field_to_local_transform_is_parameterized():
     x, y = MissionFlow(config).field_to_local(1.0, 0.0)
     assert abs(x - 10.0) < 1e-9
     assert abs(y + 1.0) < 1e-9
+
+
+def test_transit_target_is_relative_to_recorded_home():
+    flow = flow_at_takeoff(MissionConfig(
+        car_speed_mps=0.0, intercept_x_m=2.0, intercept_y_m=-1.0))
+    flow.transition(MissionState.TRANSIT_TO_INTERCEPT, 2.0, 'test')
+    assert flow.command(2.0)['target'] == (6.0, 4.0, 0.5)
 
 
 def test_stale_vision_is_invalid():
@@ -139,6 +146,13 @@ def test_failsafe_disallows_payload_and_forces_emergency_land():
     assert flow.state == MissionState.EMERGENCY_LAND
 
 
+def test_offboard_exit_uses_abort_return():
+    flow = flow_at_takeoff()
+    flow.transition(MissionState.FOLLOW_CAR, 2.0, 'test')
+    flow.update(2.1, offboard_lost=True)
+    assert flow.state == MissionState.ABORT_RETURN
+
+
 def test_every_payload_terminal_result_returns_home():
     for result in ('SUCCESS', 'FAILED', 'REJECTED', 'TIMEOUT'):
         flow = flow_at_takeoff()
@@ -192,6 +206,7 @@ def test_dry_run_never_accesses_gpio_or_pwm():
               'payload_release.py').read_text().lower()
     assert 'import gpio' not in source
     assert 'import pigpio' not in source
+    assert "'simulated_result'" in source
 
 
 def test_simulated_complete_flow():
@@ -236,5 +251,112 @@ def test_stage4c_topics_use_single_namespace():
                  'mission_manager.py'):
         text = (root / name).read_text()
         for line in text.splitlines():
-            if "'/" in line:
+            if "'/" in line and "'/fmu/out/" not in line:
                 assert "'/uav_mission/" in line
+
+
+def test_default_and_sitl_control_are_safely_isolated():
+    root = Path(__file__).parents[1] / 'config'
+    normal = yaml.safe_load(
+        (root / 'mission_stage4c.yaml').read_text())['/**']['ros__parameters']
+    sitl_doc = yaml.safe_load(
+        (root / 'mission_stage4c_sitl.yaml').read_text())
+    sitl = sitl_doc['mission_offboard_controller']['ros__parameters']
+    assert normal['enable_control'] is False
+    assert normal['enable_auto_arm'] is False
+    assert sitl['enable_control'] is True
+    assert sitl['enable_auto_arm'] is True
+    assert sitl_doc['/**']['ros__parameters']['use_simulated_px4'] is False
+    assert sitl_doc['/**']['ros__parameters']['dry_run'] is True
+
+
+def test_sitl_launch_has_no_fake_px4_source_or_old_controller():
+    launch = (Path(__file__).parents[1] / 'launch' /
+              'uav_mission_stage4c_sitl.launch.py').read_text()
+    assert 'd_task_mock_node' not in launch
+    assert 'sim/position' not in launch
+    assert 'sim/px4_status' not in launch
+    assert "'mission_controller_node'" not in launch
+    assert launch.count("'mission_offboard_controller'") == 1
+
+
+def test_manager_records_real_start_position_and_px4_outputs():
+    source = (Path(__file__).parents[1] / 'uav_control' /
+              'mission_manager.py').read_text()
+    assert "'/fmu/out/vehicle_local_position'" in source
+    assert "'/fmu/out/vehicle_status_v1'" in source
+    assert "'/fmu/out/vehicle_land_detected'" in source
+    assert 'self.flow.start(' in source
+    assert 'self.position)' in source
+
+
+def test_ned_takeoff_target_is_above_actual_home():
+    flow = flow_at_takeoff()
+    assert flow.command(1.0)['target'][2] == 0.5
+    assert flow.command(1.0)['target'][2] < flow.home[2]
+
+
+def test_controller_prestream_precedes_mode_and_arm():
+    source = (Path(__file__).parents[1] / 'uav_control' /
+              'mission_offboard_controller.py').read_text()
+    prestream = source.index(
+        'self.stage4c_prestream_cycles < self.logic.prestream_cycles')
+    mode = source.index("self._publish_command(\n                'mode'")
+    arm = source.index("self._publish_command(\n                'arm'")
+    assert prestream < mode < arm
+    assert "phase == 'TAKEOFF' and self.logic.offboard" in source
+
+
+def test_stale_visual_command_becomes_hold_but_control_continues():
+    flow = flow_at_takeoff()
+    flow.transition(MissionState.FOLLOW_CAR, 2.0, 'test')
+    flow.follow_since = 2.0
+    flow.update(2.1, observation=marker(2.1, 0.2, 0.0))
+    assert flow.command(2.1)['mode'] == 'VISION'
+    flow.update(2.7, observation=None)
+    assert flow.state == MissionState.FOLLOW_CAR
+    assert flow.command(2.7)['mode'] == 'HOLD'
+
+
+def test_visual_guidance_limit_remains_configured():
+    source = (Path(__file__).parents[1] / 'uav_control' /
+              'mission_offboard_controller.py').read_text()
+    assert 'self.guidance.velocity(' in source
+    config = yaml.safe_load(
+        (Path(__file__).parents[1] / 'config' /
+         'mission_stage4c_sitl.yaml').read_text())
+    assert config['/**']['ros__parameters']['max_horizontal_speed'] == 0.4
+    assert config['/**']['ros__parameters']['max_vertical_speed'] == 0.12
+
+
+def test_position_target_is_rate_limited_on_all_axes():
+    source = (Path(__file__).parents[1] / 'uav_control' /
+              'mission_offboard_controller.py').read_text()
+    assert 'self._bounded_position_target(target)' in source
+    assert "get_parameter('max_horizontal_speed')" in source
+    assert "get_parameter('max_vertical_speed')" in source
+    assert "get_parameter('control_rate_hz')" in source
+    assert 'self.stage4c_position_setpoint = (' in source
+
+
+def test_nav_land_only_for_land_or_safety_path():
+    source = (Path(__file__).parents[1] / 'uav_control' /
+              'mission_offboard_controller.py').read_text()
+    assert "if mode == 'LAND':" in source
+    assert source.count('VehicleCommand.VEHICLE_CMD_NAV_LAND') == 2
+
+
+def test_emergency_land_can_complete_after_real_landed():
+    flow = flow_at_takeoff()
+    flow.transition(MissionState.EMERGENCY_LAND, 2.0, 'test')
+    flow.update(2.1, landed=True)
+    assert flow.state == MissionState.COMPLETE
+
+
+def test_acceptance_driver_never_publishes_fake_px4_state():
+    source = (Path(__file__).parents[1] / 'uav_control' /
+              'sitl_acceptance_driver.py').read_text()
+    assert "create_publisher(\n            String, '/uav_mission/sim/car_start'" in source
+    assert "create_publisher(\n            Float32MultiArray, '/uav_mission/sim/marker'" in source
+    assert "'/uav_mission/sim/position'" not in source
+    assert "'/uav_mission/sim/px4_status'" not in source

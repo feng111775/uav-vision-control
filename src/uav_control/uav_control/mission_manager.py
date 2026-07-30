@@ -1,9 +1,14 @@
 """ROS adapter for the pure stage 4C competition mission flow."""
 
 import json
+import math
 
+from px4_msgs.msg import (VehicleLandDetected, VehicleLocalPosition,
+                          VehicleStatus)
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import (DurabilityPolicy, HistoryPolicy, QoSProfile,
+                       ReliabilityPolicy)
 from std_msgs.msg import Float32MultiArray, String
 
 from .stage4c_core import (MarkerObservation, MissionConfig, MissionFlow,
@@ -19,6 +24,7 @@ class MissionManager(Node):
         for name, value in vars(defaults).items():
             self.declare_parameter(name, value)
         self.declare_parameter('simulation_mode', True)
+        self.declare_parameter('use_simulated_px4', True)
         config = MissionConfig(**{
             name: self.get_parameter(name).value for name in vars(defaults)})
         self.flow = MissionFlow(config)
@@ -27,6 +33,11 @@ class MissionManager(Node):
         self.failsafe = False
         self.landed = False
         self.intercept_reached = False
+        self.last_position_time = None
+        self.last_status_time = None
+        self.armed = False
+        self.offboard = False
+        self.offboard_seen = False
         self.observation = None
         self.payload_result = None
         self.last_state = self.flow.state
@@ -46,6 +57,19 @@ class MissionManager(Node):
             Float32MultiArray, '/uav_mission/sim/position', self._position, 10)
         self.create_subscription(
             String, '/uav_mission/sim/px4_status', self._px4, 10)
+        px4_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            history=HistoryPolicy.KEEP_LAST, depth=1)
+        self.create_subscription(
+            VehicleStatus, '/fmu/out/vehicle_status_v1',
+            self._vehicle_status, px4_qos)
+        self.create_subscription(
+            VehicleLocalPosition, '/fmu/out/vehicle_local_position',
+            self._local_position, px4_qos)
+        self.create_subscription(
+            VehicleLandDetected, '/fmu/out/vehicle_land_detected',
+            self._land_detected, px4_qos)
         now = self.now()
         self.flow.initialize(now)
         self._log_transition(MissionState.INITIALIZING, self.flow.state)
@@ -60,9 +84,12 @@ class MissionManager(Node):
             event = json.loads(msg.data)
         except json.JSONDecodeError:
             return
-        if event.get('valid') and self.flow.start(
+        healthy = self._px4_current(self.now())
+        if event.get('valid') and healthy and self.flow.start(
                 str(event.get('task_id', '')), self.now(), self.position):
             self._log_transition(MissionState.WAIT_FOR_START, self.flow.state)
+        elif event.get('valid') and not healthy:
+            self.get_logger().warning('start rejected: PX4 data not ready')
 
     def _marker(self, msg):
         try:
@@ -89,19 +116,61 @@ class MissionManager(Node):
             pass
 
     def _position(self, msg):
+        if not self.get_parameter('use_simulated_px4').value:
+            return
         if len(msg.data) >= 3:
             self.position = tuple(float(v) for v in msg.data[:3])
         if len(msg.data) >= 4:
             self.intercept_reached = bool(msg.data[3])
 
     def _px4(self, msg):
+        if not self.get_parameter('use_simulated_px4').value:
+            return
         try:
             status = json.loads(msg.data)
             self.px4_ok = bool(status.get('px4_ok', True))
             self.failsafe = bool(status.get('failsafe', False))
             self.landed = bool(status.get('landed', False))
+            self.last_position_time = self.now()
+            self.last_status_time = self.now()
         except json.JSONDecodeError:
             self.px4_ok = False
+
+    def _vehicle_status(self, msg):
+        if self.get_parameter('use_simulated_px4').value:
+            return
+        self.last_status_time = self.now()
+        self.failsafe = bool(msg.failsafe)
+        self.armed = (
+            msg.arming_state == VehicleStatus.ARMING_STATE_ARMED)
+        self.offboard = (
+            msg.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD)
+        self.offboard_seen = self.offboard_seen or self.offboard
+
+    def _local_position(self, msg):
+        if self.get_parameter('use_simulated_px4').value:
+            return
+        values = (msg.x, msg.y, msg.z, msg.vx, msg.vy, msg.vz, msg.heading)
+        valid = (msg.xy_valid and msg.z_valid and msg.v_xy_valid and
+                 msg.v_z_valid and all(math.isfinite(v) for v in values))
+        if valid:
+            self.position = (float(msg.x), float(msg.y), float(msg.z))
+            self.last_position_time = self.now()
+
+    def _land_detected(self, msg):
+        if not self.get_parameter('use_simulated_px4').value:
+            self.landed = bool(msg.landed)
+
+    def _px4_current(self, now):
+        if self.get_parameter('use_simulated_px4').value:
+            return self.px4_ok
+        timeout = self.flow.config.px4_data_timeout_s
+        return (
+            self.last_status_time is not None and
+            self.last_position_time is not None and
+            now - self.last_status_time <= timeout and
+            now - self.last_position_time <= timeout and
+            not self.failsafe)
 
     def _log_transition(self, old, new):
         elapsed = (0.0 if self.flow.task_started is None else
@@ -112,11 +181,24 @@ class MissionManager(Node):
 
     def _tick(self):
         now = self.now()
+        self.px4_ok = self._px4_current(now)
+        if (not self.get_parameter('use_simulated_px4').value and
+                self.flow.state == MissionState.TRANSIT_TO_INTERCEPT):
+            target = self.flow.command(now).get('target')
+            if target:
+                self.intercept_reached = (
+                    math.dist(self.position, target) <=
+                    self.flow.config.intercept_tolerance_m)
+        offboard_lost = (
+            self.offboard_seen and self.armed and not self.offboard and
+            self.flow.state not in (
+                MissionState.LAND, MissionState.COMPLETE,
+                MissionState.EMERGENCY_LAND))
         old = self.flow.state
         self.flow.update(
             now, self.position, self.px4_ok, self.failsafe,
             self.observation, self.intercept_reached,
-            self.payload_result, self.landed)
+            self.payload_result, self.landed, offboard_lost)
         if self.flow.state != old:
             self._log_transition(old, self.flow.state)
         command = String()

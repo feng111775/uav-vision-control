@@ -15,8 +15,10 @@ class MissionOffboardController(MissionControllerNode):
 
     def __init__(self):
         super().__init__()
+        self.declare_parameter('max_vertical_speed', 0.3)
         self.high_level_command = {'mode': 'HOLD', 'target': None}
         self.stage4c_prestream_cycles = 0
+        self.stage4c_position_setpoint = None
         self.command_subscription = self.create_subscription(
             String, '/uav_mission/control/command', self._high_level, 10)
         self.stage4c_status = self.create_publisher(
@@ -71,7 +73,8 @@ class MissionOffboardController(MissionControllerNode):
         if phase in ('WAIT_FOR_START', 'INITIALIZING', 'COMPLETE'):
             return
         if mode == 'POSITION' and self._valid_target(target):
-            self._publish_control('position', position=target)
+            self._publish_control(
+                'position', position=self._bounded_position_target(target))
         elif mode == 'VISION' and self._valid_target(target):
             north, east = self.guidance.velocity(
                 True, float(target[0]), float(target[1]), 100.0, 0.0,
@@ -88,8 +91,8 @@ class MissionOffboardController(MissionControllerNode):
             self._publish_command(
                 'mode', VehicleCommand.VEHICLE_CMD_DO_SET_MODE,
                 now, 1.0, 6.0)
-        if (phase == 'TAKEOFF' and not self.logic.armed and
-                self.logic.enable_auto_arm):
+        if (phase == 'TAKEOFF' and self.logic.offboard and
+                not self.logic.armed and self.logic.enable_auto_arm):
             self._publish_command(
                 'arm', VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM,
                 now, 1.0)
@@ -100,6 +103,32 @@ class MissionOffboardController(MissionControllerNode):
         return (isinstance(target, (list, tuple)) and len(target) == 3 and
                 all(isinstance(value, (int, float)) and math.isfinite(value)
                     for value in target))
+
+    def _bounded_position_target(self, target):
+        """Rate-limit a position target using configured axis speeds."""
+        if self.logic.position is None:
+            return target
+        if self.stage4c_position_setpoint is None:
+            self.stage4c_position_setpoint = tuple(self.logic.position)
+        rate = float(self.get_parameter('control_rate_hz').value)
+        horizontal_step = (
+            float(self.get_parameter('max_horizontal_speed').value) / rate)
+        vertical_step = (
+            float(self.get_parameter('max_vertical_speed').value) / rate)
+        current = self.stage4c_position_setpoint
+        dx = float(target[0]) - current[0]
+        dy = float(target[1]) - current[1]
+        distance = math.hypot(dx, dy)
+        scale = 1.0 if distance <= horizontal_step else \
+            horizontal_step / distance
+        dz = max(-vertical_step, min(
+            vertical_step, float(target[2]) - current[2]))
+        self.stage4c_position_setpoint = (
+            current[0] + dx * scale,
+            current[1] + dy * scale,
+            current[2] + dz,
+        )
+        return self.stage4c_position_setpoint
 
     def _stage4c_status(self):
         msg = String()

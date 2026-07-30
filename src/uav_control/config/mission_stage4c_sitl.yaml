@@ -1,0 +1,55 @@
+/**:
+  ros__parameters:
+    simulation_mode: true
+    dry_run: true
+    use_simulated_px4: false
+    takeoff_height_m: 1.50
+    takeoff_height_tolerance_m: 0.10
+    stable_hover_duration_s: 3.0
+    car_speed_mps: 0.10
+    mission_timeout_s: 90.0
+    target_max_age_s: 0.50
+    target_confirm_frames: 3
+    target_short_loss_s: 0.50
+    target_long_loss_s: 2.0
+    follow_stable_duration_s: 2.0
+    drop_alignment_tolerance: 0.08
+    return_home_tolerance_m: 0.25
+    home_stable_duration_s: 1.0
+    takeoff_timeout_s: 20.0
+    transit_timeout_s: 20.0
+    search_timeout_s: 15.0
+    acquire_timeout_s: 5.0
+    follow_timeout_s: 15.0
+    release_timeout_s: 3.0
+    return_timeout_s: 25.0
+    land_timeout_s: 25.0
+    max_horizontal_speed: 0.40
+    max_vertical_speed: 0.12
+    intercept_x_m: 1.0
+    intercept_y_m: 0.0
+    intercept_tolerance_m: 0.25
+    field_yaw_rad: 0.0
+    field_offset_x_m: 0.0
+    field_offset_y_m: 0.0
+    px4_data_timeout_s: 1.0
+
+mission_offboard_controller:
+  ros__parameters:
+    simulation_mode: true
+    enable_control: true
+    enable_auto_arm: true
+    enable_payload_release: false
+    enable_auto_disarm: false
+    target_altitude: 1.50
+    altitude_tolerance: 0.10
+    prestream_cycles: 40
+    control_rate_hz: 20.0
+    allow_sitl_heading_quality_bypass: true
+    status_timeout: 1.0
+    position_timeout: 0.5
+    attitude_timeout: 0.5
+    command_timeout: 1.0
+    command_max_attempts: 5
+    max_horizontal_speed: 0.40
+    max_vertical_speed: 0.12
