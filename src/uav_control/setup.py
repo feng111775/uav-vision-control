@@ -50,6 +50,16 @@ setup(
             'uav_control.stage_observer:main',
             'odom_freeze_relay = '
             'uav_control.odom_freeze_relay:main',
+            'car_start_gateway = '
+            'uav_control.car_start_gateway:main',
+            'car_marker_vision = '
+            'uav_control.car_marker_vision:main',
+            'mission_offboard_controller = '
+            'uav_control.mission_offboard_controller:main',
+            'payload_release = '
+            'uav_control.payload_release:main',
+            'mission_manager = '
+            'uav_control.mission_manager:main',
         ],
     },
 )
