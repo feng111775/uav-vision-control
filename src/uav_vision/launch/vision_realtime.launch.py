@@ -1,0 +1,7 @@
+from launch import LaunchDescription
+from launch_ros.actions import Node
+def generate_launch_description():
+    return LaunchDescription([
+      Node(package='uav_vision', executable='h7_bridge_node', parameters=[{'port':'/dev/dtask_openmv'}]),
+      Node(package='uav_vision', executable='vision_interface_node'),
+    ])

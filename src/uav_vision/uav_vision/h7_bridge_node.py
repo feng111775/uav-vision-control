@@ -62,6 +62,7 @@ class H7BridgeNode(Node):
         self.publisher = self.create_publisher(
             Float32MultiArray,
             self.get_parameter('detection_topic').value, 10)
+        self.raw_publisher = self.create_publisher(String, '/vision/internal/h7/raw', 20)
         self.status_publisher = self.create_publisher(
             String, self.get_parameter('status_topic').value, 10)
         self.age_publisher = self.create_publisher(
@@ -132,6 +133,13 @@ class H7BridgeNode(Node):
             if line.startswith('D_STATUS,'):
                 self._publish_status(parse_status_line(line))
                 return
+            if line.startswith('D_TARGET_V2,'):
+                # Preserve exact V2 transport semantics for the formal adapter.
+                message = String(); message.data = line
+                self.raw_publisher.publish(message)
+                self._last_detection_time = time.monotonic()
+                self._stale_published = False
+                return
             data = parse_detection_line(line, self.allow_legacy)
         except (UnicodeDecodeError, TypeError, ValueError) as error:
             self._warn('invalid H7 line ignored: %s' % error)
@@ -142,6 +150,9 @@ class H7BridgeNode(Node):
         if data[0] == 1.0:
             self._last_valid_time = now
         self._publish_detection(data)
+        message = String()
+        message.data = line
+        self.raw_publisher.publish(message)
 
     def _read_serial(self):
         if self.serial_port is None or not self.serial_port.is_open:

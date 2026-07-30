@@ -25,6 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'h7_bridge_node = uav_vision.h7_bridge_node:main',
+            'vision_interface_node = uav_vision.vision_interface_node:main',
             'fake_h7_node = uav_vision.fake_h7_node:main',
             'target_filter_node = uav_vision.target_filter_node:main',
             'target_predictor_node = uav_vision.target_predictor_node:main',

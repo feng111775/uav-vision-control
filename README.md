@@ -607,3 +607,6 @@ mock/SITL/legacy。部署见 [`docs/pi_deployment.md`](docs/pi_deployment.md)，
 [`docs/manual_hardware_session.md`](docs/manual_hardware_session.md)。
 systemd 文件只是未安装模板，不包含开机自动飞行。**当前结果不得用于直接带桨
 运行。**
+# D-task realtime vision V2
+
+See `docs/vision_control_interface_v1.md`, `docs/openmv_protocol_v2.md`, and `docs/vision_performance.md`. The default release is pixel-only: no PX4 input publication, no metric output, no payload release, and no closed-loop authorization.

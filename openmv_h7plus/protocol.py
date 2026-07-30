@@ -18,6 +18,18 @@ def format_target_line(result):
         result["angle_rad"], max(0, min(100, result["confidence"])))
 
 
+def format_target_v2(result, frame_sequence, capture_ticks_ms, processing_us,
+                     mode='SEARCH'):
+    """One V2 event per actual snapshot; invalid frames are never old data."""
+    result = result or {}
+    return 'D_TARGET_V2,%d,%d,%d,%s,%d,%d,%d,%d,%d,%.4f,%d\n' % (
+        frame_sequence, capture_ticks_ms, processing_us, mode,
+        int(bool(result.get('valid', 0))), int(result.get('cx', 0)),
+        int(result.get('cy', 0)), int(result.get('outer_diameter_px', 0)),
+        int(result.get('inner_diameter_px', 0)), float(result.get('angle_rad', 0)),
+        max(0, min(100, int(result.get('confidence', 0)))))
+
+
 class TargetProtocol:
     """Send one complete ASCII event through the USB VCP."""
 
@@ -28,8 +40,14 @@ class TargetProtocol:
             usb = USB_VCP()
         self._usb = usb
 
-    def send_target(self, result):
-        self._usb.send(format_target_line(result).encode("ascii"))
+    def send_target(self, result, frame_sequence=None, capture_ticks_ms=None,
+                    processing_us=0, mode='SEARCH'):
+        if frame_sequence is None:
+            data = format_target_line(result)
+        else:
+            data = format_target_v2(result, frame_sequence, capture_ticks_ms,
+                                    processing_us, mode)
+        self._usb.send(data.encode("ascii"))
 
     def send_no_target(self):
         self._usb.send(NO_TARGET_LINE.encode("ascii"))

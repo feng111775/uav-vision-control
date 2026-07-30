@@ -88,8 +88,5 @@ vision_offboard_controller:
     px4_status_timeout: 1.0
     local_position_timeout: 0.5
     vision_velocity_topic: /control/vision_velocity
-    offboard_control_mode_topic: /fmu/in/offboard_control_mode
-    trajectory_setpoint_topic: /fmu/in/trajectory_setpoint
-    vehicle_command_topic: /fmu/in/vehicle_command
     vehicle_local_position_topic: /fmu/out/vehicle_local_position_v1
     vehicle_status_topic: /fmu/out/vehicle_status_v1
