@@ -1,5 +1,23 @@
 # UAV Vision Control
 
+## D题总集成正式架构（`integration/d-task-final`）
+
+本仓库总集成分支为 `integration/d-task-final`，视觉稳定提交
+`a5978ef65ec004b79c7ca7cb41011951adfdfe85` 已纳入本分支。正式树莓派工作空间为
+`/home/a-corn/px4_ros2_ws`。
+
+当前唯一正式比赛控制包是 `src/uav_control`。任务管理、计划中的
+`mission_offboard_controller`、小车启动网关、视觉目标接入和投放节点统一归属该包；
+只有 `mission_offboard_controller` 允许发布 `/fmu/in/*`。其他节点不得直接 ARM、切换
+Offboard、发布 `TrajectorySetpoint`、`VehicleCommand`，或向任何 `/fmu/in/*` 话题发布。
+
+`src/real_practise` 继续保留，但仅用于独立的起飞→上升→悬停→降落验证，不是完整比赛
+任务入口。投放功能保持 dry-run；STM32—ESP32—树莓派小车无线启动链尚未并入真机任务。
+当前控制代码状态只能标记为“**SITL已验证、真机待验收**”，禁止直接装桨测试。
+
+当前总分支中的旧 `mission_controller_node` 等控制入口仅作兼容/历史保留，等待正式飞控
+分支同步；不得将其视为最终比赛入口。红色辅助功能暂停，未进入正式主线。
+
 ## 2026 D题当前硬件基线
 
 当前D题硬件链固定使用PX4 v1.16.0、`px4_msgs release/1.16`和ROS 2 Jazzy。
@@ -24,11 +42,11 @@ ROS 2 无人机视觉控制工程，包含 Raspberry Pi/OpenMV 视觉输入、�
 
 ## 已验证状态
 
-最终验证环境：
+历史SITL验证环境（非当前硬件版本基线）：
 
 - Ubuntu 24.04
 - ROS 2 Jazzy
-- PX4 v1.17.0 (`d6f12ad1c4`)
+- PX4 v1.17.0 (`d6f12ad1c4`)，历史记录
 - Gazebo Sim 8.11.0
 - Micro XRCE-DDS Agent UDP 8888
 - QGroundControl AppImage
@@ -61,10 +79,14 @@ WAITING → PRESTREAM → TAKEOFF → VISION_CONTROL
 │   ├── px4_overlay/              # 保留 PX4 原始相对路径的模型、世界和 airframe
 │   └── scripts/                  # 安全安装 overlay 的脚本
 └── src/
+    ├── real_practise/             # 若由独立起降分支提供，仅作起降验证
     ├── pi_camera_vision/         # Raspberry Pi/USB/图片/视频视觉输入
     ├── uav_vision/               # 双摄检测、选择、滤波和视觉伺服
-    └── uav_control/              # PX4 状态和正式 Offboard 控制器
+    └── uav_control/               # 唯一正式比赛任务控制包
 ```
+
+`pi_camera_vision` 如存在仅保留为历史/SITL视觉工具；当前仓库不凭空创建
+`uav_interfaces`，只有在实际接口分支确认后才可保留该目录。
 
 ## 控制链
 
@@ -150,7 +172,8 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
-仓库默认忽略 `src/px4_msgs`。需要检出与 PX4 v1.17 匹配的 `px4_msgs`，
+仓库默认忽略 `src/px4_msgs`。当前D题只能使用与 PX4 Release v1.16.0 匹配的
+`px4_msgs release/1.16`；历史 v1.17 SITL 记录不构成当前依赖基线。
 或从兼容的已构建工作空间加载它。
 
 ## 安装 PX4 双摄仿真资源
@@ -463,7 +486,7 @@ ros2 topic list | grep '/camera/'
 
 第二阶段提供两个互相独立的评分任务 `drop`、`dynamic_land`，以及唯一首次上机路径
 `hover_test`。流程和安全状态见 `docs/d_task_state_machine.md`。正式控制launch只启动
-`mission_controller_node` 与只读 `mission_dashboard_node`，不会启动PX4、Agent、小车
+旧 `mission_controller_node` 与只读 `mission_dashboard_node`，不会启动PX4、Agent、小车
 控制或模拟执行机构。
 
 | 输入 | 类型 | 用途 |

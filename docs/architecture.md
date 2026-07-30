@@ -1,5 +1,26 @@
 # 系统架构说明
 
+## D题总集成正式约束
+
+- 总集成分支：`integration/d-task-final`。
+- 视觉稳定版提交 `a5978ef65ec004b79c7ca7cb41011951adfdfe85` 已纳入总分支。
+- 正式树莓派工作空间：`/home/a-corn/px4_ros2_ws`。
+- 正式硬件基线：Holybro Pixhawk 6C Mini、PX4 Release v1.16.0，提交
+  `6ea3539157ca358c70a515878b77077af7d4611d`，目标 `px4_fmu-v6c_default`；
+  ROS 2 Jazzy、`px4_msgs release/1.16`、Micro XRCE-DDS Agent v2.4.3。
+- `src/real_practise` 仅用于独立起飞→上升→悬停→降落验证，不是完整比赛任务入口。
+- `src/uav_control` 是唯一正式比赛控制包，统一承载任务管理、计划中的
+  `mission_offboard_controller`、小车启动网关、视觉目标接入和投放节点。
+- 只有 `mission_offboard_controller` 允许发布 `/fmu/in/*`；其他节点禁止直接 ARM、切换
+  Offboard、发布 `TrajectorySetpoint`、`VehicleCommand` 或任何 `/fmu/in/*` 控制消息。
+- 投放当前必须保持 dry-run；STM32—ESP32—树莓派小车无线启动链尚未并入真机任务。
+- 当前状态：**SITL已验证、真机待验收**。禁止直接装桨测试。
+- 红色辅助功能暂停，未进入正式主线。
+
+当前总分支仍保留旧控制入口。旧 `mission_controller_node`、
+`vision_offboard_controller` 和 `offboard_control` 的现有源码不得被解释为最终架构；
+它们等待正式飞控分支同步，不能据此声称真机验证通过、真机可直接起飞或投放舵机已完成。
+
 ## 1. 当前系统架构
 
 本工程由 OpenMV 端视觉程序、ROS 2 视觉处理包和 PX4 控制包组成。
@@ -32,8 +53,19 @@ Gazebo 仿真使用 `gazebo_red_target_detector_node` 替代
 ```text
 openmv_h7plus/       OpenMV Cam H7 Plus端程序
 src/uav_vision/      视觉输入、目标滤波和视觉伺服
-src/uav_control/     PX4状态诊断和Offboard控制
+src/uav_control/     唯一正式比赛控制包（任务与PX4控制统一归属）
 docs/                架构、开发和部署文档
+```
+
+正式总体目录约定如下；不存在的接口目录不凭空创建：
+
+```text
+openmv_h7plus/          OpenMV H7 Plus正式视觉程序
+src/real_practise/      独立起降验证包，不是比赛总入口（由对应分支提供时保留）
+src/uav_control/        唯一正式比赛任务控制包
+src/uav_vision/         OpenMV串口桥、滤波、预测和视觉误差输出
+src/pi_camera_vision/   如存在则为历史/SITL视觉工具
+src/uav_interfaces/     仅在项目实际使用且已有分支时保留；当前不创建
 ```
 
 当前没有独立的任务规划层。任务管理器、通用轨迹生成器和航点执行器尚未实现。
@@ -59,16 +91,18 @@ docs/                架构、开发和部署文档
 `visual_servo_node` 输出 `geometry_msgs/msg/TwistStamped`，坐标系为
 `base_link`，仅使用水平线速度。
 
-### `uav_control`
+### `uav_control`（当前旧入口审计）
 
 | 节点 | 输入 | 输出 | 职责 |
 | --- | --- | --- | --- |
-| `vision_offboard_controller` | `/control/vision_velocity`、PX4位置和状态 | PX4 Offboard心跳、轨迹设定值和命令 | 正式视觉Offboard控制节点 |
+| `vision_offboard_controller` | `/control/vision_velocity`、PX4位置和状态 | PX4 Offboard心跳、轨迹设定值和命令 | 旧控制入口，等待正式 `mission_offboard_controller` 分支同步 |
 | `vehicle_status_listener` | 可配置的PX4状态topic | 日志 | 只读状态诊断 |
-| `offboard_control` | 无 | PX4控制topic | PX4 ROS 2基础通信测试节点 |
+| `offboard_control` | 无 | PX4控制topic | 旧测试节点，违反单一发布者约束，禁止作为正式入口 |
 
-`offboard_control` 与 `vision_offboard_controller` 会发布相同的 PX4 控制
-topic，不得同时运行。正式系统只应启动 `vision_offboard_controller`。
+当前源码审计发现 `mission_controller_node`、`vision_offboard_controller` 和
+`offboard_control` 均包含 `/fmu/in/*` 发布代码；这属于旧入口待替换状态，不符合
+新架构的单一发布者要求。正式飞控分支合入后，必须只保留
+`mission_offboard_controller` 作为 `/fmu/in/*` 发布者。
 
 ## 3. PX4通信关系
 

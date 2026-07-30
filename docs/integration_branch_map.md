@@ -5,7 +5,7 @@
 - 集成分支：`integration/d-task-final`
 - 起始提交：`a5978ef65ec004b79c7ca7cb41011951adfdfe85`
 - 起始功能分支：`feature/d-task-openmv-live-validation`
-- 最终树莓派工作区：`~/px4_ros2_ws`
+- 最终树莓派工作区：`/home/a-corn/px4_ros2_ws`
 
 本分支以已验证视觉提交为起点。建立骨架时不合并主工作区内尚未提交的
 小车/仿真修改，也不合并任何未确认的飞控、地面站或联合仿真分支。
@@ -16,7 +16,7 @@
 |---|---|---|---|
 | OpenMV H7 Plus | `openmv_h7plus` | `feature/d-task-openmv-live-validation` | 已包含已验证基线 |
 | ROS 视觉 | `src/uav_vision` | `feature/d-task-openmv-live-validation` | 已包含已验证基线 |
-| PX4 任务控制 | `src/uav_control` | 待负责人提供确认分支和提交 | 仅保留起始提交已有版本 |
+| PX4 任务控制 | `src/uav_control` | 待负责人提供确认分支和提交 | 唯一正式比赛控制包；当前仅保留旧入口，等待 `mission_offboard_controller` 正式分支 |
 | 小车控制 | `src/car_control`、`ground_vehicle` | 待负责人提供确认分支和提交 | 未合并主工作区未提交修改 |
 | 联合仿真 | `src/d_system_sim` | 待负责人提供确认分支和提交 | 未合并主工作区未提交修改 |
 | 离线地面站 | `src/ground_station`、`ground_station` | 待负责人提供确认分支和提交 | 仅保留起始提交已有版本 |
