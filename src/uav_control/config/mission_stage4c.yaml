@@ -4,6 +4,9 @@
     dry_run: true
     enable_control: false
     enable_auto_arm: false
+    confirm_sitl_only: false
+    hardware_bench_mode: false
+    physical_release_enabled: false
     enable_payload_release: false
     target_altitude: 1.50
     takeoff_height_m: 1.50
@@ -12,16 +15,51 @@
     car_speed_mps: 0.10
     mission_timeout_s: 90.0
     target_max_age_s: 0.50
+    target_min_confidence: 0.60
     target_confirm_frames: 3
     target_short_loss_s: 0.50
     target_long_loss_s: 2.0
     follow_stable_duration_s: 2.0
+    follow_stable_speed_mps: 0.05
+    follow_error_gain: 0.30
+    follow_kp_forward: 0.30
+    follow_kp_left: 0.30
+    follow_deadband_x: 0.04
+    follow_deadband_y: 0.04
+    follow_max_speed_mps: 0.20
+    follow_min_confidence: 0.60
+    follow_swap_axes: false
+    follow_error_scale: 1.0
+    follow_camera_x_sign: 1.0
+    follow_camera_y_sign: -1.0
+    follow_camera_mount_yaw_rad: 0.0
+    return_position_kp: 0.50
+    return_max_speed_mps: 0.40
+    return_acceleration_mps2: 0.20
+    transport: simulation
+    real_transport_enabled: false
+    serial_device: ''
+    serial_baud: 0
+    udp_host: ''
+    udp_port: 0
+    start_packet_max_age_s: 2.0
+    heartbeat_timeout_s: 2.0
+    real_vision_enabled: false
+    calibration_valid: true
+    image_width_px: 640
+    image_height_px: 480
+    vision_error_normalized: true
     drop_alignment_tolerance: 0.08
+    release_min_return_time_s: 30.0
     return_home_tolerance_m: 0.20
     home_stable_duration_s: 1.0
     takeoff_timeout_s: 15.0
     transit_timeout_s: 15.0
     search_timeout_s: 15.0
+    search_speed_mps: 0.18
+    search_max_speed_mps: 0.18
+    search_max_distance_m: 3.0
+    search_acceleration_mps2: 0.10
     acquire_timeout_s: 5.0
     follow_timeout_s: 15.0
     release_timeout_s: 3.0
@@ -34,3 +72,5 @@
     field_yaw_rad: 0.0
     field_offset_x_m: 0.0
     field_offset_y_m: 0.0
+    intercept_tolerance_m: 0.25
+    px4_data_timeout_s: 1.0

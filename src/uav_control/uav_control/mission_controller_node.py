@@ -239,8 +239,13 @@ class MissionControllerNode(Node):
             self.pitch)) > self.get_parameter('max_tilt_rad').value
 
     def _ack(self, msg):
+        received = self.now()
         for tracker in self.trackers.values():
-            if tracker.acknowledge(msg.command, msg.result):
+            if tracker.acknowledge(
+                    msg.command, msg.result, received,
+                    msg.target_system, msg.target_component,
+                    getattr(self, 'command_context', ''),
+                    msg.from_external):
                 self.logic.event = 'COMMAND_ACK_%s_%s' % (msg.command, tracker.status)
                 if tracker.failed:
                     self.logic.transition('FAILSAFE', self.now(), self.logic.event)
@@ -291,7 +296,8 @@ class MissionControllerNode(Node):
 
     def _publish_command(self, name, command, now, param1=0.0, param2=0.0):
         tracker = self.trackers[name]
-        if not tracker.request(command, now):
+        if not tracker.request(
+                command, now, getattr(self, 'command_context', ''), 1, 1):
             if tracker.failed:
                 self.logic.transition(
                     'FAILSAFE', now, 'COMMAND_%s_%s' %
@@ -313,8 +319,8 @@ class MissionControllerNode(Node):
     def _publish_control(self, mode, position=None, velocity=None):
         heartbeat = OffboardControlMode()
         heartbeat.timestamp = self.timestamp()
-        heartbeat.position = mode == 'position'
-        heartbeat.velocity = mode == 'velocity'
+        heartbeat.position = mode in ('position', 'position_velocity')
+        heartbeat.velocity = mode in ('velocity', 'position_velocity')
         heartbeat.acceleration = heartbeat.attitude = heartbeat.body_rate = False
         heartbeat.thrust_and_torque = heartbeat.direct_actuator = False
         self.offboard_pub.publish(heartbeat)

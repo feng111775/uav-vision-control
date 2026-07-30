@@ -96,11 +96,13 @@ def test_stale_vision_is_invalid():
 def test_consecutive_frames_are_required_for_follow():
     config = MissionConfig(target_confirm_frames=3)
     flow = flow_at_takeoff(config)
-    flow.transition(MissionState.SEARCH_CAR, 2.0, 'test')
-    flow.update(2.1, observation=marker(2.1))
-    flow.update(2.2, observation=marker(2.2))
+    assert flow.enter_search(
+        2.0, (4.0, 5.0, 0.5), 0.0, 'test')
+    position = (4.0, 5.0, 0.5)
+    flow.update(2.1, position, observation=marker(2.1))
+    flow.update(2.2, position, observation=marker(2.2))
     assert flow.state == MissionState.ACQUIRE_CAR
-    flow.update(2.3, observation=marker(2.3))
+    flow.update(2.3, position, observation=marker(2.3))
     assert flow.state == MissionState.FOLLOW_CAR
 
 
@@ -119,7 +121,7 @@ def test_long_target_loss_returns_to_search():
     flow.transition(MissionState.FOLLOW_CAR, 2.0, 'test')
     flow.follow_since = 2.0
     flow.update(2.1, observation=None)
-    flow.update(4.2, observation=None)
+    flow.update(4.2, observation=None, heading=0.0)
     assert flow.state == MissionState.SEARCH_CAR
 
 
@@ -219,17 +221,18 @@ def test_simulated_complete_flow():
     airborne = (4.0, 5.0, 0.5)
     flow.update(1.1, airborne)
     flow.update(1.21, airborne)
-    flow.update(1.22, airborne, intercept_reached=True)
+    flow.update(1.22, airborne, intercept_reached=True, heading=0.0)
     flow.update(1.23, airborne, observation=marker(1.23))
     flow.update(1.24, airborne, observation=marker(1.24))
     flow.update(1.35, airborne, observation=marker(1.35))
-    flow.update(1.36, airborne, observation=marker(1.36))
+    flow.update(1.46, airborne, observation=marker(1.46))
+    flow.update(1.47, airborne, observation=marker(1.47))
     assert flow.state == MissionState.RELEASE_PAYLOAD
-    flow.update(1.37, airborne, payload_result='SUCCESS')
-    flow.update(1.38, airborne)
+    flow.update(1.48, airborne, payload_result='SUCCESS')
     flow.update(1.49, airborne)
+    flow.update(1.60, airborne)
     assert flow.state == MissionState.LAND
-    flow.update(1.5, (4.0, 5.0, 2.0), landed=True)
+    flow.update(1.61, (4.0, 5.0, 2.0), landed=True)
     assert flow.state == MissionState.COMPLETE
 
 

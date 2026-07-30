@@ -7,7 +7,8 @@ class VisualGuidance:
     def __init__(self, kp_forward=0.3, kp_left=0.3, deadband_x=0.04,
                  deadband_y=0.04, max_speed=0.5, min_confidence=60.0,
                  max_age_ms=250.0, camera_x_sign=1.0, camera_y_sign=-1.0,
-                 max_error_jump=0.8):
+                 max_error_jump=0.8, swap_axes=False, error_scale=1.0,
+                 camera_mount_yaw_rad=0.0):
         self.kp_forward = float(kp_forward)
         self.kp_left = float(kp_left)
         self.deadband_x = float(deadband_x)
@@ -18,10 +19,15 @@ class VisualGuidance:
         self.camera_x_sign = float(camera_x_sign)
         self.camera_y_sign = float(camera_y_sign)
         self.max_error_jump = float(max_error_jump)
+        self.swap_axes = bool(swap_axes)
+        self.error_scale = float(error_scale)
+        self.camera_mount_yaw_rad = float(camera_mount_yaw_rad)
         parameters = (
             self.kp_forward, self.kp_left, self.deadband_x, self.deadband_y,
             self.max_speed, self.min_confidence, self.max_age_ms,
             self.camera_x_sign, self.camera_y_sign, self.max_error_jump)
+        parameters = parameters + (
+            self.error_scale, self.camera_mount_yaw_rad)
         if not all(math.isfinite(value) for value in parameters):
             raise ValueError('visual-guidance parameters must be finite')
         if min(self.kp_forward, self.kp_left, self.deadband_x,
@@ -32,6 +38,8 @@ class VisualGuidance:
             raise ValueError('min_confidence must be in [0, 100]')
         if self.camera_x_sign not in (-1.0, 1.0) or self.camera_y_sign not in (-1.0, 1.0):
             raise ValueError('camera signs must be -1 or 1')
+        if self.error_scale <= 0.0:
+            raise ValueError('error_scale must be positive')
         self.last_error = None
 
     @staticmethod
@@ -51,6 +59,10 @@ class VisualGuidance:
             self.last_error = None
             return 0.0, 0.0
         error_x, error_y, confidence, age_ms, heading = values
+        error_x /= self.error_scale
+        error_y /= self.error_scale
+        if self.swap_axes:
+            error_x, error_y = error_y, error_x
         if confidence < 0.0 or confidence > 100.0 or age_ms < 0.0:
             self.last_error = None
             return 0.0, 0.0
@@ -67,7 +79,12 @@ class VisualGuidance:
             self.kp_left * error_x
         forward = 0.0 if abs(error_y) <= self.deadband_y else self.camera_y_sign * \
             self.kp_forward * error_y
-        north, east = self.flu_to_ned(forward, left, heading)
+        cosine = math.cos(self.camera_mount_yaw_rad)
+        sine = math.sin(self.camera_mount_yaw_rad)
+        mounted_forward = cosine * forward - sine * left
+        mounted_left = sine * forward + cosine * left
+        north, east = self.flu_to_ned(
+            mounted_forward, mounted_left, heading)
         magnitude = math.hypot(north, east)
         if magnitude > self.max_speed:
             scale = self.max_speed / magnitude

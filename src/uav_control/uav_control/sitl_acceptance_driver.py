@@ -12,6 +12,8 @@ from rclpy.qos import (DurabilityPolicy, HistoryPolicy, QoSProfile,
                        ReliabilityPolicy)
 from std_msgs.msg import Float32MultiArray, String
 
+from .stage4c_core import StartProtocol
+
 
 class SitlAcceptanceDriver(Node):
     """Drive one task without publishing simulated PX4 state."""
@@ -21,14 +23,39 @@ class SitlAcceptanceDriver(Node):
         self.declare_parameter('task_id', 'stage4c-sitl')
         self.declare_parameter('result_path', '/tmp/stage4c_sitl_result.json')
         self.declare_parameter('exercise_vision_loss', False)
+        self.declare_parameter('marker_delay_s', 3.0)
+        self.declare_parameter('suppress_marker', False)
+        self.declare_parameter('vision_loss_mode', 'none')
+        self.declare_parameter('reacquire_after_long_loss', False)
+        self.declare_parameter('never_align', False)
+        self.declare_parameter('duplicate_start_count', 1)
+        self.declare_parameter('duplicate_release_count', 0)
         self.task_id = str(self.get_parameter('task_id').value)
+        self.start_id = 'start-1'
+        self.protocol_task_id = self.task_id + ':' + self.start_id
         self.result_path = Path(self.get_parameter('result_path').value)
         self.exercise_vision_loss = bool(
             self.get_parameter('exercise_vision_loss').value)
+        self.marker_delay_s = float(
+            self.get_parameter('marker_delay_s').value)
+        self.suppress_marker = bool(
+            self.get_parameter('suppress_marker').value)
+        self.vision_loss_mode = str(
+            self.get_parameter('vision_loss_mode').value)
+        self.reacquire_after_long_loss = bool(
+            self.get_parameter('reacquire_after_long_loss').value)
+        self.never_align = bool(self.get_parameter('never_align').value)
+        self.duplicate_start_count = int(
+            self.get_parameter('duplicate_start_count').value)
+        self.duplicate_release_count = int(
+            self.get_parameter('duplicate_release_count').value)
         self.state = ''
         self.start_time = None
         self.state_entered = None
         self.sent_start = False
+        self.last_start_send = None
+        self.last_heartbeat_send = None
+        self.heartbeat_seen = False
         self.position = None
         self.home = None
         self.positions = []
@@ -39,16 +66,27 @@ class SitlAcceptanceDriver(Node):
         self.landed = True
         self.release_results = []
         self.first_follow_time = None
+        self.search_start_time = None
         self.vision_events = []
         self.vision_event_names = set()
+        self.release_request = None
+        self.release_duplicated = False
         self.start_pub = self.create_publisher(
             String, '/uav_mission/sim/car_start', 10)
         self.marker_pub = self.create_publisher(
             Float32MultiArray, '/uav_mission/sim/marker', 10)
+        self.release_duplicate_pub = self.create_publisher(
+            String, '/uav_mission/payload/request', 10)
         self.create_subscription(
             String, '/uav_mission/state', self._state, 10)
         self.create_subscription(
+            String, '/uav_mission/events/start_result',
+            self._start_result, 10)
+        self.create_subscription(
             String, '/uav_mission/payload/result', self._release, 10)
+        self.create_subscription(
+            String, '/uav_mission/payload/request',
+            self._release_request, 10)
         qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -91,6 +129,8 @@ class SitlAcceptanceDriver(Node):
                 self.start_time = now
             if new_state == 'FOLLOW_CAR' and self.first_follow_time is None:
                 self.first_follow_time = now
+            if new_state == 'SEARCH_CAR' and self.search_start_time is None:
+                self.search_start_time = now
             if new_state == 'COMPLETE':
                 self._finish()
 
@@ -125,37 +165,102 @@ class SitlAcceptanceDriver(Node):
     def _release(self, msg):
         try:
             data = json.loads(msg.data)
-            if data.get('task_id') == self.task_id:
+            if data.get('task_id') == self.protocol_task_id:
                 self.release_results.append(data)
         except json.JSONDecodeError:
             pass
 
+    def _release_request(self, msg):
+        if not self.release_duplicated:
+            self.release_request = msg.data
+
+    def _start_result(self, msg):
+        try:
+            result = json.loads(msg.data)
+        except json.JSONDecodeError:
+            return
+        if (result.get('session_id') != self.task_id or
+                result.get('start_id') != self.start_id):
+            return
+        if result.get('type') == 'HEARTBEAT':
+            self.heartbeat_seen = True
+            return
+        if result.get('type') != 'START_ACCEPTED' or self.sent_start:
+            return
+        self.sent_start = True
+        if self.duplicate_start_count > 1:
+            duplicate = String()
+            duplicate.data = json.dumps(StartProtocol.build(
+                self.task_id, self.start_id, 1,
+                self.get_clock().now().nanoseconds))
+            for _ in range(self.duplicate_start_count - 1):
+                self.start_pub.publish(duplicate)
+
     def _tick(self):
+        if (self.state not in ('COMPLETE', '') and self.position is not None and
+                (self.last_heartbeat_send is None or
+                 self.now() - self.last_heartbeat_send >= 0.5)):
+            heartbeat = String()
+            heartbeat.data = json.dumps(StartProtocol.build(
+                self.task_id, self.start_id, 0,
+                self.get_clock().now().nanoseconds, command='HEARTBEAT'))
+            self.start_pub.publish(heartbeat)
+            self.last_heartbeat_send = self.now()
         if (self.state == 'WAIT_FOR_START' and self.position is not None and
-                not self.sent_start):
+                self.heartbeat_seen and not self.sent_start and
+                (self.last_start_send is None or
+                 self.now() - self.last_start_send >= 0.5)):
             output = String()
-            output.data = json.dumps({
-                'task_id': self.task_id, 'valid': True})
+            output.data = json.dumps(StartProtocol.build(
+                self.task_id, self.start_id, 1,
+                self.get_clock().now().nanoseconds))
             self.start_pub.publish(output)
-            self.sent_start = True
+            self.last_start_send = self.now()
+        if (self.release_request is not None and
+                not self.release_duplicated and
+                self.duplicate_release_count > 0):
+            self.release_duplicated = True
+            duplicate = String()
+            duplicate.data = self.release_request
+            for _ in range(self.duplicate_release_count):
+                # Publish the exact same release_id through the formal topic.
+                self.release_duplicate_pub.publish(duplicate)
         publish_marker = self.state in (
             'SEARCH_CAR', 'ACQUIRE_CAR', 'FOLLOW_CAR', 'DROP_ALIGN')
+        if self.state in ('SEARCH_CAR', 'ACQUIRE_CAR'):
+            publish_marker = (
+                not self.suppress_marker and
+                self.search_start_time is not None and
+                self.now() - self.search_start_time >= self.marker_delay_s)
         error = 0.0
-        if self.exercise_vision_loss and self.first_follow_time is not None:
+        loss_mode = (
+            'long' if self.exercise_vision_loss else self.vision_loss_mode)
+        if loss_mode in ('short', 'long') and \
+                self.first_follow_time is not None:
             loss_elapsed = self.now() - self.first_follow_time
             if loss_elapsed < 0.5:
                 error = 0.15
             elif loss_elapsed < 1.2:
                 publish_marker = False
+            elif loss_mode == 'short':
+                error = 0.15 if loss_elapsed < 2.0 else 0.0
             elif loss_elapsed < 1.5:
                 error = 0.15
             elif loss_elapsed < 4.5:
                 publish_marker = False
-            for threshold, name in (
-                    (0.5, 'short_loss_start'),
-                    (1.2, 'short_loss_end'),
+            elif (loss_mode == 'long' and
+                  not self.reacquire_after_long_loss):
+                publish_marker = False
+            thresholds = [
+                (0.5, 'short_loss_start'),
+                (1.2, 'short_loss_end'),
+            ]
+            if loss_mode == 'long':
+                thresholds.extend([
                     (1.5, 'long_loss_start'),
-                    (4.5, 'long_loss_end')):
+                    (4.5, 'long_loss_end'),
+                ])
+            for threshold, name in thresholds:
                 if loss_elapsed >= threshold and name not in \
                         self.vision_event_names:
                     self.vision_event_names.add(name)
@@ -167,7 +272,7 @@ class SitlAcceptanceDriver(Node):
                     })
         elif self.state == 'FOLLOW_CAR':
             elapsed = self.now() - (self.state_entered or self.now())
-            error = 0.15 if elapsed < 1.0 else 0.0
+            error = 0.15 if self.never_align or elapsed < 1.0 else 0.0
         if publish_marker:
             marker = Float32MultiArray()
             marker.data = [1.0, 0.95, error, 0.0]

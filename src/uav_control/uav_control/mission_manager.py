@@ -29,6 +29,8 @@ class MissionManager(Node):
             name: self.get_parameter(name).value for name in vars(defaults)})
         self.flow = MissionFlow(config)
         self.position = (0.0, 0.0, 0.0)
+        self.velocity = (0.0, 0.0, 0.0)
+        self.heading = None
         self.px4_ok = True
         self.failsafe = False
         self.landed = False
@@ -40,6 +42,9 @@ class MissionManager(Node):
         self.offboard_seen = False
         self.observation = None
         self.payload_result = None
+        self.release_request_sent = False
+        self.transport_connected = False
+        self.last_transport_status_time = None
         self.last_state = self.flow.state
         self.command_pub = self.create_publisher(
             String, '/uav_mission/control/command', 10)
@@ -47,12 +52,17 @@ class MissionManager(Node):
             String, '/uav_mission/payload/request', 10)
         self.state_pub = self.create_publisher(
             String, '/uav_mission/state', 10)
+        self.readiness_pub = self.create_publisher(
+            String, '/uav_mission/readiness', 10)
         self.create_subscription(
             String, '/uav_mission/events/start', self._start, 10)
         self.create_subscription(
             String, '/uav_mission/vision/marker', self._marker, 10)
         self.create_subscription(
             String, '/uav_mission/payload/result', self._payload, 10)
+        self.create_subscription(
+            String, '/uav_mission/transport/status',
+            self._transport_status, 10)
         self.create_subscription(
             Float32MultiArray, '/uav_mission/sim/position', self._position, 10)
         self.create_subscription(
@@ -115,6 +125,14 @@ class MissionManager(Node):
         except json.JSONDecodeError:
             pass
 
+    def _transport_status(self, msg):
+        try:
+            status = json.loads(msg.data)
+            self.transport_connected = bool(status['connected'])
+            self.last_transport_status_time = self.now()
+        except (KeyError, TypeError, json.JSONDecodeError):
+            self.transport_connected = False
+
     def _position(self, msg):
         if not self.get_parameter('use_simulated_px4').value:
             return
@@ -122,6 +140,8 @@ class MissionManager(Node):
             self.position = tuple(float(v) for v in msg.data[:3])
         if len(msg.data) >= 4:
             self.intercept_reached = bool(msg.data[3])
+        if len(msg.data) >= 5 and math.isfinite(msg.data[4]):
+            self.heading = float(msg.data[4])
 
     def _px4(self, msg):
         if not self.get_parameter('use_simulated_px4').value:
@@ -155,6 +175,8 @@ class MissionManager(Node):
                  msg.v_z_valid and all(math.isfinite(v) for v in values))
         if valid:
             self.position = (float(msg.x), float(msg.y), float(msg.z))
+            self.velocity = (float(msg.vx), float(msg.vy), float(msg.vz))
+            self.heading = float(msg.heading)
             self.last_position_time = self.now()
 
     def _land_detected(self, msg):
@@ -182,13 +204,34 @@ class MissionManager(Node):
     def _tick(self):
         now = self.now()
         self.px4_ok = self._px4_current(now)
+        transport_current = (
+            self.transport_connected and
+            self.last_transport_status_time is not None and
+            now - self.last_transport_status_time <=
+            self.flow.config.px4_data_timeout_s)
+        px4_ready = self.px4_ok and not self.failsafe
+        readiness = String()
+        readiness.data = json.dumps({
+            'ready': (
+                self.flow.state == MissionState.WAIT_FOR_START and
+                px4_ready and transport_current and
+                self.heading is not None and
+                all(math.isfinite(value) for value in (
+                    *self.position, self.heading))),
+            'busy': self.flow.state != MissionState.WAIT_FOR_START,
+            'state': self.flow.state.value,
+            'stamp_ns': self.get_clock().now().nanoseconds,
+        }, separators=(',', ':'))
+        self.readiness_pub.publish(readiness)
         if (not self.get_parameter('use_simulated_px4').value and
                 self.flow.state == MissionState.TRANSIT_TO_INTERCEPT):
             target = self.flow.command(now).get('target')
             if target:
                 self.intercept_reached = (
                     math.dist(self.position, target) <=
-                    self.flow.config.intercept_tolerance_m)
+                    self.flow.config.intercept_tolerance_m and
+                    math.hypot(self.velocity[0], self.velocity[1]) <=
+                    self.flow.config.search_max_speed_mps)
         offboard_lost = (
             self.offboard_seen and self.armed and not self.offboard and
             self.flow.state not in (
@@ -198,25 +241,31 @@ class MissionManager(Node):
         self.flow.update(
             now, self.position, self.px4_ok, self.failsafe,
             self.observation, self.intercept_reached,
-            self.payload_result, self.landed, offboard_lost)
+            self.payload_result, self.landed, offboard_lost, self.heading,
+            not transport_current)
         if self.flow.state != old:
             self._log_transition(old, self.flow.state)
         command = String()
         command_data = self.flow.command(now)
         command_data['phase'] = self.flow.state.value
+        command_data['task_id'] = self.flow.task_id
         command.data = json.dumps(command_data, separators=(',', ':'))
         self.command_pub.publish(command)
         if (self.flow.state == MissionState.RELEASE_PAYLOAD and
-                self.payload_result is None):
+                self.payload_result is None and
+                not self.release_request_sent):
             request = String()
             request.data = json.dumps({
                 'task_id': self.flow.task_id,
+                'session_id': self.flow.task_id.split(':', 1)[0],
                 'release_id': self.flow.task_id + '-release-1',
                 'stamp_ns': self.get_clock().now().nanoseconds,
+                'phase': self.flow.state.value,
                 'allowed': (not self.failsafe and
                             self.flow.payload_requested),
             }, separators=(',', ':'))
             self.release_pub.publish(request)
+            self.release_request_sent = True
         state = String()
         state.data = json.dumps({
             'task_id': self.flow.task_id,
@@ -226,6 +275,11 @@ class MissionManager(Node):
             'elapsed_s': (0.0 if self.flow.task_started is None else
                           now - self.flow.task_started),
             'predicted_car_distance_m': self.flow.predicted_distance(now),
+            'search_heading': self.flow.search_heading,
+            'search_elapsed_s': (
+                0.0 if self.flow.search_started is None else
+                max(0.0, now - self.flow.search_started)),
+            'search_distance_m': self.flow.search_distance(self.position),
         }, separators=(',', ':'))
         self.state_pub.publish(state)
 

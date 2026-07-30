@@ -3,16 +3,18 @@
 This package keeps the accepted PX4 v1.16 controller and adds five ROS 2
 nodes under the `/uav_mission` interface namespace.
 
-- `car_start_gateway` normalizes a simulated car event and rejects repeated
-  `task_id` values.
+- `car_start_gateway` validates the transport-neutral versioned/checksummed
+  start envelope, rejects stale/replayed `session_id + start_id` requests,
+  and emits only a normalized mission request.
 - `car_marker_vision` publishes a timestamped circular-cross observation
   contract. It does not open a camera.
 - `mission_offboard_controller` is the sole stage-4C node that owns
   `/fmu/in/offboard_control_mode`, `/fmu/in/trajectory_setpoint`, and
   `/fmu/in/vehicle_command`. It extends the accepted 4B controller so its
   prestream, ACK, localization, failsafe, timeout and NAV_LAND gates remain.
-- `payload_release` enforces task/release idempotency. In `dry_run` it only
-  logs a simulated 90-degree rotation and imports no GPIO library.
+- `payload_release` journals task/release idempotency. Its only constructible
+  actuator is `DryRunReleaseActuator`; `DRY_RUN_CONFIRMED` always carries
+  `physical_action=false` and imports no GPIO library.
 - `mission_manager` owns the high-level state machine and publishes only a
   high-level command and one-shot payload request.
 
@@ -48,22 +50,30 @@ in `config/mission_stage4c.yaml`. The default launch is software-only:
 
 ```bash
 ros2 launch uav_control uav_mission_stage4c_sim.launch.py
-ros2 topic pub --once /uav_mission/sim/car_start std_msgs/msg/String \
-  "{data: '{\"task_id\":\"sim-1\",\"valid\":true}'}"
+ros2 run uav_control sitl_acceptance_driver --ros-args \
+  -p task_id:=software-dry-run-1 -p result_path:=/tmp/software-dry-run-1.json
 ```
 
 Merely starting the launch leaves the manager in `WAIT_FOR_START`.
 `enable_control`, `enable_auto_arm`, and real payload output are false.
-The next hardware stages must replace only the gateway transport with the
-ESP32 protocol, the marker simulation adapter with reviewed OpenCV input, and
+The next hardware stages must add a reviewed transport adapter beneath the
+existing start protocol, replace marker simulation with reviewed OpenCV, and
 the payload dry-run backend with a separately interlocked GPIO/PWM driver.
+No GPIO/PWM backend or physical payload output exists in this package.
 
 ## Stage 4C-2 PX4 v1.16 SITL
 
 The 4C-1 launch above is a software-only dry-run and keeps PX4 control
 disabled. The 4C-2 launch uses real PX4 SITL DDS position, status, command ACK,
 and landed messages. Only its dedicated YAML enables control and automatic
-arming. Payload release remains a dry-run.
+arming. That YAML also requires `simulation_mode=true` and
+`confirm_sitl_only=true`; a contradictory combination fails during node
+construction. Payload release remains a software-only dry-run.
+
+Physically disconnect every real Pixhawk before using the SITL launch. ROS 2
+topics and parameters cannot prove with complete certainty that a DDS endpoint
+is a simulator. The SITL launch must never be used with a real aircraft, and a
+successful SITL run is not approval for real flight.
 
 The accepted local versions were PX4 `v1.16.0` at
 `6ea3539157ca358c70a515878b77077af7d4611d`, `px4_msgs` `v1.16.2` at
@@ -100,12 +110,13 @@ ros2 launch uav_control uav_mission_stage4c_sitl.launch.py
 ```
 
 The launch starts all five task nodes and waits in `WAIT_FOR_START`. It does
-not publish fake PX4 status or position. A manual simulated car event can be
-sent with:
+not publish fake PX4 status or position. Start injection must use the formal
+protocol path; the acceptance driver builds the version, timestamp, monotonic
+sender counter and SHA-256 integrity field:
 
 ```bash
-ros2 topic pub --once /uav_mission/sim/car_start std_msgs/msg/String \
-  "{data: '{\"task_id\":\"sitl-manual-1\",\"valid\":true}'}"
+ros2 run uav_control sitl_acceptance_driver --ros-args \
+  -p task_id:=sitl-manual-1 -p result_path:=/tmp/sitl-manual-1.json
 ```
 
 An aligned simulated visual observation can be streamed without opening a
@@ -144,3 +155,142 @@ GPIO, and PWM remain simulated or absent. Do not use the SITL YAML with a real
 flight controller. Before any propeller-free hardware test, restore real
 datalink/RC policies, disable automatic arming by default, add a physical
 payload inhibit, and perform a new hardware-specific safety review.
+
+## Stage 4C-3A real-Pixhawk propeller-free entry
+
+`uav_mission_stage4c_hardware_bench.launch.py` is a fail-closed monitoring
+entry for a later, separately authorized propeller-free bench:
+
+```bash
+ros2 launch uav_control uav_mission_stage4c_hardware_bench.launch.py
+```
+
+Its dedicated YAML sets `simulation_mode=false`, `enable_control=false`,
+`enable_auto_arm=false`, `confirm_sitl_only=false`, `dry_run=true`, and
+`physical_release_enabled=false`. It deliberately does not launch
+`mission_offboard_controller`, so the launch graph contains no PX4 input
+publisher. Conflicting bench settings remain rejected if the controller is
+started separately. This entry has not been used to connect or control a real
+Pixhawk in stage 4C-3A.
+
+The flight computer software runs on the Raspberry Pi; it is not flashed into
+the Pixhawk. Before a later hardware bench, remove all propellers physically,
+verify the PX4/RC/datalink/kill-switch policy independently, and retain an
+external power-removal path. Software switches are not physical safety
+interlocks. Installing propellers, real flight, real payload release, servo
+wiring, GPIO, and PWM are prohibited at this stage.
+
+`takeoff_height_m` is the authoritative positive height in metres above the
+recorded local-NED Home. The generated PX4 target is
+`home_z - takeoff_height_m`, because NED z is positive downward.
+`target_altitude` remains only as a deprecated compatibility parameter; startup
+fails if it differs from `takeoff_height_m`.
+
+PX4 command ACK handling requires a currently pending command, matching command
+number, target identifiers, current task context, and arrival inside the
+current retry window. Duplicate, stale and post-reset ACKs are ignored. PX4
+1.16 ACKs have no caller-generated transaction identifier, so a delayed ACK for
+the same command arriving inside a later retry window cannot be distinguished
+with mathematical certainty. `ACCEPTED` means PX4 accepted the command; mode,
+arming, position and `vehicle_land_detected` still determine action completion.
+
+The car-start protocol uses `protocol_version`, `session_id + start_id`, a
+monotonic per-session sender counter, sender timestamp, command and SHA-256
+integrity field. Accepted identifiers and counters are atomically journaled;
+stale, future, corrupt, wrong-version and replayed envelopes are rejected.
+Reconnect duplicates are reported as
+`ALREADY_PROCESSED`, and the gateway reports `NOT_READY` or `BUSY` instead of
+bypassing `mission_manager`. Reserved protocol types are `CAR_START`,
+`START_ACCEPTED`, `START_REJECTED`, `ABORT`, and `HEARTBEAT`; only the in-memory
+or ROS simulation transport is implemented. No serial device, UDP address or
+ESP32 hardware default is guessed; unsupported transports fail closed.
+
+Payload handling remains dry-run. It atomically journals `ACCEPTED` then
+`EXECUTING`; an uncertain restart or corrupt journal enters `LOCKED`, which
+requires an explicit `RESET_LOCK` operator message. A software `SUCCESS` means
+`DRY_RUN_CONFIRMED` with `physical_action=false`; it does not mean an object
+was released. The physical actuator class is a nonconstructible placeholder.
+
+## Calibrated follow and release closure
+
+After the three-frame acquisition gate, finite fresh image error passes
+configurable axis swap, per-axis sign, normalization scale and camera mounting
+yaw. The resulting body-frame forward/left command is transformed with the
+current finite PX4 NED yaw, then speed- and acceleration-limited before the
+single controller publishes one mixed horizontal-velocity/NED-z setpoint.
+Stage 4C SITL uses an explicit simulated camera calibration. Real camera axis
+directions, scale and mounting rotation remain uncalibrated, so this is not a
+real-aircraft follow authorization.
+
+`follow_stable` requires continuous fresh/confident finite observations,
+both image errors inside the alignment window, and estimated horizontal
+command below `follow_stable_speed_mps` for the configured duration. Leaving
+the window resets the timer. Short loss holds the 1.50 m NED height and ramps
+horizontal velocity toward zero; long loss follows the existing reacquisition
+or safe-return path. Release is requested once only after this stable gate,
+and every dry-run terminal result exits follow control toward recorded-Home
+return and PX4 landing. `ACCEPTED` LAND ACK is not landing confirmation;
+`vehicle_land_detected.landed` is required before `COMPLETE`.
+
+## Heading-locked bounded car search
+
+After the 1.50 m relative-Home takeoff and continuous three-second hover, the
+intercept phase precedes `SEARCH_CAR`. On search entry the manager locks the
+finite PX4 local-NED heading and position. The configured body-forward speed is
+`search_speed_mps=0.18`; local velocity is
+`vx=speed*cos(search_heading)`, `vy=speed*sin(search_heading)`. A mixed
+trajectory setpoint uses horizontal velocity while holding
+`home_z-takeoff_height_m`, so NED z retains the accepted 1.50 m cruise height.
+
+Horizontal search velocity is acceleration-limited at 0.10 m/s² and
+magnitude-limited to 0.18 m/s. A single detection only
+enters `ACQUIRE_CAR`, which continues the same search output. Three consecutive
+fresh, finite observations with confidence at least 0.60 are required before
+`FOLLOW_CAR`. Candidate loss returns to SEARCH without switching controllers.
+Search is bounded to 15 seconds and 3.0 m from its locked origin; either bound
+uses the existing `ABORT_RETURN` path. The global 90-second timeout remains.
+
+## Stage 4C-3D adapter and restart-safety closure
+
+The car-start gateway now has a fail-closed transport selection contract for
+`simulation`, `serial`, and `udp`. Only `simulation` is implemented. Serial or
+UDP selection requires an explicit real-transport enable plus all endpoint
+parameters, then still refuses construction because no reviewed device adapter
+exists. No device, socket, address, baud rate, or port is guessed. Simulation
+and future adapters feed the same versioned, timestamped, checksummed
+`StartProtocol`. A fresh heartbeat and the mission manager's PX4-aware
+readiness are both required before a start is accepted. Heartbeat loss during
+an active mission uses the named `start_transport_lost` safe-return path.
+Consumed start identifiers and sender counters remain in the atomically
+written start journal; a corrupt journal closes the gate.
+
+The vision contract explicitly declares image width and height, whether errors
+are pixels or normalized values, and `calibration_valid`. Pixel errors are
+normalized before the existing configurable axis swap, signs, scale, camera
+mount rotation, body-forward/left mapping, and yaw-based NED rotation.
+`real_vision_enabled=false` in every supplied configuration. Real mode refuses
+startup without dimensions and valid calibration, and the current package
+still refuses it after validation because no camera/detector adapter has been
+reviewed. SITL alone uses an explicit 640x480 normalized simulated calibration.
+
+The payload journal writes both its compatibility state and an unambiguous
+ledger state: `REQUEST_ACCEPTED`, `EXECUTION_STARTED`,
+`DRY_RUN_CONFIRMED`, `FAILED_SAFE`, or `UNKNOWN_LOCKED`. An
+`EXECUTION_STARTED` restart, corrupt file, or atomic-write failure restores
+`UNKNOWN_LOCKED`; it never retries automatically. Duplicate release IDs return
+their persisted terminal result without executing again. `PHYSICAL_CONFIRMED`
+is reserved but cannot be produced: the physical actuator placeholder still
+refuses construction and all supplied configurations keep
+`physical_release_enabled=false`.
+
+Each result reports `process_execution_count`, which starts at zero for each
+node process, and the atomically persisted `historical_execution_count`.
+Replaying a completed release after restart therefore returns the prior
+terminal result with a process count of zero while preserving the lifetime
+execution total.
+
+The ROS workspace's `src/uav_control` must resolve to the Git-tracked source
+at `/home/a-corn/XTU-uav-vision-control-git/src/uav_control`. This avoids
+building a stale copied package. The old workspace copy and its previous local
+build/install package directories were preserved outside the workspace at
+`/home/a-corn/px4_ros2_ws_4c3d_backups_20260730`; they are not runtime inputs.
