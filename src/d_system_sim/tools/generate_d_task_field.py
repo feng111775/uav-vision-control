@@ -26,6 +26,15 @@ def visual_box(name, x, y, z, sx, sy, sz, yaw, color):
       </visual>"""
 
 
+def visual_cylinder(name, x, y, z, radius, length, color):
+    return f"""      <visual name="{name}">
+        <pose>{x:.9f} {y:.9f} {z:.6f} 0 0 0</pose>
+        <geometry><cylinder><radius>{radius:.9f}</radius><length>{length:.6f}</length></cylinder></geometry>
+        <material><ambient>{color}</ambient><diffuse>{color}</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>"""
+
+
 def segment(name, ax, ay, bx, by, width):
     dx, dy = bx - ax, by - ay
     return visual_box(
@@ -66,11 +75,10 @@ def generate(config_path, output_path):
                 cx + radius * math.cos(a0), center_y + radius * math.sin(a0),
                 cx + radius * math.cos(a1), center_y + radius * math.sin(a1),
                 line_width))
-    # H is a non-track gray reference marker, parameterized for later joint simulation.
-    visuals.append(visual_box(
-        "h_reference", p["h_marker_x_m"], p["h_marker_y_m"], 0.001,
-        p["h_marker_size_m"], p["h_marker_size_m"], 0.001, 0,
-        "0.55 0.55 0.55 1"))
+    # Fixed UAV takeoff / landing circle from the official field dimensions.
+    visuals.append(visual_cylinder(
+        "h_takeoff_area", p["h_center_x_m"], p["h_center_y_m"], 0.001,
+        p["h_diameter_m"] / 2.0, 0.001, "0.55 0.55 0.55 1"))
     sdf = f"""<?xml version="1.0"?>
 <sdf version="1.10">
   <world name="d_task_field">

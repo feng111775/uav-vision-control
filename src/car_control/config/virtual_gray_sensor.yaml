@@ -7,10 +7,10 @@ virtual_gray_sensor_node:
     detected_topic: /car/line_sensor/detected  # 是否达到最小激活量。
     total_activation_topic: /car/line_sensor/total_activation  # 所有通道激活量之和。
     publish_rate_hz: 50.0  # 发布频率，Hz。
-    initial_world_x: 1.50  # odom 原点在场地中的 x，m。
-    initial_world_y: 2.00  # odom 原点在场地中的 y，m。
+    initial_world_x: 1.50  # base_link/odom 原点在场地中的 x，m。
+    initial_world_y: 1.80  # base_link/odom 原点在场地中的 y，m；车头在 A 点。
     initial_world_yaw: 1.5707963267948966  # odom 初始航向，rad。
-    sensor_forward_offset_m: 0.15  # 阵列相对车体原点向前距离，m。
+    sensor_forward_offset_m: 0.20  # 阵列相对 base_link 向前距离，m；与物理前端参考重合。
     channel_positions_m: [-0.045, -0.030, -0.015, 0.0, 0.015, 0.030, 0.045]  # 各通道车体+y横向位置，m。
     line_width_m: 0.020  # 题面黑线标称宽度，m。
     sample_width_m: 0.008  # 单路传感器横向有效采样宽度，m。

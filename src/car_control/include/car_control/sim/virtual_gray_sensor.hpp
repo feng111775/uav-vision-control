@@ -13,7 +13,7 @@ namespace car_control::sim
 
 struct VirtualGraySensorConfig
 {
-  double sensor_forward_offset_m{0.15};
+  double sensor_forward_offset_m{0.20};
   std::vector<double> channel_positions_m;
   double line_width_m{0.020};
   double sample_width_m{0.008};

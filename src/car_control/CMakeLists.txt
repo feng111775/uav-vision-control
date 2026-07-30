@@ -7,6 +7,7 @@ endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(ament_cmake REQUIRED)
+find_package(ament_cmake_python REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
@@ -63,6 +64,7 @@ install(DIRECTORY include/ DESTINATION include)
 install(DIRECTORY launch config urdf worlds firmware
   DESTINATION share/${PROJECT_NAME}
 )
+ament_python_install_package(car_control_launch PACKAGE_DIR python/car_control_launch)
 
 if(BUILD_TESTING)
   enable_testing()

@@ -29,11 +29,11 @@ public:
       declare_parameter("total_activation_topic", "/car/line_sensor/total_activation");
     const double rate = declare_parameter("publish_rate_hz", 50.0);
     initial_x_ = declare_parameter("initial_world_x", 1.50);
-    initial_y_ = declare_parameter("initial_world_y", 2.00);
+    initial_y_ = declare_parameter("initial_world_y", 1.80);
     initial_yaw_ = declare_parameter("initial_world_yaw", 1.5707963267948966);
 
     VirtualGraySensorConfig config;
-    config.sensor_forward_offset_m = declare_parameter("sensor_forward_offset_m", 0.15);
+    config.sensor_forward_offset_m = declare_parameter("sensor_forward_offset_m", 0.20);
     config.channel_positions_m = declare_parameter<std::vector<double>>(
       "channel_positions_m", {-0.045, -0.030, -0.015, 0.0, 0.015, 0.030, 0.045});
     config.line_width_m = declare_parameter("line_width_m", 0.020);

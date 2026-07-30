@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
+from car_control_launch.robot_description import make_robot_description
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
@@ -13,7 +14,7 @@ from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import Command, LaunchConfiguration
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
@@ -24,9 +25,7 @@ def generate_launch_description():
     world = str(share / "worlds" / "car_empty_test.sdf")
 
     headless = LaunchConfiguration("headless")
-    description = Command(
-        ["xacro ", xacro_file, " controllers_file:=", controllers]
-    )
+    description = make_robot_description(xacro_file, controllers)
     gz_launch = str(
         Path(get_package_share_directory("ros_gz_sim")) / "launch" / "gz_sim.launch.py"
     )

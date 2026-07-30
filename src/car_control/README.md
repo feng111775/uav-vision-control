@@ -103,8 +103,10 @@ ros2 run car_control car_motion_smoke_node
 `config/virtual_gray_sensor.yaml` 修改。`black_line_is_active` 控制黑/白极性；
 增益、偏置和默认关闭的固定种子噪声也可配置。
 
-里程计以车辆初始位姿为零点，节点使用 `initial_world_x/y/yaw` 做二维刚体变换，
-不能把 odom 零点当作场地左下角。输出为：
+里程计以车辆 `base_link` 初始位姿为零点，节点使用
+`initial_world_x/y/yaw` 做二维刚体变换，不能把 odom 零点当作场地左下角。
+D题默认 `base_link=(1.50,1.80)`、车头参考点与灰度阵列中心均在车体
+`x=+0.20 m`，因而二者世界坐标均为 A 点 `(1.50,2.00)`。输出为：
 
 - `/car/line_sensor/values`：`Float32MultiArray`
 - `/car/line_sensor/error`：`Float64`

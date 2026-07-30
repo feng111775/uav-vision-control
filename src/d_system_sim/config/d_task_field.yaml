@@ -11,7 +11,11 @@ arc_center_x_m: 2.25
 arc_radius_m: 0.75
 start_line_length_m: 0.40
 arc_segments_per_half: 72
-# H 点仅为后续联合仿真参考；尺寸按题图比例建立，后续按赛区实际场地复核。
-h_marker_x_m: 0.75
-h_marker_y_m: 4.25
-h_marker_size_m: 0.20
+# H 无人机固定起降圆：边缘距左、下边界均为 0.75 m。
+h_center_x_m: 1.00
+h_center_y_m: 1.00
+h_diameter_m: 0.50
+# 来自 car_sim.urdf.xacro 实际 chassis 前缘；自动测试强制二者一致。
+car_front_offset_m: 0.20
+# 小车前端置于 A 点时的航向，rad（A 指向 B）。
+car_initial_yaw_rad: 1.5707963267948966

@@ -929,9 +929,9 @@
         <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
         <cast_shadows>false</cast_shadows>
       </visual>
-      <visual name="h_reference">
-        <pose>0.750000000 4.250000000 0.001000 0 0 0.000000000000</pose>
-        <geometry><box><size>0.200000000 0.200000000 0.001000</size></box></geometry>
+      <visual name="h_takeoff_area">
+        <pose>1.000000000 1.000000000 0.001000 0 0 0</pose>
+        <geometry><cylinder><radius>0.250000000</radius><length>0.001000</length></cylinder></geometry>
         <material><ambient>0.55 0.55 0.55 1</ambient><diffuse>0.55 0.55 0.55 1</diffuse></material>
         <cast_shadows>false</cast_shadows>
       </visual>

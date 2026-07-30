@@ -12,7 +12,12 @@ import yaml
 PACKAGE = Path(sys.argv[1]).resolve()
 XACRO = PACKAGE / "urdf" / "car_sim.urdf.xacro"
 CONFIG = PACKAGE / "config" / "car_controllers.yaml"
+SENSOR_CONFIG = PACKAGE / "config" / "virtual_gray_sensor.yaml"
+FIELD_CONFIG = PACKAGE.parent / "d_system_sim" / "config" / "d_task_field.yaml"
 WORLD = PACKAGE / "worlds" / "car_empty_test.sdf"
+DESCRIPTION_HELPER = PACKAGE / "python" / "car_control_launch" / "robot_description.py"
+BASIC_LAUNCH = PACKAGE / "launch" / "car_basic_sim.launch.py"
+D_TASK_LAUNCH = PACKAGE.parent / "d_system_sim" / "launch" / "d_task_car_sensor.launch.py"
 
 
 class CarSimulationStaticTest(unittest.TestCase):
@@ -24,6 +29,9 @@ class CarSimulationStaticTest(unittest.TestCase):
         cls.urdf_text = result.stdout
         cls.root = ET.fromstring(result.stdout)
         cls.config = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
+        cls.sensor_config = yaml.safe_load(
+            SENSOR_CONFIG.read_text(encoding="utf-8"))["virtual_gray_sensor_node"]["ros__parameters"]
+        cls.field_config = yaml.safe_load(FIELD_CONFIG.read_text(encoding="utf-8"))
 
     def test_required_joints_and_control_plugin(self):
         joints = {node.attrib["name"]: node for node in self.root.findall("joint")}
@@ -71,12 +79,48 @@ class CarSimulationStaticTest(unittest.TestCase):
         self.assertFalse(params["open_loop"])
         self.assertTrue(params["position_feedback"])
 
+    def test_front_reference_matches_physical_front_and_sensor(self):
+        chassis = self.root.find("link[@name='chassis_link']/collision/geometry/box")
+        chassis_length = float(chassis.attrib["size"].split()[0])
+        joint = self.root.find("joint[@name='car_front_reference_joint']")
+        self.assertIsNotNone(joint)
+        self.assertEqual(joint.find("parent").attrib["link"], "base_link")
+        front_offset = float(joint.find("origin").attrib["xyz"].split()[0])
+        self.assertAlmostEqual(front_offset, chassis_length / 2.0)
+        self.assertAlmostEqual(
+            front_offset, float(self.sensor_config["sensor_forward_offset_m"]))
+        self.assertAlmostEqual(
+            front_offset, float(self.field_config["car_front_offset_m"]))
+        yaw = float(self.field_config["car_initial_yaw_rad"])
+        base_x = float(self.sensor_config["initial_world_x"])
+        base_y = float(self.sensor_config["initial_world_y"])
+        self.assertAlmostEqual(
+            base_x + front_offset * math.cos(yaw),
+            float(self.field_config["left_x_m"]))
+        self.assertAlmostEqual(
+            base_y + front_offset * math.sin(yaw),
+            float(self.field_config["lower_y_m"]))
+
     def test_world_is_local_and_valid_xml(self):
         world_text = WORLD.read_text(encoding="utf-8")
         ET.fromstring(world_text)
         lowered = world_text.lower()
         for forbidden in ("ht" + "tp:", "ht" + "tps:", "fuel." + "gazebosim"):
             self.assertNotIn(forbidden, lowered)
+
+    def test_launches_share_explicit_string_robot_description(self):
+        helper = DESCRIPTION_HELPER.read_text(encoding="utf-8")
+        self.assertIn("ParameterValue(content, value_type=str)", helper)
+        self.assertIn("content = Command(", helper)
+        for launch in (BASIC_LAUNCH, D_TASK_LAUNCH):
+            text = launch.read_text(encoding="utf-8")
+            self.assertIn(
+                "from car_control_launch.robot_description import "
+                "make_robot_description", text)
+            self.assertIn("description = make_robot_description(", text)
+            self.assertNotIn('"robot_description": Command(', text)
+        self.assertIn("<robot", self.urdf_text)
+        ET.fromstring(self.urdf_text)
 
 
 if __name__ == "__main__":
