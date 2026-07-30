@@ -10,6 +10,7 @@ find_package(ament_cmake REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(std_msgs REQUIRED)
 
 add_library(car_control_health src/health.cpp)
 target_include_directories(car_control_health
@@ -31,6 +32,19 @@ add_library(car_control_core
 
 add_executable(car_motion_smoke_node src/sim/car_motion_smoke_node.cpp)
 ament_target_dependencies(car_motion_smoke_node rclcpp geometry_msgs nav_msgs)
+add_library(car_control_sim
+  src/sim/d_task_track_geometry.cpp
+  src/sim/virtual_gray_sensor.cpp
+)
+target_include_directories(car_control_sim
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(car_control_sim PUBLIC car_control_core)
+add_executable(virtual_gray_sensor_node src/sim/virtual_gray_sensor_node.cpp)
+ament_target_dependencies(virtual_gray_sensor_node rclcpp nav_msgs std_msgs)
+target_link_libraries(virtual_gray_sensor_node car_control_sim)
 target_include_directories(car_control_core
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -38,13 +52,13 @@ target_include_directories(car_control_core
 )
 
 install(
-  TARGETS car_control_health car_control_core
+  TARGETS car_control_health car_control_core car_control_sim
   EXPORT export_car_control
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
 )
-install(TARGETS car_motion_smoke_node DESTINATION lib/${PROJECT_NAME})
+install(TARGETS car_motion_smoke_node virtual_gray_sensor_node DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY include/ DESTINATION include)
 install(DIRECTORY launch config urdf worlds firmware
   DESTINATION share/${PROJECT_NAME}
@@ -78,6 +92,10 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/test/test_car_sim_static.py
       ${CMAKE_CURRENT_SOURCE_DIR}
   )
+  add_executable(test_virtual_gray_sensor test/test_virtual_gray_sensor.cpp)
+  target_include_directories(test_virtual_gray_sensor PRIVATE test)
+  target_link_libraries(test_virtual_gray_sensor PRIVATE car_control_sim)
+  add_test(NAME car_control_virtual_gray_sensor_test COMMAND test_virtual_gray_sensor)
 endif()
 
 ament_export_targets(export_car_control HAS_LIBRARY_TARGET)

@@ -1,0 +1,22 @@
+virtual_gray_sensor_node:
+  ros__parameters:
+    use_sim_time: true  # 使用 Gazebo /clock。
+    odom_topic: /diff_drive_controller/odom  # 车体局部里程计输入。
+    values_topic: /car/line_sensor/values  # 各路归一化灰度值 [0,1]。
+    error_topic: /car/line_sensor/error  # 阶段2估计器输出的归一化横向误差。
+    detected_topic: /car/line_sensor/detected  # 是否达到最小激活量。
+    total_activation_topic: /car/line_sensor/total_activation  # 所有通道激活量之和。
+    publish_rate_hz: 50.0  # 发布频率，Hz。
+    initial_world_x: 1.50  # odom 原点在场地中的 x，m。
+    initial_world_y: 2.00  # odom 原点在场地中的 y，m。
+    initial_world_yaw: 1.5707963267948966  # odom 初始航向，rad。
+    sensor_forward_offset_m: 0.15  # 阵列相对车体原点向前距离，m。
+    channel_positions_m: [-0.045, -0.030, -0.015, 0.0, 0.015, 0.030, 0.045]  # 各通道车体+y横向位置，m。
+    line_width_m: 0.020  # 题面黑线标称宽度，m。
+    sample_width_m: 0.008  # 单路传感器横向有效采样宽度，m。
+    black_line_is_active: true  # true 表示黑线产生激活（低灰度）。
+    minimum_activation: 0.20  # 判定检测到线的总激活量阈值。
+    brightness_gain: 1.0  # 原始灰度的无量纲增益。
+    brightness_bias: 0.0  # 增益后的无量纲偏置。
+    noise_stddev: 0.0  # 高斯灰度噪声标准差；0 为关闭。
+    random_seed: 2026  # 噪声伪随机固定种子。

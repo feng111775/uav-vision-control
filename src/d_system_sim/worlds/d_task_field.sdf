@@ -1,0 +1,941 @@
+<?xml version="1.0"?>
+<sdf version="1.10">
+  <world name="d_task_field">
+    <gravity>0 0 -9.8</gravity>
+    <physics name="step" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+    <scene><ambient>0.8 0.8 0.8 1</ambient><background>0.7 0.8 0.9 1</background></scene>
+    <light name="sun" type="directional">
+      <pose>2 2 10 0 0 0</pose><direction>-0.2 0.2 -1</direction>
+      <diffuse>0.9 0.9 0.9 1</diffuse>
+    </light>
+    <model name="d_task_field_surface">
+      <static>true</static><link name="field_link">
+        <collision name="field_collision">
+          <pose>2.000 2.500 -0.010 0 0 0</pose>
+          <geometry><box><size>4.000 5.000 0.020</size></box></geometry>
+        </collision>
+      <visual name="field_white">
+        <pose>2.000000000 2.500000000 -0.005000 0 0 0.000000000000</pose>
+        <geometry><box><size>4.000000000 5.000000000 0.010000</size></box></geometry>
+        <material><ambient>0.95 0.95 0.95 1</ambient><diffuse>0.95 0.95 0.95 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="border_bottom">
+        <pose>2.000000000 0.000000000 0.001000 0 0 0.000000000000</pose>
+        <geometry><box><size>4.000200000 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="border_top">
+        <pose>2.000000000 5.000000000 0.001000 0 0 0.000000000000</pose>
+        <geometry><box><size>4.000200000 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="border_left">
+        <pose>0.000000000 2.500000000 0.001000 0 0 1.570796326795</pose>
+        <geometry><box><size>5.000200000 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="border_right">
+        <pose>4.000000000 2.500000000 0.001000 0 0 1.570796326795</pose>
+        <geometry><box><size>5.000200000 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_left">
+        <pose>1.500000000 2.750000000 0.001000 0 0 1.570796326795</pose>
+        <geometry><box><size>1.500200000 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_right">
+        <pose>3.000000000 2.750000000 0.001000 0 0 1.570796326795</pose>
+        <geometry><box><size>1.500200000 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="start_line_a">
+        <pose>1.500000000 2.000000000 0.001000 0 0 0.000000000000</pose>
+        <geometry><box><size>0.400200000 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_000">
+        <pose>1.500356917 3.516357270 0.001000 0 0 1.548979711145</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_001">
+        <pose>1.501783905 3.549040674 0.001000 0 0 1.505346479845</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_002">
+        <pose>1.504635165 3.581630726 0.001000 0 0 1.461713248545</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_003">
+        <pose>1.508905270 3.614065389 0.001000 0 0 1.418080017245</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_004">
+        <pose>1.514586090 3.646282922 0.001000 0 0 1.374446785946</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_005">
+        <pose>1.521666812 3.678221997 0.001000 0 0 1.330813554646</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_006">
+        <pose>1.530133959 3.709821817 0.001000 0 0 1.287180323346</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_007">
+        <pose>1.539971411 3.741022229 0.001000 0 0 1.243547092046</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_008">
+        <pose>1.551160443 3.771763841 0.001000 0 0 1.199913860746</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_009">
+        <pose>1.563679755 3.801988135 0.001000 0 0 1.156280629446</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_010">
+        <pose>1.577505517 3.831637578 0.001000 0 0 1.112647398146</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_011">
+        <pose>1.592611411 3.860655730 0.001000 0 0 1.069014166847</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_012">
+        <pose>1.608968681 3.888987353 0.001000 0 0 1.025380935547</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_013">
+        <pose>1.626546191 3.916578517 0.001000 0 0 0.981747704247</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_014">
+        <pose>1.645310481 3.943376700 0.001000 0 0 0.938114472947</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_015">
+        <pose>1.665225831 3.969330890 0.001000 0 0 0.894481241647</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_016">
+        <pose>1.686254333 3.994391681 0.001000 0 0 0.850848010347</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_017">
+        <pose>1.708355956 4.018511371 0.001000 0 0 0.807214779047</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_018">
+        <pose>1.731488629 4.041644044 0.001000 0 0 0.763581547748</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_019">
+        <pose>1.755608319 4.063745667 0.001000 0 0 0.719948316448</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_020">
+        <pose>1.780669110 4.084774169 0.001000 0 0 0.676315085148</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_021">
+        <pose>1.806623300 4.104689519 0.001000 0 0 0.632681853848</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_022">
+        <pose>1.833421483 4.123453809 0.001000 0 0 0.589048622548</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_023">
+        <pose>1.861012647 4.141031319 0.001000 0 0 0.545415391248</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_024">
+        <pose>1.889344270 4.157388589 0.001000 0 0 0.501782159948</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_025">
+        <pose>1.918362422 4.172494483 0.001000 0 0 0.458148928649</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_026">
+        <pose>1.948011865 4.186320245 0.001000 0 0 0.414515697349</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_027">
+        <pose>1.978236159 4.198839557 0.001000 0 0 0.370882466049</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_028">
+        <pose>2.008977771 4.210028589 0.001000 0 0 0.327249234749</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_029">
+        <pose>2.040178183 4.219866041 0.001000 0 0 0.283616003449</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_030">
+        <pose>2.071778003 4.228333188 0.001000 0 0 0.239982772149</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_031">
+        <pose>2.103717078 4.235413910 0.001000 0 0 0.196349540849</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_032">
+        <pose>2.135934611 4.241094730 0.001000 0 0 0.152716309550</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_033">
+        <pose>2.168369274 4.245364835 0.001000 0 0 0.109083078250</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_034">
+        <pose>2.200959326 4.248216095 0.001000 0 0 0.065449846950</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_035">
+        <pose>2.233642730 4.249643083 0.001000 0 0 0.021816615650</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_036">
+        <pose>2.266357270 4.249643083 0.001000 0 0 -0.021816615650</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_037">
+        <pose>2.299040674 4.248216095 0.001000 0 0 -0.065449846950</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_038">
+        <pose>2.331630726 4.245364835 0.001000 0 0 -0.109083078250</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_039">
+        <pose>2.364065389 4.241094730 0.001000 0 0 -0.152716309549</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_040">
+        <pose>2.396282922 4.235413910 0.001000 0 0 -0.196349540849</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_041">
+        <pose>2.428221997 4.228333188 0.001000 0 0 -0.239982772149</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_042">
+        <pose>2.459821817 4.219866041 0.001000 0 0 -0.283616003449</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_043">
+        <pose>2.491022229 4.210028589 0.001000 0 0 -0.327249234749</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_044">
+        <pose>2.521763841 4.198839557 0.001000 0 0 -0.370882466049</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_045">
+        <pose>2.551988135 4.186320245 0.001000 0 0 -0.414515697349</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_046">
+        <pose>2.581637578 4.172494483 0.001000 0 0 -0.458148928649</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_047">
+        <pose>2.610655730 4.157388589 0.001000 0 0 -0.501782159948</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_048">
+        <pose>2.638987353 4.141031319 0.001000 0 0 -0.545415391248</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_049">
+        <pose>2.666578517 4.123453809 0.001000 0 0 -0.589048622548</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_050">
+        <pose>2.693376700 4.104689519 0.001000 0 0 -0.632681853848</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_051">
+        <pose>2.719330890 4.084774169 0.001000 0 0 -0.676315085148</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_052">
+        <pose>2.744391681 4.063745667 0.001000 0 0 -0.719948316448</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_053">
+        <pose>2.768511371 4.041644044 0.001000 0 0 -0.763581547748</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_054">
+        <pose>2.791644044 4.018511371 0.001000 0 0 -0.807214779047</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_055">
+        <pose>2.813745667 3.994391681 0.001000 0 0 -0.850848010347</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_056">
+        <pose>2.834774169 3.969330890 0.001000 0 0 -0.894481241647</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_057">
+        <pose>2.854689519 3.943376700 0.001000 0 0 -0.938114472947</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_058">
+        <pose>2.873453809 3.916578517 0.001000 0 0 -0.981747704247</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_059">
+        <pose>2.891031319 3.888987353 0.001000 0 0 -1.025380935547</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_060">
+        <pose>2.907388589 3.860655730 0.001000 0 0 -1.069014166847</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_061">
+        <pose>2.922494483 3.831637578 0.001000 0 0 -1.112647398146</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_062">
+        <pose>2.936320245 3.801988135 0.001000 0 0 -1.156280629446</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_063">
+        <pose>2.948839557 3.771763841 0.001000 0 0 -1.199913860746</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_064">
+        <pose>2.960028589 3.741022229 0.001000 0 0 -1.243547092046</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_065">
+        <pose>2.969866041 3.709821817 0.001000 0 0 -1.287180323346</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_066">
+        <pose>2.978333188 3.678221997 0.001000 0 0 -1.330813554646</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_067">
+        <pose>2.985413910 3.646282922 0.001000 0 0 -1.374446785946</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_068">
+        <pose>2.991094730 3.614065389 0.001000 0 0 -1.418080017245</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_069">
+        <pose>2.995364835 3.581630726 0.001000 0 0 -1.461713248545</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_070">
+        <pose>2.998216095 3.549040674 0.001000 0 0 -1.505346479845</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_upper_071">
+        <pose>2.999643083 3.516357270 0.001000 0 0 -1.548979711145</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_000">
+        <pose>2.999643083 1.983642730 0.001000 0 0 -1.592612942445</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_001">
+        <pose>2.998216095 1.950959326 0.001000 0 0 -1.636246173745</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_002">
+        <pose>2.995364835 1.918369274 0.001000 0 0 -1.679879405045</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_003">
+        <pose>2.991094730 1.885934611 0.001000 0 0 -1.723512636344</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_004">
+        <pose>2.985413910 1.853717078 0.001000 0 0 -1.767145867644</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_005">
+        <pose>2.978333188 1.821778003 0.001000 0 0 -1.810779098944</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_006">
+        <pose>2.969866041 1.790178183 0.001000 0 0 -1.854412330244</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_007">
+        <pose>2.960028589 1.758977771 0.001000 0 0 -1.898045561544</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_008">
+        <pose>2.948839557 1.728236159 0.001000 0 0 -1.941678792844</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_009">
+        <pose>2.936320245 1.698011865 0.001000 0 0 -1.985312024144</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_010">
+        <pose>2.922494483 1.668362422 0.001000 0 0 -2.028945255443</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_011">
+        <pose>2.907388589 1.639344270 0.001000 0 0 -2.072578486743</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_012">
+        <pose>2.891031319 1.611012647 0.001000 0 0 -2.116211718043</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_013">
+        <pose>2.873453809 1.583421483 0.001000 0 0 -2.159844949343</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_014">
+        <pose>2.854689519 1.556623300 0.001000 0 0 -2.203478180643</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_015">
+        <pose>2.834774169 1.530669110 0.001000 0 0 -2.247111411943</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_016">
+        <pose>2.813745667 1.505608319 0.001000 0 0 -2.290744643243</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_017">
+        <pose>2.791644044 1.481488629 0.001000 0 0 -2.334377874542</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_018">
+        <pose>2.768511371 1.458355956 0.001000 0 0 -2.378011105842</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_019">
+        <pose>2.744391681 1.436254333 0.001000 0 0 -2.421644337142</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_020">
+        <pose>2.719330890 1.415225831 0.001000 0 0 -2.465277568442</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_021">
+        <pose>2.693376700 1.395310481 0.001000 0 0 -2.508910799742</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_022">
+        <pose>2.666578517 1.376546191 0.001000 0 0 -2.552544031042</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_023">
+        <pose>2.638987353 1.358968681 0.001000 0 0 -2.596177262342</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_024">
+        <pose>2.610655730 1.342611411 0.001000 0 0 -2.639810493641</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_025">
+        <pose>2.581637578 1.327505517 0.001000 0 0 -2.683443724941</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_026">
+        <pose>2.551988135 1.313679755 0.001000 0 0 -2.727076956241</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_027">
+        <pose>2.521763841 1.301160443 0.001000 0 0 -2.770710187541</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_028">
+        <pose>2.491022229 1.289971411 0.001000 0 0 -2.814343418841</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_029">
+        <pose>2.459821817 1.280133959 0.001000 0 0 -2.857976650141</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_030">
+        <pose>2.428221997 1.271666812 0.001000 0 0 -2.901609881441</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_031">
+        <pose>2.396282922 1.264586090 0.001000 0 0 -2.945243112740</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_032">
+        <pose>2.364065389 1.258905270 0.001000 0 0 -2.988876344040</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_033">
+        <pose>2.331630726 1.254635165 0.001000 0 0 -3.032509575340</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_034">
+        <pose>2.299040674 1.251783905 0.001000 0 0 -3.076142806640</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_035">
+        <pose>2.266357270 1.250356917 0.001000 0 0 -3.119776037940</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_036">
+        <pose>2.233642730 1.250356917 0.001000 0 0 3.119776037940</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_037">
+        <pose>2.200959326 1.251783905 0.001000 0 0 3.076142806640</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_038">
+        <pose>2.168369274 1.254635165 0.001000 0 0 3.032509575340</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_039">
+        <pose>2.135934611 1.258905270 0.001000 0 0 2.988876344040</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_040">
+        <pose>2.103717078 1.264586090 0.001000 0 0 2.945243112740</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_041">
+        <pose>2.071778003 1.271666812 0.001000 0 0 2.901609881441</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_042">
+        <pose>2.040178183 1.280133959 0.001000 0 0 2.857976650141</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_043">
+        <pose>2.008977771 1.289971411 0.001000 0 0 2.814343418841</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_044">
+        <pose>1.978236159 1.301160443 0.001000 0 0 2.770710187541</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_045">
+        <pose>1.948011865 1.313679755 0.001000 0 0 2.727076956241</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_046">
+        <pose>1.918362422 1.327505517 0.001000 0 0 2.683443724941</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_047">
+        <pose>1.889344270 1.342611411 0.001000 0 0 2.639810493641</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_048">
+        <pose>1.861012647 1.358968681 0.001000 0 0 2.596177262342</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_049">
+        <pose>1.833421483 1.376546191 0.001000 0 0 2.552544031042</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_050">
+        <pose>1.806623300 1.395310481 0.001000 0 0 2.508910799742</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_051">
+        <pose>1.780669110 1.415225831 0.001000 0 0 2.465277568442</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_052">
+        <pose>1.755608319 1.436254333 0.001000 0 0 2.421644337142</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_053">
+        <pose>1.731488629 1.458355956 0.001000 0 0 2.378011105842</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_054">
+        <pose>1.708355956 1.481488629 0.001000 0 0 2.334377874542</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_055">
+        <pose>1.686254333 1.505608319 0.001000 0 0 2.290744643243</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_056">
+        <pose>1.665225831 1.530669110 0.001000 0 0 2.247111411943</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_057">
+        <pose>1.645310481 1.556623300 0.001000 0 0 2.203478180643</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_058">
+        <pose>1.626546191 1.583421483 0.001000 0 0 2.159844949343</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_059">
+        <pose>1.608968681 1.611012647 0.001000 0 0 2.116211718043</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_060">
+        <pose>1.592611411 1.639344270 0.001000 0 0 2.072578486743</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_061">
+        <pose>1.577505517 1.668362422 0.001000 0 0 2.028945255443</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_062">
+        <pose>1.563679755 1.698011865 0.001000 0 0 1.985312024144</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_063">
+        <pose>1.551160443 1.728236159 0.001000 0 0 1.941678792844</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_064">
+        <pose>1.539971411 1.758977771 0.001000 0 0 1.898045561544</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_065">
+        <pose>1.530133959 1.790178183 0.001000 0 0 1.854412330244</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_066">
+        <pose>1.521666812 1.821778003 0.001000 0 0 1.810779098944</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_067">
+        <pose>1.514586090 1.853717078 0.001000 0 0 1.767145867644</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_068">
+        <pose>1.508905270 1.885934611 0.001000 0 0 1.723512636344</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_069">
+        <pose>1.504635165 1.918369274 0.001000 0 0 1.679879405045</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_070">
+        <pose>1.501783905 1.950959326 0.001000 0 0 1.636246173745</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="track_lower_071">
+        <pose>1.500356917 1.983642730 0.001000 0 0 1.592612942445</pose>
+        <geometry><box><size>0.032922328 0.020000000 0.001000</size></box></geometry>
+        <material><ambient>0.01 0.01 0.01 1</ambient><diffuse>0.01 0.01 0.01 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      <visual name="h_reference">
+        <pose>0.750000000 4.250000000 0.001000 0 0 0.000000000000</pose>
+        <geometry><box><size>0.200000000 0.200000000 0.001000</size></box></geometry>
+        <material><ambient>0.55 0.55 0.55 1</ambient><diffuse>0.55 0.55 0.55 1</diffuse></material>
+        <cast_shadows>false</cast_shadows>
+      </visual>
+      </link>
+    </model>
+  </world>
+</sdf>

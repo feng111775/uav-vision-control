@@ -94,11 +94,32 @@ ros2 run car_control car_motion_smoke_node
 测试会低速直行、转弯、停止并验证车轮反馈里程计和 0.5 s 命令超时。停止仿真时
 在 launch 终端按 `Ctrl-C`，等待 Gazebo、桥接和 ROS 节点全部退出。
 
+## 虚拟多路灰度阵列（阶段4A）
+
+`virtual_gray_sensor_node` 不使用摄像头或 OpenCV。模型把配置的每路采样位置从车体
+坐标（+x 向前、+y 向左，单位 m）变换到场地坐标，计算有限宽度采样区域到
+2 cm 跑道中心线的覆盖率，并用连续边缘生成 `[0,1]` 灰度。默认 7 路位置为
+`[-0.045,-0.030,-0.015,0,0.015,0.030,0.045] m`，路数和位置均可在
+`config/virtual_gray_sensor.yaml` 修改。`black_line_is_active` 控制黑/白极性；
+增益、偏置和默认关闭的固定种子噪声也可配置。
+
+里程计以车辆初始位姿为零点，节点使用 `initial_world_x/y/yaw` 做二维刚体变换，
+不能把 odom 零点当作场地左下角。输出为：
+
+- `/car/line_sensor/values`：`Float32MultiArray`
+- `/car/line_sensor/error`：`Float64`
+- `/car/line_sensor/detected`：`Bool`
+- `/car/line_sensor/total_activation`：`Float64`
+
+误差、检测和激活量复用阶段2 `LineErrorEstimator`。本节点只发布传感器结果，不发布
+速度或电机命令，也不控制车辆。本模型用于可重复仿真；真实灰度传感器仍需在真车上
+标定采样范围、极性、阈值、安装位置及环境光影响。
+
 ## 当前完成与未实现内容
 
 当前已完成 8 个核心模块及其 9 项测试，以及 Gazebo Harmonic 差速小车基础运动
-模型。灰度传感器、黑色循线赛道、A/B/C/D 比赛场地、自主循线 ROS 节点、
-无线通信、MCU 真车驱动、地面站界面和 PX4 联合仿真均不在本阶段实现范围。
+模型及确定性虚拟灰度阵列。自主循线 ROS 节点、无线通信、MCU 真车驱动、
+地面站界面和 PX4 联合仿真均不在本阶段实现范围。
 
 ## 构建、测试与运行
 

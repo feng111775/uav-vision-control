@@ -16,6 +16,7 @@ setup(
         (os.path.join("share", package_name, "config"), glob("config/*")),
         (os.path.join("share", package_name, "worlds"), glob("worlds/*")),
         (os.path.join("share", package_name, "models"), glob("models/*")),
+        (os.path.join("share", package_name, "tools"), glob("tools/*")),
     ],
     install_requires=["setuptools"],
     tests_require=["pytest"],

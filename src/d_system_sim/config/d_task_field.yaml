@@ -1,0 +1,17 @@
+# 2026 年全国大学生电子设计竞赛 D 题场地图参数（SI 单位）。
+field_width_m: 4.00
+field_height_m: 5.00
+line_width_m: 0.020
+border_width_m: 0.020
+left_x_m: 1.50
+right_x_m: 3.00
+lower_y_m: 2.00
+upper_y_m: 3.50
+arc_center_x_m: 2.25
+arc_radius_m: 0.75
+start_line_length_m: 0.40
+arc_segments_per_half: 72
+# H 点仅为后续联合仿真参考；尺寸按题图比例建立，后续按赛区实际场地复核。
+h_marker_x_m: 0.75
+h_marker_y_m: 4.25
+h_marker_size_m: 0.20
