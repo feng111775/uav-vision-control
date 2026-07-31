@@ -33,7 +33,9 @@ def run():
         enable_timing=TIMING_ENABLED)
     protocol = TargetProtocol(transport=PROTOCOL_TRANSPORT,
                               usb_vcp_id=USB_VCP_ID)
+    detector.set_diagnostic_writer(protocol._diagnostic_writer)
     protocol.send_boot()
+    protocol.send_config()
     clock = time.clock()
     last_output_ms = pyb.millis(); frame_sequence = 0
     last_log_ms = last_output_ms; last_status_ms = last_output_ms
@@ -57,7 +59,7 @@ def run():
                                         pyb.millis(), last_error_ms)
         if image is not None:
             try:
-                result = detector.detect(image)
+                result = detector.detect(image, 'SEARCH') if hasattr(detector, 'track') else detector.detect(image)
                 result = result if isinstance(result, dict) else None
                 last_status = (result or {}).get('status', 'LOST')
                 algorithm_ok = result is not None
@@ -90,6 +92,7 @@ def run():
             except Exception:
                 pass
             last_log_ms = now_ms
+        detector.emit_diagnostics(now_ms)
         if TIMING_ENABLED and pyb.elapsed_millis(last_timing_ms) >= TIMING_LOG_PERIOD_MS:
             for name, values in detector.timing.summary().items():
                 protocol._diagnostic_writer.write(

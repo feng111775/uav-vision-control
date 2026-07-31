@@ -8,9 +8,10 @@ except ImportError:  # PC tests
     USB_VCP = None
 
 try:
-    from config import PROTOCOL_TRANSPORT, USB_VCP_ID
+    from config import PROTOCOL_TRANSPORT, USB_VCP_ID, format_runtime_config_line
 except ImportError:
     PROTOCOL_TRANSPORT, USB_VCP_ID = 'stdout', 0
+    format_runtime_config_line = None
 
 
 MODES = ('MISSION_IDLE', 'SEARCH', 'ACQUIRE', 'FOLLOW', 'DROP_ALIGN')
@@ -165,6 +166,11 @@ class TargetProtocol:
         return self._send_payload('D_BOOT_V2,transport=%s,vcp_id=%d,backend=%s\n' %
                                   (self.transport, self.usb_vcp_id,
                                    _config_backend()), None)
+
+    def send_config(self):
+        if format_runtime_config_line is None:
+            return False
+        return self._send_payload(format_runtime_config_line(), None)
 
     def send_status_v2(self, frame_sequence, mode, camera_ok, algorithm_ok,
                        fps, now_ms=None):

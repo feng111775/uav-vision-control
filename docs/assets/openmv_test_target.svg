@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="210.0mm" height="297.0mm" viewBox="0 0 210.0 297.0">
+  <rect width="100%" height="100%" fill="white"/>
+  <circle cx="105.0" cy="148.5" r="80.0" fill="none" stroke="black" stroke-width="8.0"/>
+  <circle cx="105.0" cy="148.5" r="48.0" fill="none" stroke="black" stroke-width="8.0"/>
+  <rect x="101.0" y="116.5" width="8.0" height="64.0" fill="black"/>
+  <rect x="73.0" y="144.5" width="64.0" height="8.0" fill="black"/>
+  <text x="20.0" y="277.0" font-size="6" fill="black">OpenMV calibration target only · outer 160 mm · inner 96 mm · ratio 0.60</text>
+</svg>
