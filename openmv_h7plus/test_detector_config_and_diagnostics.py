@@ -80,6 +80,33 @@ def test_blob_filters_report_no_blob_and_size_rejects():
     assert instance.diagnostics.reject_counts['BLOB_TOO_SMALL'] >= 1
 
 
+def test_verify_roi_clamp_does_not_mark_complete_blob_as_edge_clipped():
+    instance = detector.DTaskDetector()
+    image = SearchImage([Blob(80, 70, 160, 160)])
+    regions = instance._search_regions(image, (0, 0, 320, 240), include_fallback=False)
+    assert regions
+    assert regions[0]['verify_roi_clamped'] is True
+    assert regions[0]['edge_clipped'] is False
+
+
+def test_original_blob_at_edge_is_edge_clipped():
+    instance = detector.DTaskDetector()
+    image = SearchImage([Blob(1, 70, 160, 160)])
+    regions = instance._search_regions(image, (0, 0, 320, 240), include_fallback=False)
+    assert regions
+    assert regions[0]['edge_clipped'] is True
+
+
+def test_hough_diagnostics_record_computed_radius_window():
+    instance = detector.DTaskDetector()
+    image = CircleImage([])
+    candidate = {'verify_roi': (20, 20, 100, 100), 'diameter': 60,
+                 'expected_outer_diameter': 60}
+    instance._circle_pairs(image, candidate)
+    assert instance.diagnostics.hough_radius_min > 0
+    assert instance.diagnostics.hough_radius_max >= instance.diagnostics.hough_radius_min
+
+
 def test_wrong_ratio_and_non_concentric_fail_pairs():
     instance = detector.DTaskDetector()
     image = CircleImage([

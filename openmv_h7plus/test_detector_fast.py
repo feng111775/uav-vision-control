@@ -236,6 +236,31 @@ def test_strong_verify_under_5_percent():
     assert verify_count <= 5
 
 
+def test_acquire_gets_two_verification_opportunities():
+    detector = FastV2Detector()
+    detector._search_regions = Mock(return_value=[REGION])
+    detector._circle_pairs = Mock(return_value=[])
+    due_frames = []
+    for _ in range(7):
+        detector.detect(Image(), 'SEARCH')
+        if detector.last_verify_attempt_frame == detector.frame:
+            due_frames.append(detector.frame)
+    assert len(due_frames) >= 2
+    assert due_frames[1] - due_frames[0] == 2
+    assert detector.track.last is None
+
+
+def test_acquire_background_candidate_times_out_to_search():
+    detector = FastV2Detector()
+    detector._search_regions = Mock(return_value=[REGION])
+    detector._circle_pairs = Mock(return_value=[])
+    for _ in range(7):
+        detector.detect(Image(), 'SEARCH')
+    assert detector.diagnostics.acquire_timeout_count >= 1
+    assert detector.verified_track_active is False
+    assert detector.force_full_search is True
+
+
 def test_p99_and_max_reported_in_stats():
     from detector import DetectionStatsReporter
     import io

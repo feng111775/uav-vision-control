@@ -39,6 +39,7 @@ def make_detect_stats_line(**overrides):
         'hough_radius_min': '25.0',
         'hough_radius_max': '35.0',
         'edge_clipped_count': '0',
+        'verify_roi_clamped_count': '1',
         'full_search_reset_count': '1',
         'acquire_timeout_count': '0',
         'verified_track_reset_count': '0',
@@ -52,7 +53,7 @@ def make_detect_stats_line(**overrides):
 
 def test_detect_stats_line_schema_matches_device_layout():
     line = make_detect_stats_line()
-    assert len(line.strip().split(',')) == 35
+    assert len(line.strip().split(',')) == 36
     report = analyze_lines([
         'D_CONFIG,MIN_CONFIDENCE=55,CONFIG_REPEAT_PERIOD_MS=10000\n',
         line,
@@ -64,6 +65,7 @@ def test_detect_stats_line_schema_matches_device_layout():
     assert report['candidate_stage_counts']['candidate_switch_count'] == 5
     assert report['candidate_stage_counts']['verification_grace_frame_count'] == 1
     assert report['candidate_stage_counts']['edge_clipped_count'] == 0
+    assert report['candidate_stage_counts']['verify_roi_clamped_count'] == 1
     assert report['candidate_stage_counts']['full_search_reset_count'] == 1
     assert report['candidate_stage_counts']['acquire_timeout_count'] == 0
     assert report['candidate_stage_counts']['verified_track_reset_count'] == 0

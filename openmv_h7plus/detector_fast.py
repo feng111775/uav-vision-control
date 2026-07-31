@@ -4,7 +4,7 @@ import math
 from detector import DTaskDetector, _candidate_from_region, _invalid
 from tracker import TrackState
 from config import (
-    ACQUIRE_FAILURE_LIMIT, ACQUIRE_MAX_AGE, EDGE_MARGIN_PX,
+    ACQUIRE_FAILURE_LIMIT, ACQUIRE_MAX_AGE, ACQUIRE_VERIFY_INTERVAL,
     EXPECTED_OUTER_BLEND, MAX_CANDIDATE_REGIONS,
     MAX_CONSECUTIVE_VERIFY_FAILURES, MAX_STRONG_VERIFY_AGE,
     MAX_TRACK_JUMP_DIAMETER_RATIO, MAX_TRACK_SIZE_RATIO,
@@ -85,7 +85,9 @@ class FastV2Detector(DTaskDetector):
         return (0, 0, image.width(), image.height())
 
     def _verify_due(self, roi):
-        if not self.verified_track_active or self.track.last is None or not self._verification_grace_active():
+        if self.acquire_candidate is not None:
+            interval = ACQUIRE_VERIFY_INTERVAL
+        elif not self.verified_track_active or self.track.last is None or not self._verification_grace_active():
             interval = SEARCH_FULL_VERIFY_INTERVAL
         elif self.mode == 'DROP_ALIGN':
             interval = max(1, TRACK_FULL_VERIFY_INTERVAL // 2)
@@ -338,6 +340,8 @@ class FastV2Detector(DTaskDetector):
                 self.diagnostics.finish(True)
                 return verified
             self.consecutive_verify_failures += 1
+            if not self.verified_track_active and self.acquire_candidate is not None:
+                self.acquire_failure_count += 1
             self.diagnostics.note_verify_failure()
 
         if self.verified_track_active:

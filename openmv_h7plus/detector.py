@@ -16,6 +16,7 @@ from config import (
     CROSS_ROI_RADIUS_RATIO, DEBUG_CAPTURE_ONCE, DEBUG_CAPTURE_RAW_PATH,
     DEBUG_CAPTURE_THRESHOLD_PATH, DIAGNOSTIC_PERIOD_MS,
     ENABLE_MERGED_BLOB_FALLBACK, FULL_SEARCH_INTERVAL,
+    EDGE_MARGIN_PX,
     INNER_OUTER_RATIO_MAX, INNER_OUTER_RATIO_MIN,
     INNER_RADIUS_TOLERANCE_RATIO, LINE_CENTER_DISTANCE_MIN,
     LINE_CENTER_DISTANCE_RATIO, LINE_RHO_MARGIN, LINE_THETA_MARGIN,
@@ -110,6 +111,7 @@ class DetectionStatsReporter:
         self.full_search_reset_count = 0
         self.acquire_timeout_count = 0
         self.verified_track_reset_count = 0
+        self.verify_roi_clamped_count = 0
         self.reject_counts = {reason: 0 for reason in REJECT_REASONS}
 
     def set_writer(self, writer):
@@ -200,6 +202,9 @@ class DetectionStatsReporter:
     def note_edge_clipped(self):
         self.edge_clipped_count += 1
 
+    def note_verify_roi_clamped(self):
+        self.verify_roi_clamped_count += 1
+
     def note_full_search_reset(self):
         self.full_search_reset_count += 1
 
@@ -235,7 +240,7 @@ class DetectionStatsReporter:
         x_max = int(self.selected_blob_center_max[0]) if self.selected_blob_center_max else 0
         y_max = int(self.selected_blob_center_max[1]) if self.selected_blob_center_max else 0
         line = (
-            'D_DETECT_STATS,%d,%s,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%.3f,%.3f,%d,%d,%d,%d,%d,%d,%d,%.3f,%.3f,%.1f,%.1f,%d:%d:%d:%d,%.1f,%.1f,%.1f,%.1f,%d,%d,%d,%d,%s\n'
+            'D_DETECT_STATS,%d,%s,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%.3f,%.3f,%d,%d,%d,%d,%d,%d,%d,%.3f,%.3f,%.1f,%.1f,%d:%d:%d:%d,%.1f,%.1f,%.1f,%.1f,%d,%d,%d,%d,%d,%s\n'
             % (self.frame_sequence, self.mode, self.blob_count, self.region_count,
                self.strong_verify_due_count, self.strong_verify_attempt_count,
                self.strong_verify_success_count, self.strong_verify_failure_count,
@@ -250,8 +255,9 @@ class DetectionStatsReporter:
                x_min, y_min, x_max, y_max,
                self.expected_outer_diameter, self.current_blob_diameter,
                self.hough_radius_min, self.hough_radius_max,
-               self.edge_clipped_count, self.full_search_reset_count,
-               self.acquire_timeout_count, self.verified_track_reset_count,
+               self.edge_clipped_count, self.verify_roi_clamped_count,
+               self.full_search_reset_count, self.acquire_timeout_count,
+               self.verified_track_reset_count,
                self._reject_payload()))
         try:
             self.writer.write(line)
@@ -394,7 +400,16 @@ class DTaskDetector:
         x0, y0 = max(0, x - margin), max(0, y - margin)
         x1 = min(image.width(), x + width + margin)
         y1 = min(image.height(), y + height + margin)
-        edge_clipped = (x <= 6 or y <= 6 or x + width >= image.width() - 6 or y + height >= image.height() - 6 or x0 <= 0 or y0 <= 0 or x1 >= image.width() or y1 >= image.height())
+        edge_clipped = (
+            x <= EDGE_MARGIN_PX or y <= EDGE_MARGIN_PX or
+            x + width >= image.width() - EDGE_MARGIN_PX or
+            y + height >= image.height() - EDGE_MARGIN_PX
+        )
+        verify_roi_clamped = (
+            x0 == 0 or y0 == 0 or x1 == image.width() or y1 == image.height()
+        )
+        if verify_roi_clamped:
+            self.diagnostics.note_verify_roi_clamped()
         return {
             'blob_bbox': (x, y, width, height),
             'verify_roi': (x0, y0, x1 - x0, y1 - y0),
@@ -406,6 +421,7 @@ class DTaskDetector:
             'roundness': roundness,
             'score': roundness + aspect,
             'edge_clipped': edge_clipped,
+            'verify_roi_clamped': verify_roi_clamped,
             'candidate_id': int(index),
         }
 
@@ -450,6 +466,7 @@ class DTaskDetector:
                 'roundness': 0.0,
                 'score': 0.0,
                 'edge_clipped': True,
+                'verify_roi_clamped': False,
                 'candidate_id': -1,
             })
         self.diagnostics.note_regions(len(candidates))
@@ -461,19 +478,22 @@ class DTaskDetector:
         blob_diameter = max(1.0, float(candidate.get('expected_outer_diameter', candidate['diameter'])))
         outer_radius = blob_diameter / 2.0
         inner_radius = outer_radius * TARGET_RATIO_NOMINAL
-        self.diagnostics.note_hough_window(blob_diameter, float(candidate.get('diameter', blob_diameter)), search_min if 'search_min' in locals() else 0.0, search_max if 'search_max' in locals() else 0.0)
         outer_min = max(CIRCLE_R_MIN, int(round(outer_radius * (1.0 - OUTER_RADIUS_TOLERANCE_RATIO))))
         outer_max = max(outer_min, int(round(outer_radius * (1.0 + OUTER_RADIUS_TOLERANCE_RATIO))))
         inner_min = max(CIRCLE_R_MIN, int(round(inner_radius * (1.0 - INNER_RADIUS_TOLERANCE_RATIO))))
         inner_max = max(inner_min, int(round(inner_radius * (1.0 + INNER_RADIUS_TOLERANCE_RATIO))))
         search_min = max(CIRCLE_R_MIN, min(inner_min, outer_min))
         search_max = min(min(region[2], region[3]) // 2, max(inner_max, outer_max))
+        search_max = max(search_min, search_max)
+        self.diagnostics.note_hough_window(
+            blob_diameter, float(candidate.get('diameter', blob_diameter)),
+            search_min, search_max)
         started = self.timing.begin()
         circles = image.find_circles(
             roi=region, x_stride=CIRCLE_X_STRIDE, y_stride=CIRCLE_Y_STRIDE,
             threshold=CIRCLE_THRESHOLD, x_margin=CIRCLE_X_MARGIN,
             y_margin=CIRCLE_Y_MARGIN, r_margin=CIRCLE_R_MARGIN,
-            r_min=search_min, r_max=max(search_min, search_max), r_step=CIRCLE_R_STEP)
+            r_min=search_min, r_max=search_max, r_step=CIRCLE_R_STEP)
         self.timing.end('find_circles', started)
         self.diagnostics.note_circles(len(circles))
         if not circles:

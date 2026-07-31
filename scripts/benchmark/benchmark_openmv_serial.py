@@ -28,7 +28,7 @@ DETECT_STATS_FIELDS = [
     'selected_blob_center_range',
     'expected_outer_diameter', 'current_blob_diameter',
     'hough_radius_min', 'hough_radius_max',
-    'edge_clipped_count', 'full_search_reset_count',
+    'edge_clipped_count', 'verify_roi_clamped_count', 'full_search_reset_count',
     'acquire_timeout_count', 'verified_track_reset_count',
     'reject_payload',
 ]
@@ -43,6 +43,7 @@ INTEGER_FIELDS = (
     'current_measurement_count', 'current_valid_frame_count',
     'verification_grace_frame_count', 'candidate_switch_count',
     'edge_clipped_count', 'full_search_reset_count',
+    'verify_roi_clamped_count',
     'acquire_timeout_count', 'verified_track_reset_count',
 )
 FLOAT_FIELDS = (
@@ -176,6 +177,7 @@ def analyze_lines(lines, seconds):
             'verification_grace_frame_count': 0,
             'candidate_switch_count': 0,
             'edge_clipped_count': 0,
+            'verify_roi_clamped_count': 0,
             'full_search_reset_count': 0,
             'acquire_timeout_count': 0,
             'verified_track_reset_count': 0,
