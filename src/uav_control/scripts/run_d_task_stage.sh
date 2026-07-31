@@ -18,7 +18,7 @@ pgrep -af 'gz sim' >/dev/null || {
   echo "Refusing: Gazebo SITL process was not found" >&2; exit 3
 }
 safe_source /opt/ros/jazzy/setup.bash
-safe_source /home/a-corn/px4_ros2_ws/install/setup.bash
+safe_source "${PX4_ROS2_WS:-$HOME/px4_ros2_ws}/install/setup.bash"
 if ros2 node list 2>/dev/null | grep -qx '/mission_controller_node'; then
   echo "Refusing: mission_controller_node already exists" >&2
   exit 4

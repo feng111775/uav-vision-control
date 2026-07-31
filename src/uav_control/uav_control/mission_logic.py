@@ -82,14 +82,14 @@ class MissionLogic:
     def __init__(self, mission_mode='hover_test', target_altitude=1.5,
                  simulation_mode=False, competition_mode=False,
                  enable_control=False, enable_auto_arm=False,
-                 auto_start_hover_test=True,
+                 auto_start_hover_test=False,
                  enable_visual_follow=True, enable_payload_release=False,
                  enable_dynamic_landing=False, enable_auto_disarm=False,
                  enable_second_takeoff=False, prestream_cycles=40,
                  hover_confirm_seconds=3.0, hover_test_seconds=10.0,
                  dwell_on_car_seconds=5.0, mission_timeout_seconds=90.0,
                  b_deadline_seconds=15.0, altitude_tolerance=0.1,
-                 stable_seconds=1.0, visual_stable_seconds=0.5,
+                 stable_seconds=1.0, visual_stable_seconds=0.4,
                  payload_ack_timeout=3.0, dynamic_near_height_m=0.6,
                  mission_deadline_s=None, point_b_progress=None,
                  point_d_progress=None, return_reserve_s=10.0,
@@ -206,6 +206,7 @@ class MissionLogic:
         self.aligned = False
         self.visual_stable_since = None
         self.aligned_stable_since = None
+        self.drop_alignment_since = None
         self.touchdown_candidate = False
         self.touchdown = False
         self.payload_sent = False
@@ -229,6 +230,10 @@ class MissionLogic:
         state = state.value if isinstance(state, MissionState) else str(state)
         if state not in (item.value for item in MissionState):
             raise ValueError('unknown mission state: ' + state)
+        if state != MissionState.ALIGN_FOR_DROP.value:
+            # Alignment confirmation is valid only within one uninterrupted
+            # ALIGN_FOR_DROP visit; never carry a timer across state changes.
+            self.drop_alignment_since = None
         self.state = state
         self.state_since = float(now)
         self.stable_since = None
@@ -283,13 +288,18 @@ class MissionLogic:
         if not self.target_ok:
             self.visual_stable_since = None
             self.aligned_stable_since = None
+            self.drop_alignment_since = None
             self.safety_block = 'VISION_INVALID'
         elif self.visual_stable_since is None:
             self.visual_stable_since = float(now)
         if not self.aligned:
             self.aligned_stable_since = None
+            self.drop_alignment_since = None
         elif self.aligned_stable_since is None:
             self.aligned_stable_since = float(now)
+        if self.state == S.ALIGN_FOR_DROP.value and self.aligned:
+            if self.drop_alignment_since is None:
+                self.drop_alignment_since = float(now)
 
     def visual_stable(self, now):
         return (self.target_ok and self.visual_stable_since is not None and
@@ -600,8 +610,14 @@ class MissionLogic:
         if not self.enable_visual_follow:
             self.transition(S.SEARCH_CAR, now, 'VISUAL_FOLLOW_DISABLED')
             return
-        can_release = (self.alignment_stable(now) and
-                       self.altitude_reached() and
+        if not self.target_ok or not self.aligned:
+            self.drop_alignment_since = None
+            return
+        if self.drop_alignment_since is None:
+            self.drop_alignment_since = now
+            return
+        can_release = (now - self.drop_alignment_since + 1e-9 >=
+                       self.visual_stable_seconds and self.altitude_reached() and
                        not self.payload_forbidden and
                        self.car_progress < (CarProgress.PASSED_D if
                                             self.point_d_progress is None else

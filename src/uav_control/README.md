@@ -297,7 +297,8 @@ both image errors inside the alignment window, and estimated horizontal
 command below `follow_stable_speed_mps` for the configured duration. Leaving
 the window resets the timer. Short loss holds the 1.50 m NED height and ramps
 horizontal velocity toward zero; long loss follows the existing reacquisition
-or safe-return path. Release is requested once only after this stable gate,
+or safe-return path. The formal drop alignment confirmation window is 0.4 s;
+release is requested once only after this continuously valid gate,
 and every dry-run terminal result exits follow control toward recorded-Home
 return and PX4 landing. `ACCEPTED` LAND ACK is not landing confirmation;
 `vehicle_land_detected.landed` is required before `COMPLETE`.

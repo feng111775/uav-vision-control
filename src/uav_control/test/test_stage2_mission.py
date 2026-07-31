@@ -138,6 +138,7 @@ def test_hover_control_enable_is_explicit_start_without_car_topic():
     logic.step(0)
     logic.step(0.1)
     assert logic.state == S.WAIT_START.value
+    logic.start_signal = True
     logic.step(0.2)
     assert logic.state == S.PRESTREAM.value
     assert logic.h == (0.0, 0.0, 0.0, 0.0)
@@ -157,7 +158,9 @@ def test_drop_complete_flow_and_b_milestone():
     assert logic.formed_follow_before_b
     provide_stable_visual(logic, 5.5, aligned=True)
     assert logic.state == S.ALIGN_FOR_DROP.value
-    provide_stable_visual(logic, 5.8, aligned=True)
+    provide_stable_visual(logic, 5.9, aligned=True)
+    assert logic.state == S.PAYLOAD_RELEASE.value
+    logic.step(5.91)
     assert logic.state == S.WAIT_RELEASE_ACK.value
     assert logic.payload_sent and logic.completed_before_d
     logic.payload_ack = True

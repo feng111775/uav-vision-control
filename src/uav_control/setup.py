@@ -55,6 +55,8 @@ setup(
             'uav_control.car_start_gateway:main',
             'car_udp_trigger_node = '
             'uav_control.car_udp_trigger_node:main',
+            'mock_vision_node = '
+            'uav_control.mock_vision_node:main',
             'car_marker_vision = '
             'uav_control.car_marker_vision:main',
             'mission_offboard_controller = '

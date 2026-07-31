@@ -16,11 +16,17 @@ mission_controller_node:
     enable_control: false
     enable_auto_arm: false
     enable_auto_disarm: false
+    auto_start_hover_test: false
+    communication_only: false
     enable_visual_follow: false
     enable_payload_release: false
     enable_dynamic_landing: false
     enable_second_takeoff: false
     allow_sitl_heading_quality_bypass: false
+    vision_adapter_mode: legacy_array
+    vision_receive_timeout_seconds: 0.3
+    vision_source_age_limit_seconds: 0.3
+    vision_health_required: false
     status_timeout: 1.0
     position_timeout: 0.5
     odom_gate_min_frames: 20

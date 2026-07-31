@@ -42,7 +42,7 @@ esac
 mkdir -p "${result_dir}"
 
 safe_source /opt/ros/jazzy/setup.bash
-safe_source /home/a-corn/px4_ros2_ws/install/setup.bash
+safe_source "${PX4_ROS2_WS:-$HOME/px4_ros2_ws}/install/setup.bash"
 
 write_failure_result() {
   local destination="$1"

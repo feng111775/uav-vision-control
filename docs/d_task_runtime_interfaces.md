@@ -34,7 +34,7 @@ is not included by the formal competition launch.
 The control adapter rejects wrong-length, NaN, Inf, invalid-flag, negative-age,
 and out-of-range confidence values. It requires confidence >=60%, age <=250 ms,
 and local receipt freshness <=0.5 s. `MissionLogic` requires a continuous
-`visual_stable_seconds` window (0.5 s) before `SEARCH_CAR -> VISION_FOLLOW`.
+`visual_stable_seconds` window (0.4 s) before `SEARCH_CAR -> VISION_FOLLOW`.
 The upstream filter independently requires three valid frames. On visual loss,
 the controller leaves follow/descent through its bounded search or return path;
 search speed is capped by configuration (`0.18 m/s` in the stage-4C SITL

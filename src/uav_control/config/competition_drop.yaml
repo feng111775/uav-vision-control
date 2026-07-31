@@ -25,17 +25,24 @@ mission_controller_node:
     hover_altitude_m: 1.5
     hover_altitude_tolerance_m: 0.1
     hover_max_vertical_speed_mps: 0.15
-    visual_stable_seconds: 0.5
+    visual_stable_seconds: 0.4
+    align_stable_duration_sec: 0.4
     simulation_mode: false
     competition_mode: true
     enable_control: false
     enable_auto_arm: false
     enable_auto_disarm: false
+    auto_start_hover_test: false
+    communication_only: false
     enable_visual_follow: true
     enable_payload_release: false
     enable_dynamic_landing: false
     enable_second_takeoff: false
     allow_sitl_heading_quality_bypass: false
+    vision_adapter_mode: legacy_array
+    vision_receive_timeout_seconds: 0.3
+    vision_source_age_limit_seconds: 0.3
+    vision_health_required: false
     status_timeout: 1.0
     position_timeout: 0.5
     odom_gate_min_frames: 20

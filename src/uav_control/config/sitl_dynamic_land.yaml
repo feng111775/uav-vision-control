@@ -10,17 +10,24 @@ mission_controller_node:
     mission_timeout_seconds: 90.0
     b_deadline_seconds: 15.0
     stable_seconds: 1.0
-    visual_stable_seconds: 0.5
+    visual_stable_seconds: 0.4
+    align_stable_duration_sec: 0.4
     simulation_mode: true
     competition_mode: false
     enable_control: true
     enable_auto_arm: true
     enable_auto_disarm: false
+    auto_start_hover_test: false
+    communication_only: false
     enable_visual_follow: true
     enable_payload_release: false
     enable_dynamic_landing: true
     enable_second_takeoff: false
     allow_sitl_heading_quality_bypass: false
+    vision_adapter_mode: legacy_array
+    vision_receive_timeout_seconds: 0.3
+    vision_source_age_limit_seconds: 0.3
+    vision_health_required: false
     status_timeout: 1.0
     position_timeout: 0.5
     odom_gate_min_frames: 20

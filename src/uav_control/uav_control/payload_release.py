@@ -8,6 +8,8 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 
+from .payload_backend import (DryRunPayloadBackend, GpioPayloadBackend,
+                              ReleaseConfig, validate_release_config)
 from .stage4c_core import PersistentPayloadGate
 
 
@@ -40,8 +42,24 @@ class PayloadRelease(Node):
         super().__init__('payload_release')
         self.declare_parameter('dry_run', True)
         self.declare_parameter('simulation_mode', True)
+        self.declare_parameter('enable_payload_release', False)
         self.declare_parameter('simulated_result', 'SUCCESS')
         self.declare_parameter('physical_release_enabled', False)
+        self.declare_parameter('payload_backend', 'dry_run')
+        self.declare_parameter('payload_gpio', 18)
+        self.declare_parameter('payload_pwm_frequency_hz', 50)
+        self.declare_parameter('payload_neutral_pulse_us', 1500)
+        self.declare_parameter('payload_release_pulse_us', 1900)
+        self.declare_parameter('payload_hold_seconds', 0.8)
+        self.declare_parameter('payload_reset_seconds', 0.8)
+        self.release_config = ReleaseConfig(
+            gpio=int(self.get_parameter('payload_gpio').value),
+            pwm_frequency_hz=int(self.get_parameter('payload_pwm_frequency_hz').value),
+            neutral_pulse_us=int(self.get_parameter('payload_neutral_pulse_us').value),
+            release_pulse_us=int(self.get_parameter('payload_release_pulse_us').value),
+            hold_seconds=float(self.get_parameter('payload_hold_seconds').value),
+            reset_seconds=float(self.get_parameter('payload_reset_seconds').value))
+        validate_release_config(self.release_config)
         self.declare_parameter(
             'payload_state_path', os.path.join(
                 tempfile.gettempdir(), 'uav_mission_payload_state.json'))
@@ -49,6 +67,16 @@ class PayloadRelease(Node):
             raise ValueError('payload_release supports dry_run only')
         if self.get_parameter('physical_release_enabled').value:
             raise ValueError('physical payload output is not implemented')
+        backend_name = str(self.get_parameter('payload_backend').value)
+        if backend_name == 'dry_run':
+            self.backend = DryRunPayloadBackend()
+        elif backend_name == 'gpio':
+            self.backend = GpioPayloadBackend(
+                bool(self.get_parameter('simulation_mode').value),
+                bool(self.get_parameter('enable_payload_release').value)
+                if self.has_parameter('enable_payload_release') else False)
+        else:
+            raise ValueError('payload_backend must be dry_run or gpio')
         self.gate = PersistentPayloadGate(
             str(self.get_parameter('payload_state_path').value))
         self.actuator = DryRunReleaseActuator()
@@ -86,7 +114,8 @@ class PayloadRelease(Node):
             self.execution_count += 1
             requested = str(
                 self.get_parameter('simulated_result').value).upper()
-            requested, physical_action = self.actuator.execute(requested)
+            requested, physical_action = self.backend.execute(
+                self.release_config, requested)
             try:
                 status = self.gate.finish(requested)
             except OSError:

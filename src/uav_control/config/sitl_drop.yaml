@@ -22,17 +22,23 @@ mission_controller_node:
     hover_altitude_m: 1.5
     hover_altitude_tolerance_m: 0.1
     hover_max_vertical_speed_mps: 0.15
-    visual_stable_seconds: 0.5
+    visual_stable_seconds: 0.4
     simulation_mode: true
     competition_mode: false
     enable_control: true
     enable_auto_arm: true
     enable_auto_disarm: false
+    auto_start_hover_test: false
+    communication_only: false
     enable_visual_follow: true
     enable_payload_release: true
     enable_dynamic_landing: false
     enable_second_takeoff: false
     allow_sitl_heading_quality_bypass: false
+    vision_adapter_mode: legacy_array
+    vision_receive_timeout_seconds: 0.3
+    vision_source_age_limit_seconds: 0.3
+    vision_health_required: false
     status_timeout: 1.0
     position_timeout: 0.5
     odom_gate_min_frames: 20
@@ -73,7 +79,7 @@ mission_controller_node:
     vision_deadband_norm: 0.05
     align_tolerance_x_norm: 0.10
     align_tolerance_y_norm: 0.10
-    align_stable_duration_sec: 0.8
+    align_stable_duration_sec: 0.4
     vision_loss_hover_sec: 0.20
     vision_loss_abort_sec: 1.0
     servo_command_topic: /servo_command

@@ -6,7 +6,13 @@ mission_controller_node:
     enable_control: true
     enable_auto_arm: true
     enable_auto_disarm: true
+    auto_start_hover_test: true
+    communication_only: false
     allow_sitl_heading_quality_bypass: true
+    vision_adapter_mode: legacy_array
+    vision_receive_timeout_seconds: 0.3
+    vision_source_age_limit_seconds: 0.3
+    vision_health_required: false
     target_altitude: 1.0
     hover_test_seconds: 10.0
     prestream_cycles: 40

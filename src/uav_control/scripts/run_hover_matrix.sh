@@ -17,7 +17,7 @@ json_summary="${result_dir}/matrix_summary.json"
 : >"${jsonl}"
 
 safe_source /opt/ros/jazzy/setup.bash
-safe_source /home/a-corn/px4_ros2_ws/install/setup.bash
+safe_source "${PX4_ROS2_WS:-$HOME/px4_ros2_ws}/install/setup.bash"
 
 summarize() {
   python3 - "${jsonl}" "${csv_summary}" "${json_summary}" <<'PY'

@@ -30,9 +30,16 @@ READY_FOR_CAR_LINK_AND_SITL_TRIGGER_TEST
 - /car/mission_start 接入任务状态机；
 - 非视觉 1.5 m 起飞；
 - 悬停 3 秒；
+- 比赛小车沿赛道运行速度按 `0.1 m/s` 记录；该值不是无人机固定机体系
+  速度前馈，伴飞仍由实时视觉误差闭环完成；
+- 投放对准连续确认时间为 `0.4 s`；按小车速度计算为 `0.1 × 0.4 = 0.04 m`
+  （4 cm），但确认期间无人机仍持续跟随和修正，不能理解为固定悬停等待；
 - 自动降落和安全结束；
 - enable_visual_follow 状态机硬门控；
 - target_loss_abort_seconds 参数生效；
+- `vision_adapter_mode=legacy_array` 统一适配层；
+- simulation-only `mock_vision_node` 场景发布器；
+- fail-closed dry-run/GPIO 投放后端接口；
 - 自动测试和 ROS 2 构建通过。
 
 非视觉流程：
@@ -56,6 +63,16 @@ std_msgs/msg/Float32MultiArray
 std_msgs/msg/Float32MultiArray
 
 这是等待视觉组正式 V2 包期间保留的旧接口，不代表最终接口。
+
+控制器通过 `vision_contract.LegacyVisionAdapter` 将两个数组转换为统一
+`VisionObservation`；任务状态机不读取数组下标。`vision_receive_timeout_seconds`
+和 `vision_source_age_limit_seconds` 默认均为 0.3 s，`vision_health_required`
+默认关闭，打开时可暂时使用明确标注为 legacy 的 `std_msgs/msg/Bool`
+`/vision/health_legacy_bool`。
+
+`ALIGN_FOR_DROP` 不使用固定延时投放：目标、健康、时间戳、confidence 和
+X/Y 误差必须持续满足条件 0.4 s；任一帧失效都会从零重新计时。对准期间仍
+输出受现有最大速度限制的实时视觉修正。
 
 控制侧不会要求视觉正式 V2 话题退回 Float32MultiArray。
 
@@ -84,19 +101,16 @@ uav_interfaces/
 
 不得只提供字段文字说明，必须提交完整 ROS 2 消息包源码。
 
+交付字段和安装信息见 `docs/VISION_V2_DELIVERY_CHECKLIST.md`。V2 到来后只
+替换适配器和配置，不能让视觉节点发布 ARM、Offboard 或 PX4 输入。
+
 ## 5. 正式视觉代码接入路径
 
-控制工作区：
+控制工作区示例：`${PX4_ROS2_WS:-$HOME/px4_ros2_ws}`
 
-/home/a-corn/px4_ros2_ws
+控制源码位于当前仓库的 `src/uav_control`；不要在 Python 代码中硬编码本机路径。
 
-控制源码：
-
-/home/a-corn/XTU-uav-vision-control-git/src/uav_control
-
-视觉接口包计划放置：
-
-/home/a-corn/px4_ros2_ws/src/uav_interfaces
+视觉接口包计划放置：`${PX4_ROS2_WS}/src/uav_interfaces`
 
 控制主节点：
 
@@ -179,7 +193,7 @@ error_y_norm < 0：目标位于画面上方。
 
 ## 10. 构建命令
 
-cd /home/a-corn/px4_ros2_ws
+cd "${PX4_ROS2_WS:-$HOME/px4_ros2_ws}"
 
 source /opt/ros/jazzy/setup.bash
 
@@ -193,6 +207,18 @@ colcon test \
   --packages-select uav_control
 
 colcon test-result --verbose
+
+部署前只读检查（不启动控制节点）：
+
+```bash
+source /opt/ros/jazzy/setup.bash
+bash "${UAV_CONTROL_SRC:-$PWD/src/uav_control}/scripts/check_deployment.sh"
+```
+
+树莓派部署顺序：先确认 ROS 2 Jazzy、`px4_msgs` 和 DDS Agent 环境，再构建并
+source 工作区；启动顺序必须是 PX4/DDS 就绪、任务控制器进入 `WAIT_START`、
+视觉（仅联调时）和车机网关，最后才允许实体小车 START。此仓库不安装或启用
+systemd 服务，也不在部署检查脚本中启动飞控。
 
 ## 11. 当前测试结果
 
