@@ -1,0 +1,14 @@
+{
+  "px4_version": "v1.16.0",
+  "px4_git": "6ea3539157ca358c70a515878b77077af7d4611d",
+  "px4_startup": true,
+  "xrce_agent": "MicroXRCEAgent v2.4.3 (installed executable)",
+  "automatic_mission": false,
+  "reason": "SITL smoke startup reached Gazebo and XRCE init; full ROS first-flight driver was not completed before timeout",
+  "final_state": "NOT_READY",
+  "max_altitude_m": null,
+  "max_horizontal_drift_m": null,
+  "land_ack": null,
+  "auto_disarm": null,
+  "failsafe_count": null
+}

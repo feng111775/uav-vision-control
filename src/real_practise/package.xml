@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>real_practise</name>
+  <version>0.1.0</version>
+  <description>PX4 v1.16 first-flight safety supervisor and entry points.</description>
+  <maintainer email="xixi@todo.todo">xixi</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_python</buildtool_depend>
+  <depend>rclpy</depend>
+  <depend>px4_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <test_depend>pytest</test_depend>
+  <export><build_type>ament_python</build_type></export>
+</package>

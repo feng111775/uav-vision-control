@@ -1,0 +1,31 @@
+mission_controller_node:
+  ros__parameters:
+    mission_mode: hover_test
+    simulation_mode: false
+    competition_mode: false
+    enable_control: true
+    enable_auto_arm: false
+    enable_visual_follow: false
+    enable_payload_release: false
+    enable_dynamic_landing: false
+    enable_second_takeoff: false
+    target_altitude: 0.50
+    hover_test_seconds: 3.0
+    prestream_seconds: 2.0
+    hover_confirm_seconds: 1.0
+    stable_seconds: 1.0
+    altitude_tolerance: 0.10
+    control_rate_hz: 20.0
+    status_timeout: 0.50
+    position_timeout: 0.30
+    attitude_timeout: 0.30
+    safety_timeout: 0.50
+    mission_timeout_seconds: 30.0
+    max_tilt_rad: 0.35
+    mission_timeout_seconds: 30.0
+first_flight_supervisor_node:
+  ros__parameters:
+    simulation_mode: false
+    status_timeout: 0.50
+    position_timeout: 0.30
+    attitude_timeout: 0.30
