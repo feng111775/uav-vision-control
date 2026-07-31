@@ -52,13 +52,19 @@ def analyze_lines(lines, seconds):
     stage_counts = {
         'blob_count': 0,
         'region_count': 0,
-        'verify_due_count': 0,
-        'verify_attempt_count': 0,
+        'strong_verify_due_count': 0,
+        'strong_verify_attempt_count': 0,
+        'strong_verify_success_count': 0,
+        'strong_verify_failure_count': 0,
         'circle_count': 0,
         'circle_pair_count': 0,
         'cross_line_count': 0,
         'cross_candidate_count': 0,
-        'valid_count': 0,
+        'last_verified_age': 0,
+        'current_measurement_count': 0,
+        'current_valid_frame_count': 0,
+        'verification_grace_frame_count': 0,
+        'candidate_switch_count': 0,
     }
     ranges = {
         'best_confidence_range': None,
@@ -87,28 +93,34 @@ def analyze_lines(lines, seconds):
             if match:
                 vision_fps.append(float(match.group(1)))
         elif line.startswith(DETECT_STATS_PREFIX):
-            fields = line.split(',', 16)
-            if len(fields) != 17:
+            fields = line.split(',')
+            if len(fields) != 26:
                 malformed += 1
                 continue
             detect_stats_count += 1
             try:
                 stage_counts['blob_count'] += int(fields[3])
                 stage_counts['region_count'] += int(fields[4])
-                stage_counts['verify_due_count'] += int(fields[5])
-                stage_counts['verify_attempt_count'] += int(fields[6])
-                stage_counts['circle_count'] += int(fields[7])
-                stage_counts['circle_pair_count'] += int(fields[8])
-                stage_counts['cross_line_count'] += int(fields[9])
-                _update_range(ranges, 'best_cross_score_range', float(fields[10]))
-                _update_range(ranges, 'best_confidence_range', float(fields[11]))
-                _update_range(ranges, 'best_circle_ratio_range', float(fields[12]))
-                stage_counts['cross_candidate_count'] += int(fields[13])
-                stage_counts['valid_count'] += int(fields[15])
-                reasons = _parse_reject_counts(fields[16])
+                stage_counts['strong_verify_due_count'] += int(fields[5])
+                stage_counts['strong_verify_attempt_count'] += int(fields[6])
+                stage_counts['strong_verify_success_count'] += int(fields[7])
+                stage_counts['strong_verify_failure_count'] += int(fields[8])
+                stage_counts['circle_count'] += int(fields[9])
+                stage_counts['circle_pair_count'] += int(fields[10])
+                _update_range(ranges, 'best_cross_score_range', float(fields[11]))
+                _update_range(ranges, 'best_confidence_range', float(fields[12]))
+                _update_range(ranges, 'best_circle_ratio_range', float(fields[13]))
+                stage_counts['cross_line_count'] += int(fields[14])
+                stage_counts['cross_candidate_count'] += int(fields[15])
+                stage_counts['last_verified_age'] += int(fields[16])
+                stage_counts['current_measurement_count'] += int(fields[17])
+                stage_counts['current_valid_frame_count'] += int(fields[18])
+                stage_counts['verification_grace_frame_count'] += int(fields[19])
+                stage_counts['candidate_switch_count'] += int(fields[19])
+                reasons = _parse_reject_counts(fields[25])
                 for reason, count in reasons.items():
                     reject_reason_counts[reason] = reject_reason_counts.get(reason, 0) + count
-                strong_verify_successes += reasons.get('VALID', 0)
+                strong_verify_successes += int(fields[7])
             except (TypeError, ValueError):
                 malformed += 1
         elif line.startswith('D_TARGET_V2,'):
@@ -134,7 +146,7 @@ def analyze_lines(lines, seconds):
     values = sorted(target)
     p50 = values[min(len(values) - 1, int(len(values) * .50))] if values else 0.0
     p95 = values[min(len(values) - 1, int(len(values) * .95))] if values else 0.0
-    attempts = stage_counts['verify_attempt_count']
+    attempts = stage_counts['strong_verify_attempt_count']
     report = {
         'serial_line_hz': len(list(lines)) / max(seconds, 1e-9),
         'target_v2_hz': target_hz,

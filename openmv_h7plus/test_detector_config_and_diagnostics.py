@@ -1,5 +1,6 @@
 import ast
 import importlib
+import io
 import sys
 from pathlib import Path
 from unittest.mock import Mock
@@ -82,15 +83,14 @@ def test_blob_filters_report_no_blob_and_size_rejects():
 def test_wrong_ratio_and_non_concentric_fail_pairs():
     instance = detector.DTaskDetector()
     image = CircleImage([
-        Circle(100, 100, 40), Circle(100, 100, 10),  # ratio too small
-        Circle(150, 150, 35), Circle(170, 170, 20),  # concentric error
+        Circle(100, 100, 40), Circle(100, 100, 10),
+        Circle(150, 150, 35), Circle(170, 170, 20),
     ])
-    pairs = instance._circle_pairs(image, (0, 0, 240, 240))
+    candidate = {'verify_roi': (0, 0, 240, 240), 'diameter': 80}
+    pairs = instance._circle_pairs(image, candidate)
     assert pairs == []
     assert instance.diagnostics.reject_counts['NO_CONCENTRIC_PAIR'] >= 1
     assert instance.diagnostics.reject_counts['RATIO_REJECT'] >= 1 or instance.diagnostics.reject_counts['CONCENTRIC_ERROR'] >= 1
-
-
 
 
 def test_generated_target_geometry_matches_algorithm_window():
@@ -103,22 +103,42 @@ def test_generated_target_geometry_matches_algorithm_window():
     assert config.INNER_OUTER_RATIO_MIN <= ratio <= config.INNER_OUTER_RATIO_MAX
     assert module.CROSS_LENGTH_MM < module.INNER_DIAMETER_MM
 
+
 def test_fast_detector_valid_and_verify_expired_paths():
-    region = (100, 70, 60, 60)
+    region = {
+        'blob_bbox': (100, 70, 60, 60), 'verify_roi': (92, 62, 76, 76),
+        'cx': 130, 'cy': 100, 'diameter': 60, 'area': 3600,
+        'aspect': 1.0, 'roundness': 0.9, 'score': 1.9,
+    }
     verified = {'valid': 1, 'cx': 130, 'cy': 100, 'outer_diameter_px': 50,
                 'inner_diameter_px': 30, 'angle_rad': .1, 'confidence': 80,
                 'status': 'TRACKING'}
     detector_fast = FastV2Detector()
     detector_fast.track.last = {'valid': 1, 'measurement_valid': 1, 'cx': 130,
                                 'cy': 100, 'outer_diameter_px': 50}
-    detector_fast.last_verified_frame = 1
-    detector_fast.last_verified = verified
+    detector_fast.last_verified_success_frame = 1
+    detector_fast.last_verified_success_result = verified
     detector_fast._search_regions = Mock(return_value=[region])
     detector_fast.frame = 2
     result = detector_fast.detect(Image(), 'FOLLOW')
     assert result['valid'] == 1
-    detector_fast.last_verified_frame = 0
+    detector_fast.last_verified_success_frame = 0
     detector_fast.frame = 20
     result = detector_fast.detect(Image(), 'FOLLOW')
     assert result['valid'] == 0
     assert result['status'] in ('VERIFY_EXPIRED', 'CROSS_INVALID')
+
+
+def test_diagnostics_success_rate_counters_are_bounded():
+    report = detector.DetectionStatsReporter()
+    stream = io.StringIO()
+    report.set_writer(stream)
+    report.begin_frame(10, 'SEARCH', True, 1)
+    report.note_verify_attempt()
+    report.note_verify_success()
+    report.note_current_measurement({'diameter': 60, 'cx': 10, 'cy': 20})
+    report.finish(True)
+    report.emit_if_due(0)
+    report.emit_if_due(1200)
+    line = stream.getvalue().strip()
+    assert 'D_DETECT_STATS' in line

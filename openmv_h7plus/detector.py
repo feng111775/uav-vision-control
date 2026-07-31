@@ -11,18 +11,20 @@ from config import (
     BLOB_MARGIN_DIVISOR, BLOB_MARGIN_PIXELS, BLOB_MERGE,
     BLOB_MERGED_MARGIN, CIRCLE_R_MARGIN, CIRCLE_R_MIN, CIRCLE_R_STEP,
     CIRCLE_THRESHOLD, CIRCLE_X_MARGIN, CIRCLE_X_STRIDE, CIRCLE_Y_MARGIN,
-    CIRCLE_Y_STRIDE, CROSS_ANGLE_TOLERANCE_DEG, CROSS_DISTANCE_PENALTY_RATIO,
-    CROSS_LINE_SUM_RATIO, CROSS_ROI_RADIUS_RATIO, DEBUG_CAPTURE_ONCE,
-    DEBUG_CAPTURE_RAW_PATH, DEBUG_CAPTURE_THRESHOLD_PATH, DIAGNOSTIC_PERIOD_MS,
-    ENABLE_MERGED_BLOB_FALLBACK, FULL_SEARCH_INTERVAL, INNER_OUTER_RATIO_MAX,
-    INNER_OUTER_RATIO_MIN, LINE_CENTER_DISTANCE_MIN,
+    CIRCLE_Y_STRIDE, CONFIG_REPEAT_PERIOD_MS, CROSS_ANGLE_TOLERANCE_DEG,
+    CROSS_DISTANCE_PENALTY_RATIO, CROSS_LINE_SUM_RATIO,
+    CROSS_ROI_RADIUS_RATIO, DEBUG_CAPTURE_ONCE, DEBUG_CAPTURE_RAW_PATH,
+    DEBUG_CAPTURE_THRESHOLD_PATH, DIAGNOSTIC_PERIOD_MS,
+    ENABLE_MERGED_BLOB_FALLBACK, FULL_SEARCH_INTERVAL,
+    INNER_OUTER_RATIO_MAX, INNER_OUTER_RATIO_MIN,
+    INNER_RADIUS_TOLERANCE_RATIO, LINE_CENTER_DISTANCE_MIN,
     LINE_CENTER_DISTANCE_RATIO, LINE_RHO_MARGIN, LINE_THETA_MARGIN,
     LINE_THRESHOLD, LINE_X_STRIDE, LINE_Y_STRIDE, MAX_CONCENTRIC_ERROR,
     MAX_OUTER_DIAMETER, MAX_SEARCH_REGIONS, MIN_BLOB_AREA, MIN_BLOB_ASPECT,
     MIN_BLOB_PIXELS, MIN_BLOB_ROUNDNESS, MIN_CIRCLE_DIAMETER,
     MIN_CONFIDENCE, MIN_CROSS_SCORE, MIN_LINE_LENGTH_RATIO,
-    MIN_OUTER_DIAMETER, ROI_FAILURE_LIMIT, ROI_SCALE_PERCENT,
-    TARGET_RATIO_NOMINAL,
+    MIN_OUTER_DIAMETER, OUTER_RADIUS_TOLERANCE_RATIO, ROI_FAILURE_LIMIT,
+    ROI_SCALE_PERCENT, TARGET_RATIO_NOMINAL,
 )
 
 HALF_PI = math.pi / 2
@@ -35,8 +37,6 @@ REJECT_REASONS = (
 
 
 class StageTiming:
-    """Bounded timing samples; disabled instances add no clock calls."""
-
     def __init__(self, enabled=False, window=64):
         self.enabled = bool(enabled and pyb is not None)
         self.window = max(8, int(window))
@@ -78,8 +78,10 @@ class DetectionStatsReporter:
         self.mode = 'SEARCH'
         self.blob_count = 0
         self.region_count = 0
-        self.verify_due_count = 0
-        self.verify_attempt_count = 0
+        self.strong_verify_due_count = 0
+        self.strong_verify_attempt_count = 0
+        self.strong_verify_success_count = 0
+        self.strong_verify_failure_count = 0
         self.circle_count = 0
         self.circle_pair_count = 0
         self.cross_line_count = 0
@@ -89,7 +91,17 @@ class DetectionStatsReporter:
         self.best_ratio = 0.0
         self.best_ratio_error = None
         self.last_verified_age = -1
-        self.valid_count = 0
+        self.current_measurement_count = 0
+        self.current_valid_frame_count = 0
+        self.verification_grace_frame_count = 0
+        self.candidate_switch_count = 0
+        self.selected_candidate_rank = -1
+        self.track_jump_px = 0.0
+        self.track_jump_diameter_ratio = 0.0
+        self.selected_blob_diameter_min = None
+        self.selected_blob_diameter_max = None
+        self.selected_blob_center_min = None
+        self.selected_blob_center_max = None
         self.reject_counts = {reason: 0 for reason in REJECT_REASONS}
 
     def set_writer(self, writer):
@@ -98,7 +110,7 @@ class DetectionStatsReporter:
     def begin_frame(self, frame_sequence, mode, verify_due, last_verified_age):
         self.frame_sequence = int(frame_sequence)
         self.mode = mode or 'SEARCH'
-        self.verify_due_count += int(bool(verify_due))
+        self.strong_verify_due_count += int(bool(verify_due))
         self.last_verified_age = int(last_verified_age)
 
     def reject(self, reason, count=1):
@@ -112,7 +124,13 @@ class DetectionStatsReporter:
         self.region_count += int(max(0, count))
 
     def note_verify_attempt(self):
-        self.verify_attempt_count += 1
+        self.strong_verify_attempt_count += 1
+
+    def note_verify_success(self):
+        self.strong_verify_success_count += 1
+
+    def note_verify_failure(self):
+        self.strong_verify_failure_count += 1
 
     def note_circles(self, count):
         self.circle_count += int(max(0, count))
@@ -139,9 +157,35 @@ class DetectionStatsReporter:
             self.best_ratio_error = error
             self.best_ratio = ratio
 
+    def note_current_measurement(self, candidate):
+        if not candidate:
+            return
+        self.current_measurement_count += 1
+        diameter = float(candidate.get('diameter', 0.0))
+        cx = float(candidate.get('cx', 0.0))
+        cy = float(candidate.get('cy', 0.0))
+        self.selected_blob_diameter_min = diameter if self.selected_blob_diameter_min is None else min(self.selected_blob_diameter_min, diameter)
+        self.selected_blob_diameter_max = diameter if self.selected_blob_diameter_max is None else max(self.selected_blob_diameter_max, diameter)
+        if self.selected_blob_center_min is None:
+            self.selected_blob_center_min = (cx, cy)
+            self.selected_blob_center_max = (cx, cy)
+        else:
+            self.selected_blob_center_min = (min(self.selected_blob_center_min[0], cx), min(self.selected_blob_center_min[1], cy))
+            self.selected_blob_center_max = (max(self.selected_blob_center_max[0], cx), max(self.selected_blob_center_max[1], cy))
+
+    def note_grace_frame(self):
+        self.verification_grace_frame_count += 1
+
+    def note_selected_candidate(self, rank, jump_px, jump_ratio, switched):
+        self.selected_candidate_rank = int(rank)
+        self.track_jump_px = max(self.track_jump_px, float(jump_px or 0.0))
+        self.track_jump_diameter_ratio = max(self.track_jump_diameter_ratio, float(jump_ratio or 0.0))
+        if switched:
+            self.candidate_switch_count += 1
+
     def finish(self, valid):
         if valid:
-            self.valid_count += 1
+            self.current_valid_frame_count += 1
             self.reject('VALID')
 
     def _reject_payload(self):
@@ -160,14 +204,24 @@ class DetectionStatsReporter:
             return
         if now_ms - self.last_emit_ms < self.period_ms:
             return
+        x_min = int(self.selected_blob_center_min[0]) if self.selected_blob_center_min else 0
+        y_min = int(self.selected_blob_center_min[1]) if self.selected_blob_center_min else 0
+        x_max = int(self.selected_blob_center_max[0]) if self.selected_blob_center_max else 0
+        y_max = int(self.selected_blob_center_max[1]) if self.selected_blob_center_max else 0
         line = (
-            'D_DETECT_STATS,%d,%s,%d,%d,%d,%d,%d,%d,%d,%.3f,%.3f,%.3f,%d,%d,%d,%s\n'
+            'D_DETECT_STATS,%d,%s,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%.3f,%.3f,%d,%d,%d,%d,%d,%d,%d,%.3f,%.3f,%.1f,%.1f,%d:%d:%d:%d,%s\n'
             % (self.frame_sequence, self.mode, self.blob_count, self.region_count,
-               self.verify_due_count, self.verify_attempt_count,
-               self.circle_count, self.circle_pair_count, self.cross_line_count,
-               self.best_cross_score, self.best_confidence, self.best_ratio,
+               self.strong_verify_due_count, self.strong_verify_attempt_count,
+               self.strong_verify_success_count, self.strong_verify_failure_count,
+               self.circle_count, self.circle_pair_count, self.best_cross_score,
+               self.best_confidence, self.best_ratio, self.cross_line_count,
                self.cross_candidate_count, self.last_verified_age,
-               self.valid_count, self._reject_payload()))
+               self.current_measurement_count, self.current_valid_frame_count,
+               self.verification_grace_frame_count, self.candidate_switch_count,
+               self.track_jump_px, self.track_jump_diameter_ratio,
+               float(self.selected_blob_diameter_min or 0.0),
+               float(self.selected_blob_diameter_max or 0.0),
+               x_min, y_min, x_max, y_max, self._reject_payload()))
         try:
             self.writer.write(line)
         except Exception:
@@ -191,21 +245,40 @@ def _clamp(value, lower=0.0, upper=1.0):
     return value
 
 
-def _periodic_error(first, second):
-    return (first - second + HALF_PI / 2) % HALF_PI - HALF_PI / 2
 
+
+def _candidate_from_region(region):
+    if isinstance(region, dict):
+        return region
+    x, y, width, height = [int(v) for v in region]
+    diameter = max(1, min(width, height))
+    return {
+        'blob_bbox': (x, y, width, height),
+        'verify_roi': (x, y, width, height),
+        'cx': x + width // 2,
+        'cy': y + height // 2,
+        'diameter': diameter,
+        'area': width * height,
+        'aspect': min(width, height) / max(1.0, max(width, height)),
+        'roundness': 0.5,
+        'score': 0.5 + min(width, height) / max(1.0, max(width, height)),
+    }
 
 def _invalid(status='LOST'):
     return {
-        'valid': 0, 'cx': 0, 'cy': 0, 'outer_diameter_px': 0,
-        'inner_diameter_px': 0, 'angle_rad': 0.0, 'confidence': 0,
+        'valid': 0,
+        'measurement_valid': 0,
+        'cx': 0,
+        'cy': 0,
+        'outer_diameter_px': 0,
+        'inner_diameter_px': 0,
+        'angle_rad': 0.0,
+        'confidence': 0,
         'status': status,
     }
 
 
 class DTaskDetector:
-    """Layered adaptive full-frame/ROI detector with finite recovery."""
-
     def __init__(self, enable_timing=False):
         self.last = None
         self.roi_failures = 0
@@ -214,12 +287,24 @@ class DTaskDetector:
         self.timing = StageTiming(enable_timing)
         self.diagnostics = DetectionStatsReporter()
         self._debug_capture_saved = False
+        self._last_config_ms = None
 
     def set_diagnostic_writer(self, writer):
         self.diagnostics.set_writer(writer)
 
     def emit_diagnostics(self, now_ms=None):
         self.diagnostics.emit_if_due(now_ms)
+
+    def should_repeat_config(self, now_ms):
+        if now_ms is None:
+            return False
+        if self._last_config_ms is None:
+            self._last_config_ms = now_ms
+            return False
+        if now_ms - self._last_config_ms >= CONFIG_REPEAT_PERIOD_MS:
+            self._last_config_ms = now_ms
+            return True
+        return False
 
     def _tracking_roi(self, image):
         if self.last is None:
@@ -254,36 +339,41 @@ class DTaskDetector:
         except Exception:
             self._debug_capture_saved = True
 
-    def _regions_from_blobs(self, image, blobs):
-        regions = []
-        for blob in blobs:
-            x = int(_value(blob, 'x', 0))
-            y = int(_value(blob, 'y', 1))
-            width = int(_value(blob, 'w', 2))
-            height = int(_value(blob, 'h', 3))
-            diameter = max(width, height)
-            if diameter < MIN_OUTER_DIAMETER:
-                self.diagnostics.reject('BLOB_TOO_SMALL')
-                continue
-            if diameter > MAX_OUTER_DIAMETER:
-                self.diagnostics.reject('BLOB_TOO_LARGE')
-                continue
-            aspect = min(width, height) / max(1.0, max(width, height))
-            if aspect < MIN_BLOB_ASPECT:
-                self.diagnostics.reject('BLOB_ASPECT_REJECT')
-                continue
-            circularity = float(_value(blob, 'roundness', 18))
-            if circularity < MIN_BLOB_ROUNDNESS:
-                self.diagnostics.reject('BLOB_ROUNDNESS_REJECT')
-                continue
-            margin = max(BLOB_MARGIN_PIXELS, diameter // BLOB_MARGIN_DIVISOR)
-            x0, y0 = max(0, x - margin), max(0, y - margin)
-            x1 = min(image.width(), x + width + margin)
-            y1 = min(image.height(), y + height + margin)
-            region = (x0, y0, x1 - x0, y1 - y0)
-            if region[2] >= 24 and region[3] >= 24:
-                regions.append(region)
-        return regions[:MAX_SEARCH_REGIONS]
+    def _make_candidate(self, image, blob):
+        x = int(_value(blob, 'x', 0))
+        y = int(_value(blob, 'y', 1))
+        width = int(_value(blob, 'w', 2))
+        height = int(_value(blob, 'h', 3))
+        diameter = max(1, min(width, height))
+        if diameter < MIN_OUTER_DIAMETER:
+            self.diagnostics.reject('BLOB_TOO_SMALL')
+            return None
+        if diameter > MAX_OUTER_DIAMETER:
+            self.diagnostics.reject('BLOB_TOO_LARGE')
+            return None
+        aspect = min(width, height) / max(1.0, max(width, height))
+        if aspect < MIN_BLOB_ASPECT:
+            self.diagnostics.reject('BLOB_ASPECT_REJECT')
+            return None
+        roundness = float(_value(blob, 'roundness', 18))
+        if roundness < MIN_BLOB_ROUNDNESS:
+            self.diagnostics.reject('BLOB_ROUNDNESS_REJECT')
+            return None
+        margin = max(BLOB_MARGIN_PIXELS, diameter // BLOB_MARGIN_DIVISOR)
+        x0, y0 = max(0, x - margin), max(0, y - margin)
+        x1 = min(image.width(), x + width + margin)
+        y1 = min(image.height(), y + height + margin)
+        return {
+            'blob_bbox': (x, y, width, height),
+            'verify_roi': (x0, y0, x1 - x0, y1 - y0),
+            'cx': max(0, min(image.width() - 1, x + width // 2)),
+            'cy': max(0, min(image.height() - 1, y + height // 2)),
+            'diameter': diameter,
+            'area': width * height,
+            'aspect': aspect,
+            'roundness': roundness,
+            'score': roundness + aspect,
+        }
 
     def _search_regions(self, image, roi, include_fallback=True):
         thresholds = self._adaptive_dark_threshold(image, roi)
@@ -295,10 +385,14 @@ class DTaskDetector:
             margin=BLOB_MERGED_MARGIN)
         self.timing.end('find_blobs', started)
         self.diagnostics.note_blobs(len(blobs))
-        regions = self._regions_from_blobs(image, blobs)
+        candidates = []
+        for blob in blobs:
+            candidate = self._make_candidate(image, blob)
+            if candidate is not None:
+                candidates.append(candidate)
         if not blobs:
             self.diagnostics.reject('NO_BLOB')
-        if not regions and ENABLE_MERGED_BLOB_FALLBACK and not BLOB_MERGE:
+        if not candidates and ENABLE_MERGED_BLOB_FALLBACK and not BLOB_MERGE:
             started = self.timing.begin()
             merged = image.find_blobs(
                 thresholds, roi=roi, pixels_threshold=MIN_BLOB_PIXELS,
@@ -306,20 +400,43 @@ class DTaskDetector:
                 margin=BLOB_MERGED_MARGIN)
             self.timing.end('find_blobs_merged', started)
             self.diagnostics.note_blobs(len(merged))
-            regions = self._regions_from_blobs(image, merged)
-        if not regions and include_fallback:
-            regions.append(roi)
-        self.diagnostics.note_regions(len(regions))
-        return regions[:MAX_SEARCH_REGIONS]
+            for blob in merged:
+                candidate = self._make_candidate(image, blob)
+                if candidate is not None:
+                    candidates.append(candidate)
+        if not candidates and include_fallback:
+            candidates.append({
+                'blob_bbox': roi,
+                'verify_roi': roi,
+                'cx': roi[0] + roi[2] // 2,
+                'cy': roi[1] + roi[3] // 2,
+                'diameter': min(roi[2], roi[3]),
+                'area': roi[2] * roi[3],
+                'aspect': 1.0,
+                'roundness': 0.0,
+                'score': 0.0,
+            })
+        self.diagnostics.note_regions(len(candidates))
+        return candidates[:MAX_SEARCH_REGIONS]
 
-    def _circle_pairs(self, image, region):
-        max_radius = min(region[2], region[3]) // 2
+    def _circle_pairs(self, image, candidate):
+        candidate = _candidate_from_region(candidate)
+        region = candidate['verify_roi']
+        blob_diameter = max(1.0, float(candidate['diameter']))
+        outer_radius = blob_diameter / 2.0
+        inner_radius = outer_radius * TARGET_RATIO_NOMINAL
+        outer_min = max(CIRCLE_R_MIN, int(round(outer_radius * (1.0 - OUTER_RADIUS_TOLERANCE_RATIO))))
+        outer_max = max(outer_min, int(round(outer_radius * (1.0 + OUTER_RADIUS_TOLERANCE_RATIO))))
+        inner_min = max(CIRCLE_R_MIN, int(round(inner_radius * (1.0 - INNER_RADIUS_TOLERANCE_RATIO))))
+        inner_max = max(inner_min, int(round(inner_radius * (1.0 + INNER_RADIUS_TOLERANCE_RATIO))))
+        search_min = max(CIRCLE_R_MIN, min(inner_min, outer_min))
+        search_max = min(min(region[2], region[3]) // 2, max(inner_max, outer_max))
         started = self.timing.begin()
         circles = image.find_circles(
             roi=region, x_stride=CIRCLE_X_STRIDE, y_stride=CIRCLE_Y_STRIDE,
             threshold=CIRCLE_THRESHOLD, x_margin=CIRCLE_X_MARGIN,
             y_margin=CIRCLE_Y_MARGIN, r_margin=CIRCLE_R_MARGIN,
-            r_min=CIRCLE_R_MIN, r_max=max_radius, r_step=CIRCLE_R_STEP)
+            r_min=search_min, r_max=max(search_min, search_max), r_step=CIRCLE_R_STEP)
         self.timing.end('find_circles', started)
         self.diagnostics.note_circles(len(circles))
         if not circles:
@@ -389,8 +506,7 @@ class DTaskDetector:
                 continue
             distance = abs(dy * cx - dx * cy + x2 * y1 - y2 * x1)
             distance /= max(1.0, length)
-            if distance <= max(LINE_CENTER_DISTANCE_MIN,
-                               inner_diameter * LINE_CENTER_DISTANCE_RATIO):
+            if distance <= max(LINE_CENTER_DISTANCE_MIN, inner_diameter * LINE_CENTER_DISTANCE_RATIO):
                 usable.append((math.atan2(dy, dx), length, distance))
         if len(usable) < 2:
             self.timing.end('cross_scoring', started)
@@ -402,17 +518,10 @@ class DTaskDetector:
             for second_index in range(index + 1, len(usable)):
                 candidate_count += 1
                 first, second = usable[index], usable[second_index]
-                raw_difference = abs(
-                    (first[0] - second[0] + math.pi / 2) %
-                    math.pi - math.pi / 2)
-                orthogonal = 1.0 - abs(
-                    raw_difference - math.pi / 2) / math.radians(CROSS_ANGLE_TOLERANCE_DEG)
-                score = _clamp(orthogonal) * _clamp(
-                    (first[1] + second[1]) /
-                    max(1.0, inner_diameter * CROSS_LINE_SUM_RATIO))
-                score *= _clamp(
-                    1.0 - (first[2] + second[2]) /
-                    max(1.0, inner_diameter * CROSS_DISTANCE_PENALTY_RATIO))
+                raw_difference = abs((first[0] - second[0] + math.pi / 2) % math.pi - math.pi / 2)
+                orthogonal = 1.0 - abs(raw_difference - math.pi / 2) / math.radians(CROSS_ANGLE_TOLERANCE_DEG)
+                score = _clamp(orthogonal) * _clamp((first[1] + second[1]) / max(1.0, inner_diameter * CROSS_LINE_SUM_RATIO))
+                score *= _clamp(1.0 - (first[2] + second[2]) / max(1.0, inner_diameter * CROSS_DISTANCE_PENALTY_RATIO))
                 self.diagnostics.note_best_cross_score(score)
                 if best is None or score > best[0]:
                     best = (score, first[0])
@@ -425,56 +534,49 @@ class DTaskDetector:
         self.timing.end('cross_scoring', started)
         return angle, _clamp(best[0])
 
-    def _detect_roi(self, image, roi, regions=None, pairs_cache=None):
+    def _detect_candidate(self, image, candidate, pairs=None):
+        if pairs is None:
+            pairs = self._circle_pairs(image, candidate)
         best = None
-        if regions is None:
-            regions = self._search_regions(image, roi)
-        pairs_cache = pairs_cache or {}
-        for region in regions:
-            pairs = pairs_cache.get(region)
-            if pairs is None:
-                pairs = self._circle_pairs(image, region)
-            for outer, inner, ratio, concentric in pairs:
-                cx = (outer[0] + inner[0]) // 2
-                cy = (outer[1] + inner[1]) // 2
-                angle, cross_score = self._cross(image, cx, cy, inner[2])
-                if angle is None:
-                    continue
-                ratio_score = _clamp(1.0 - abs(ratio - TARGET_RATIO_NOMINAL) / 0.08)
-                concentric_score = _clamp(1.0 - concentric / MAX_CONCENTRIC_ERROR)
-                border = min(cx, cy, image.width() - cx, image.height() - cy)
-                border_score = _clamp(
-                    (border - outer[2] / 2) / max(1.0, outer[2] * 0.08))
-                continuity = 0.5
-                if self.last is not None:
-                    jump = math.sqrt(
-                        (cx - self.last['cx']) ** 2 +
-                        (cy - self.last['cy']) ** 2)
-                    continuity = _clamp(1.0 - jump / outer[2])
-                confidence = 100 * (
-                    0.19 * outer[3] + 0.14 * inner[3] +
-                    0.18 * ratio_score + 0.18 * concentric_score +
-                    0.22 * cross_score + 0.05 * border_score +
-                    0.04 * continuity)
-                self.diagnostics.note_best_confidence(confidence)
-                candidate = {
-                    'valid': int(confidence >= MIN_CONFIDENCE),
-                    'cx': cx, 'cy': cy,
-                    'outer_diameter_px': outer[2],
-                    'inner_diameter_px': inner[2],
-                    'angle_rad': angle,
-                    'confidence': int(_clamp(confidence / 100) * 100),
-                    'status': 'TRACKING' if confidence >= MIN_CONFIDENCE else 'CONFIDENCE_LOW',
-                }
-                if best is None or candidate['confidence'] > best['confidence']:
-                    best = candidate
+        for outer, inner, ratio, concentric in pairs:
+            cx = (outer[0] + inner[0]) // 2
+            cy = (outer[1] + inner[1]) // 2
+            angle, cross_score = self._cross(image, cx, cy, inner[2])
+            if angle is None:
+                continue
+            ratio_score = _clamp(1.0 - abs(ratio - TARGET_RATIO_NOMINAL) / 0.08)
+            concentric_score = _clamp(1.0 - concentric / MAX_CONCENTRIC_ERROR)
+            border = min(cx, cy, image.width() - cx, image.height() - cy)
+            border_score = _clamp((border - outer[2] / 2) / max(1.0, outer[2] * 0.08))
+            continuity = 0.5
+            if self.last is not None:
+                jump = math.sqrt((cx - self.last['cx']) ** 2 + (cy - self.last['cy']) ** 2)
+                continuity = _clamp(1.0 - jump / outer[2])
+            confidence = 100 * (
+                0.19 * outer[3] + 0.14 * inner[3] +
+                0.18 * ratio_score + 0.18 * concentric_score +
+                0.22 * cross_score + 0.05 * border_score +
+                0.04 * continuity)
+            self.diagnostics.note_best_confidence(confidence)
+            result = {
+                'valid': int(confidence >= MIN_CONFIDENCE),
+                'cx': candidate['cx'],
+                'cy': candidate['cy'],
+                'outer_diameter_px': candidate['diameter'],
+                'inner_diameter_px': int(round(candidate['diameter'] * TARGET_RATIO_NOMINAL)),
+                'angle_rad': angle,
+                'confidence': int(_clamp(confidence / 100.0) * 100),
+                'status': 'TRACKING' if confidence >= MIN_CONFIDENCE else 'CONFIDENCE_LOW',
+                'candidate': candidate,
+            }
+            if best is None or result['confidence'] > best['confidence']:
+                best = result
         if best is not None and not best['valid']:
             self.diagnostics.reject('CONFIDENCE_LOW')
         return best
 
     def detect(self, image):
         frame_started = self.timing.begin()
-        self.diagnostics.begin_frame(0, 'SEARCH', False, -1)
         roi = self._tracking_roi(image)
         result = None
         if roi is None and self.full_search_countdown > 0:
@@ -483,11 +585,20 @@ class DTaskDetector:
             self.timing.end('detector_total', frame_started)
             return _invalid(self.last_status)
         if roi is not None and self.roi_failures < ROI_FAILURE_LIMIT:
-            result = self._detect_roi(image, roi)
-            if result is None or not result['valid']:
+            candidates = self._search_regions(image, roi, include_fallback=False)
+            for candidate in candidates:
+                result = self._detect_candidate(image, candidate)
+                if result is not None and result.get('valid'):
+                    break
+            if result is None or not result.get('valid'):
                 self.roi_failures += 1
         if result is None and (roi is None or self.roi_failures >= ROI_FAILURE_LIMIT):
-            result = self._detect_roi(image, (0, 0, image.width(), image.height()))
+            candidates = self._search_regions(
+                image, (0, 0, image.width(), image.height()), include_fallback=False)
+            for candidate in candidates:
+                result = self._detect_candidate(image, candidate)
+                if result is not None and result.get('valid'):
+                    break
             if roi is None:
                 self.full_search_countdown = FULL_SEARCH_INTERVAL - 1
         if result is None:
@@ -498,7 +609,6 @@ class DTaskDetector:
             self.last = result
             self.roi_failures = 0
             self.last_status = 'TRACKING'
-            self.diagnostics.finish(True)
         else:
             self.last_status = result['status']
         self.timing.end('detector_total', frame_started)
