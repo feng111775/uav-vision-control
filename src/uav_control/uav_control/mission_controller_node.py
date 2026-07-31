@@ -235,6 +235,9 @@ class MissionControllerNode(Node):
         self.command_pub.publish(msg)
 
     def _publish_control(self, mode, position=None, velocity=None):
+        if self.dry_run_px4_commands:
+            self.logic.event = 'DRY_RUN_SETPOINT_%s' % mode.upper()
+            return
         heartbeat = OffboardControlMode()
         heartbeat.timestamp = self.timestamp()
         heartbeat.position = mode == 'position'

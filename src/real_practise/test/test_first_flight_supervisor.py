@@ -21,3 +21,8 @@ class FirstFlightTests(unittest.TestCase):
         source = Path(__file__).parents[1].joinpath('real_practise', 'first_flight_supervisor_node.py').read_text()
         self.assertIn('/fmu/out/vehicle_local_position', source)
         self.assertIn('/fmu/out/vehicle_local_position_v1', source)
+
+    def test_supervisor_uses_px4_v1_16_disarmed_constant(self):
+        source = Path(__file__).parents[1].joinpath('real_practise', 'first_flight_supervisor_node.py').read_text()
+        self.assertIn('ARMING_STATE_DISARMED', source)
+        self.assertNotIn('ARMING_STATE_STANDBY', source)

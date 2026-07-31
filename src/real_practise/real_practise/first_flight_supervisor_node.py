@@ -110,7 +110,7 @@ class FirstFlightSupervisor(Node):
             return False, 'reject: vehicle_attitude DDS timestamp invalid'
         if self.status.failsafe:
             return False, 'reject: PX4 failsafe active'
-        if self.status.arming_state != VehicleStatus.ARMING_STATE_STANDBY:
+        if self.status.arming_state != VehicleStatus.ARMING_STATE_DISARMED:
             return False, 'reject: vehicle not disarmed'
         if self.status.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD:
             return False, 'reject: offboard already active'
