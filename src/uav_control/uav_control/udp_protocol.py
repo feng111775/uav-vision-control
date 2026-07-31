@@ -12,7 +12,8 @@ import time
 MAX_RUN_ID = 0xFFFFFFFF
 MAX_FRAME_BYTES = 512
 VALID_EVENTS = {
-    'BOOT', 'READY', 'START', 'FINISH', 'TIMEOUT', 'ESTOP', 'REMOTE_STOP'}
+    'BOOT', 'READY', 'START', 'FINISH', 'TIMEOUT', 'ESTOP', 'REMOTE_STOP',
+    'PONG'}
 VALID_CAR_STATES = {0, 1, 2, 3, 4}
 
 
@@ -45,7 +46,11 @@ def parse_stm32_frame(raw_text: str, max_bytes=MAX_FRAME_BYTES) -> ParsedFrame:
     text = raw_text[:-1] if raw_text.endswith('\n') else raw_text
     if text.endswith('\r'):
         text = text[:-1]
-    if len(text.encode('utf-8')) > int(max_bytes):
+    try:
+        encoded_text = text.encode('ascii')
+    except UnicodeEncodeError as error:
+        raise ValueError('frame must be ASCII') from error
+    if len(encoded_text) > int(max_bytes):
         raise ValueError('frame exceeds maximum size')
     if not text.startswith('$'):
         raise ValueError("missing '$' frame start")
@@ -83,16 +88,17 @@ def parse_stm32_frame(raw_text: str, max_bytes=MAX_FRAME_BYTES) -> ParsedFrame:
             state = int(fields[2], 10)
             elapsed = int(fields[3], 10)
             progress = int(fields[4], 10)
-            line_mask = int(fields[5], 10)
+            line_mask = int(fields[5], 16)
             line_error = float(fields[6])
             left_pwm = int(fields[7], 10)
             right_pwm = int(fields[8], 10)
-            int(fields[9], 10)
+            flags = int(fields[9], 16)
         except ValueError as error:
             raise ValueError('invalid CAR numeric field') from error
         if (state not in VALID_CAR_STATES or elapsed < 0 or
                 not 0 <= progress <= 1000 or not math.isfinite(line_error) or
-                not 0 <= line_mask <= 0xFFFF or
+                not 0 <= line_mask <= 0xFF or
+                not 0 <= flags <= 0xFF or
                 not -1000 <= left_pwm <= 1000 or
                 not -1000 <= right_pwm <= 1000):
             raise ValueError('CAR numeric field outside range')
@@ -180,5 +186,13 @@ class StartJournal:
         self.pending_run_id = None
         self.pending_source = None
         self.pending_received_monotonic = None
+        self._write()
+        return True
+
+    def begin_new_session(self):
+        """Forget committed run IDs only after an explicit safe session reset."""
+        if self.locked or self.pending_run_id is not None:
+            return False
+        self.committed_run_id = None
         self._write()
         return True

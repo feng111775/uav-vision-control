@@ -1,0 +1,29 @@
+mission_controller_node:
+  ros__parameters:
+    # Non-visual START-trigger preparation profile for SITL only.
+    mission_mode: hover_test
+    target_altitude: 1.5
+    altitude_tolerance: 0.1
+    prestream_cycles: 40
+    hover_confirm_seconds: 3.0
+    hover_test_seconds: 3.0
+    simulation_mode: true
+    competition_mode: false
+    enable_control: true
+    enable_auto_arm: true
+    enable_auto_disarm: true
+    auto_start_hover_test: false
+    enable_visual_follow: false
+    enable_payload_release: false
+    enable_dynamic_landing: false
+    enable_second_takeoff: false
+    allow_sitl_heading_quality_bypass: true
+    status_timeout: 1.0
+    position_timeout: 0.5
+    odom_gate_min_frames: 20
+    odom_gate_min_source_span_seconds: 1.0
+    attitude_timeout: 0.5
+    safety_timeout: 1.0
+    control_rate_hz: 20.0
+    min_target_altitude: 0.5
+    max_target_altitude: 2.0

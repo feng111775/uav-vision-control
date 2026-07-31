@@ -47,6 +47,7 @@ class MissionControllerNode(Node):
             'mission_mode': 'hover_test', 'target_altitude': 1.0,
             'simulation_mode': False, 'competition_mode': False,
             'enable_control': False, 'enable_auto_arm': False,
+            'auto_start_hover_test': True,
             'enable_visual_follow': False, 'enable_payload_release': False,
             'enable_dynamic_landing': False, 'enable_auto_disarm': False,
             'enable_second_takeoff': False, 'prestream_cycles': 40,
@@ -109,6 +110,7 @@ class MissionControllerNode(Node):
         self._validate_integration_parameters()
         logic_names = ('mission_mode', 'target_altitude', 'simulation_mode',
                        'competition_mode', 'enable_control', 'enable_auto_arm',
+                       'auto_start_hover_test',
                        'enable_visual_follow', 'enable_payload_release',
                        'enable_dynamic_landing', 'enable_auto_disarm',
                        'enable_second_takeoff', 'prestream_cycles',
@@ -271,6 +273,7 @@ class MissionControllerNode(Node):
             'vision_deadband_norm', 'align_tolerance_x_norm',
             'align_tolerance_y_norm', 'align_stable_duration_sec',
             'vision_loss_hover_sec', 'vision_loss_abort_sec',
+            'target_loss_abort_seconds',
             'servo_release_timeout_sec')
         values = [float(self.get_parameter(name).value) for name in names]
         if not all(math.isfinite(value) for value in values):
@@ -292,11 +295,18 @@ class MissionControllerNode(Node):
             raise ValueError('vision_max_accel_mps2 must be positive')
         if values[7] < 0.0 or values[8] < 0.0 or values[9] < 0.0:
             raise ValueError('visual deadband, tolerances and stable time cannot be negative')
-        if values[10] < 0.0 or values[11] < 0.0 or values[12] <= 0.0:
+        if values[10] < 0.0 or values[11] < 0.0 or values[12] <= 0.0 or values[13] <= 0.0:
             raise ValueError('vision loss times are invalid')
-        if values[11] >= values[12]:
-            raise ValueError('vision_loss_abort_sec must exceed hover time')
-        if values[13] <= 0.0:
+        target_abort = float(self.get_parameter(
+            'target_loss_abort_seconds').value)
+        legacy_abort = float(self.get_parameter('vision_loss_abort_sec').value)
+        if target_abort <= values[10]:
+            raise ValueError('target_loss_abort_seconds must exceed hover time')
+        if legacy_abort != target_abort:
+            raise ValueError(
+                'vision_loss_abort_sec is deprecated and must match '
+                'target_loss_abort_seconds')
+        if values[14] <= 0.0:
             raise ValueError('servo_release_timeout_sec must be positive')
         if (float(self.get_parameter('mission_deadline_s').value) <= 0.0 or
                 float(self.get_parameter('return_reserve_s').value) < 0.0 or
@@ -635,7 +645,7 @@ class MissionControllerNode(Node):
                 self.target_loss_since = now
             loss_duration = now - self.target_loss_since
             if loss_duration >= self.get_parameter(
-                    'vision_loss_abort_sec').value:
+                    'target_loss_abort_seconds').value:
                 self.logic.safety_block = 'VISION_INVALID'
                 target_state = ('RETURN_HOME' if self.logic.h is not None and
                                 self.logic.position is not None else 'FAILSAFE')
@@ -715,10 +725,10 @@ class MissionControllerNode(Node):
                     VehicleStatus.NAVIGATION_STATE_AUTO_LAND):
                 self._publish_command(
                     'land', VehicleCommand.VEHICLE_CMD_NAV_LAND, now)
-            if self.logic.state in (
+            if (self.logic.enable_visual_follow and self.logic.state in (
                     'VISION_FOLLOW', 'ALIGN_FOR_DROP', 'ALIGN_PLATFORM',
                     'DYNAMIC_DESCENT_HIGH', 'DYNAMIC_DESCENT_NEAR',
-                    'TOUCHDOWN_CHECK'):
+                    'TOUCHDOWN_CHECK')):
                 if not self.logic.target_ok:
                     n, e = self.guidance.velocity(
                         False, ex, ey, confidence, age, self.logic.heading,

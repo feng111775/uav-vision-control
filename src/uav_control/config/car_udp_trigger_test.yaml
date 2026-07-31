@@ -4,9 +4,9 @@ car_start_gateway:
     transport: udp
     real_transport_enabled: true
     udp_host: 127.0.0.1
-    udp_port: 19001
+    udp_port: 19011
     udp_peer_host: 127.0.0.1
-    udp_peer_port: 19000
+    udp_peer_port: 19012
     udp_require_peer: true
     esp32_ip: 127.0.0.1
     ping_period_sec: 1.0
@@ -18,12 +18,8 @@ car_start_gateway:
     max_packets_per_tick: 16
     running_fallback_count: 3
     running_fallback_max_gap_s: 0.5
-    car_point_b_progress_permille: 200
-    car_point_c_progress_permille: 300
-    car_point_d_progress_permille: 400
-    car_return_progress_permille: 900
     trigger_repeat_count: 3
     trigger_repeat_period_s: 0.1
     subscriber_wait_timeout_s: 2.0
-    udp_journal_path: /tmp/uav_control_car_udp_journal.json
-    start_state_path: /tmp/uav_control_car_start_gate.json
+    udp_journal_path: /tmp/uav_control_car_udp_test_journal.json
+    start_state_path: /tmp/uav_control_car_start_test_gate.json

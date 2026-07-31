@@ -82,6 +82,7 @@ class MissionLogic:
     def __init__(self, mission_mode='hover_test', target_altitude=1.5,
                  simulation_mode=False, competition_mode=False,
                  enable_control=False, enable_auto_arm=False,
+                 auto_start_hover_test=True,
                  enable_visual_follow=True, enable_payload_release=False,
                  enable_dynamic_landing=False, enable_auto_disarm=False,
                  enable_second_takeoff=False, prestream_cycles=40,
@@ -104,6 +105,7 @@ class MissionLogic:
         self.competition_mode = bool(competition_mode)
         self.enable_control = bool(enable_control)
         self.enable_auto_arm = bool(enable_auto_arm)
+        self.auto_start_hover_test = bool(auto_start_hover_test)
         self.enable_visual_follow = bool(enable_visual_follow)
         self.enable_payload_release = bool(enable_payload_release)
         self.enable_dynamic_landing = bool(enable_dynamic_landing)
@@ -270,6 +272,12 @@ class MissionLogic:
             self.heading = float(heading)
 
     def update_visual(self, valid, aligned, now):
+        if not self.enable_visual_follow:
+            self.target_ok = False
+            self.aligned = False
+            self.visual_stable_since = None
+            self.aligned_stable_since = None
+            return
         self.target_ok = bool(valid)
         self.aligned = self.target_ok and bool(aligned)
         if not self.target_ok:
@@ -509,7 +517,8 @@ class MissionLogic:
         self.safety_block = 'WAIT_START'
         start_requested = (self.start_signal or
                            (self.mode_name == 'hover_test' and
-                            self.enable_control))
+                            self.enable_control and
+                            self.auto_start_hover_test))
         if start_requested and self.lock_home():
             self.start_signal = True
             self.started_at = (now if self.start_time_hint is None else
@@ -569,6 +578,9 @@ class MissionLogic:
             self.transition(S.SEARCH_CAR, now)
 
     def _search_car(self, now):
+        if not self.enable_visual_follow:
+            self.safety_block = 'VISUAL_FOLLOW_DISABLED'
+            return
         if self.visual_stable(now):
             self.transition(S.VISION_FOLLOW, now)
             if (self.car_progress < CarProgress.PASSED_B and
@@ -576,12 +588,18 @@ class MissionLogic:
                 self.formed_follow_before_b = True
 
     def _vision_follow(self, now):
+        if not self.enable_visual_follow:
+            self.transition(S.SEARCH_CAR, now, 'VISUAL_FOLLOW_DISABLED')
+            return
         if self.alignment_stable(now):
             target = (S.ALIGN_FOR_DROP if self.mode_name == 'drop'
                       else S.ALIGN_PLATFORM)
             self.transition(target, now)
 
     def _align_for_drop(self, now):
+        if not self.enable_visual_follow:
+            self.transition(S.SEARCH_CAR, now, 'VISUAL_FOLLOW_DISABLED')
+            return
         can_release = (self.alignment_stable(now) and
                        self.altitude_reached() and
                        not self.payload_forbidden and
@@ -613,6 +631,9 @@ class MissionLogic:
             self.transition(S.FAILSAFE, now, 'PAYLOAD_ACK_TIMEOUT')
 
     def _align_platform(self, now):
+        if not self.enable_visual_follow:
+            self.transition(S.SEARCH_CAR, now, 'VISUAL_FOLLOW_DISABLED')
+            return
         if (self.enable_dynamic_landing and self.alignment_stable(now) and
                 self.car_progress < CarProgress.PASSED_D):
             self.transition(S.DYNAMIC_DESCENT_HIGH, now)

@@ -55,6 +55,15 @@ def test_pending_commit_recovery_and_duplicate_protection(tmp_path):
     assert committed.begin(4, 'EVT_START') == 'PENDING'
 
 
+def test_new_session_reset_requires_no_pending_start(tmp_path):
+    path = tmp_path / 'journal.json'
+    journal = StartJournal(path)
+    assert journal.begin(1, 'EVT_START') == 'PENDING'
+    assert journal.commit(1)
+    assert journal.begin_new_session()
+    assert StartJournal(path).begin(1, 'EVT_START') == 'PENDING'
+
+
 def test_corrupt_or_invalid_journal_fails_closed(tmp_path):
     path = tmp_path / 'journal.json'
     path.write_text('{broken', encoding='utf-8')

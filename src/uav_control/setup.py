@@ -14,7 +14,8 @@ setup(
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/config', glob('config/*.yaml')),
         ('share/' + package_name + '/launch', glob('launch/*.launch.py')),
-        ('share/' + package_name + '/scripts', glob('scripts/*')),
+        ('share/' + package_name + '/scripts',
+            glob('scripts/*.sh') + glob('scripts/*.py')),
     ],
     install_requires=['setuptools'],
     tests_require=['pytest'],
@@ -52,6 +53,8 @@ setup(
             'uav_control.odom_freeze_relay:main',
             'car_start_gateway = '
             'uav_control.car_start_gateway:main',
+            'car_udp_trigger_node = '
+            'uav_control.car_udp_trigger_node:main',
             'car_marker_vision = '
             'uav_control.car_marker_vision:main',
             'mission_offboard_controller = '

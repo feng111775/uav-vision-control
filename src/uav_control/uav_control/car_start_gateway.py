@@ -9,11 +9,13 @@ import tempfile
 import time
 
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
-from std_msgs.msg import Bool, String, UInt8
+from std_msgs.msg import Bool, String, UInt32, UInt8
 
+from .car_protocol import parse_stm32_frame, ParsedFrame
 from .stage4c_core import StartGate, StartProtocol
-from .udp_protocol import parse_stm32_frame, ParsedFrame, StartJournal
+from .udp_protocol import StartJournal
 
 
 def heartbeat_is_current(last_ns, now_ns, timeout_s):
@@ -115,11 +117,37 @@ class CarStartGateway(Node):
             tempfile.gettempdir(), 'uav_car_udp_journal.json'))
         self.declare_parameter('start_packet_max_age_s', 2.0)
         self.declare_parameter('heartbeat_timeout_s', 2.0)
+        self.declare_parameter('esp32_ip', '192.168.4.1')
+        self.declare_parameter('ping_period_sec', 1.0)
+        self.declare_parameter('link_timeout_sec', 2.5)
+        self.declare_parameter('receive_buffer_size', 512)
+        self.declare_parameter('allow_state_transition_fallback', True)
+        self.declare_parameter('communication_only', False)
         heartbeat_timeout = float(
             self.get_parameter('heartbeat_timeout_s').value)
         if not math.isfinite(heartbeat_timeout) or heartbeat_timeout <= 0.0:
             raise ValueError('heartbeat_timeout_s must be finite and positive')
         self.heartbeat_timeout_s = heartbeat_timeout
+        self.esp32_ip = str(self.get_parameter('esp32_ip').value).strip()
+        self.ping_period_sec = float(self.get_parameter('ping_period_sec').value)
+        self.link_timeout_sec = float(self.get_parameter('link_timeout_sec').value)
+        self.receive_buffer_size = int(
+            self.get_parameter('receive_buffer_size').value)
+        self.allow_state_transition_fallback = bool(
+            self.get_parameter('allow_state_transition_fallback').value)
+        self.communication_only = bool(
+            self.get_parameter('communication_only').value)
+        try:
+            ipaddress.ip_address(self.esp32_ip)
+        except ValueError as error:
+            raise ValueError('esp32_ip must be an IP address') from error
+        if (not math.isfinite(self.ping_period_sec) or
+                self.ping_period_sec <= 0.0 or
+                not math.isfinite(self.link_timeout_sec) or
+                self.link_timeout_sec <= self.ping_period_sec):
+            raise ValueError('invalid ping/link timeout parameters')
+        if not 64 <= self.receive_buffer_size <= 65535:
+            raise ValueError('receive_buffer_size is outside safe range')
         self.transport = StartTransport(
             self.get_parameter('transport').value,
             self.get_parameter('real_transport_enabled').value,
@@ -213,6 +241,11 @@ class CarStartGateway(Node):
         self.running_candidate_run_id = None
         self.running_candidate_count = 0
         self.running_candidate_last_monotonic = None
+        self.current_session = 0
+        self.last_seen_run_id = None
+        self.triggered_run_ids = set()
+        self.observed_nonrunning = set()
+        self.boot_seen = False
         self.udp_pending_run_id = self.udp_journal.pending_run_id
         self.udp_pending_source = self.udp_journal.pending_source
         self.udp_pending_received_monotonic = (
@@ -237,6 +270,9 @@ class CarStartGateway(Node):
             String, '/car/telemetry', 10)
         self.link_publisher = self.create_publisher(
             Bool, '/car/link_alive', 10)
+        self.run_id_publisher = self.create_publisher(
+            UInt32, '/car/run_id', 10)
+        self._publish_link(False)
         self.create_subscription(
             String, '/uav_mission/sim/car_start', self._start, 10)
         self.create_subscription(
@@ -338,9 +374,12 @@ class CarStartGateway(Node):
         output = String()
         output.data = json.dumps(event, separators=(',', ':'))
         self.publisher.publish(output)
-        mission_start = Bool()
-        mission_start.data = True
-        self.mission_start_publisher.publish(mission_start)
+        if self.communication_only:
+            self.get_logger().warning(
+                'START validated but mission trigger suppressed by '
+                'communication_only')
+        else:
+            self.mission_start_publisher.publish(Bool(data=True))
         self.get_logger().info(
             'START_ACCEPTED session=%s start=%s' % (session_id, start_id))
 
@@ -350,7 +389,7 @@ class CarStartGateway(Node):
         for _ in range(self.max_packets_per_tick):
             try:
                 payload, address = self.udp_socket.recvfrom(
-                    self.max_datagram_bytes + 1)
+                    min(self.max_datagram_bytes, self.receive_buffer_size) + 1)
             except BlockingIOError:
                 return
             except OSError as error:
@@ -359,9 +398,10 @@ class CarStartGateway(Node):
             if len(payload) > self.max_datagram_bytes:
                 self.get_logger().warning('ignored oversized UDP datagram')
                 continue
-            if (self.udp_require_peer and
-                    (address[0] != self.udp_peer_host or
-                     address[1] != self.udp_peer_port)):
+            expected_host = self.udp_peer_host or self.esp32_ip
+            expected_port = self.udp_peer_port
+            if (address[0] != expected_host or
+                    (expected_port and address[1] != expected_port)):
                 self.get_logger().warning(
                     'ignored UDP datagram from unexpected peer %s:%d' % address)
                 continue
@@ -448,9 +488,12 @@ class CarStartGateway(Node):
             'sender_counter': counter,
         }, separators=(',', ':'))
         self.publisher.publish(event)
-        mission_start = Bool()
-        mission_start.data = True
-        self.mission_start_publisher.publish(mission_start)
+        if self.communication_only:
+            self.get_logger().warning(
+                'START validated but mission trigger suppressed by '
+                'communication_only')
+        else:
+            self.mission_start_publisher.publish(Bool(data=True))
 
     def _mark_udp_alive(self):
         self.last_valid_udp_monotonic = time.monotonic()
@@ -458,8 +501,15 @@ class CarStartGateway(Node):
 
     def _handle_stm32_frame(self, frame: ParsedFrame):
         """Handle one validated ASCII frame without changing mission logic."""
+        self.last_seen_run_id = frame.run_id
+        self.run_id_publisher.publish(UInt32(data=frame.run_id))
         if frame.kind == 'EVT':
             event = frame.fields[2].upper()
+            if event == 'BOOT' and frame.run_id == 0:
+                self.boot_seen = True
+                self.current_session += 1
+                self.running_candidate_run_id = None
+                self.running_candidate_count = 0
             if event == 'START':
                 self._queue_udp_start(frame.run_id, 'EVT_START')
             elif event in {'FINISH', 'TIMEOUT', 'ESTOP', 'REMOTE_STOP'}:
@@ -471,10 +521,22 @@ class CarStartGateway(Node):
         self.progress_publisher.publish(
             UInt8(data=self._progress_stage(progress)))
         if state != 1:
+            if (frame.run_id == 0 and state == 0 and self.boot_seen and
+                    self.udp_pending_run_id is None and
+                    self.udp_journal.begin_new_session()):
+                self.current_session += 1
+                self.triggered_run_ids.clear()
+                self.observed_nonrunning.clear()
+                self.boot_seen = False
+            self.observed_nonrunning.add(frame.run_id)
             self.running_candidate_run_id = None
             self.running_candidate_count = 0
             return
         now = time.monotonic()
+        if (not self.allow_state_transition_fallback or
+                frame.run_id not in self.observed_nonrunning or
+                frame.run_id in self.triggered_run_ids):
+            return
         if (self.running_candidate_run_id == frame.run_id and
                 self.running_candidate_last_monotonic is not None and
                 now - self.running_candidate_last_monotonic <=
@@ -509,6 +571,8 @@ class CarStartGateway(Node):
         return 1
 
     def _queue_udp_start(self, run_id, source):
+        if int(run_id) in self.triggered_run_ids:
+            return
         status = self.udp_journal.begin(run_id, source)
         if status == 'ALREADY_PROCESSED':
             return
@@ -543,8 +607,14 @@ class CarStartGateway(Node):
                 now - self.udp_last_publish_monotonic <
                 self.trigger_repeat_period_s):
             return
-        message = Bool(data=True)
-        self.mission_start_publisher.publish(message)
+        if self.communication_only:
+            self.get_logger().warning(
+                'START validated but mission trigger suppressed by communication_only')
+        else:
+            self.mission_start_publisher.publish(Bool(data=True))
+        self.triggered_run_ids.add(int(run_id))
+        if len(self.triggered_run_ids) > 64:
+            self.triggered_run_ids = set(sorted(self.triggered_run_ids)[-64:])
         self.udp_publish_count += 1
         if self.udp_first_publish_monotonic is None:
             self.udp_first_publish_monotonic = now
@@ -577,24 +647,26 @@ class CarStartGateway(Node):
         """Publish heartbeat freshness without claiming a hardware link."""
         now_ns = self.get_clock().now().nanoseconds
         now_monotonic = time.monotonic()
-        if (self.udp_socket is not None and self.udp_peer_host and
-                1 <= self.udp_peer_port <= 65535 and
-                now_monotonic - self.last_ping_monotonic >= 1.0):
+        ping_host = self.udp_peer_host or self.esp32_ip
+        ping_port = self.udp_peer_port or self.transport.udp_port
+        if (self.udp_socket is not None and ping_host and
+                1 <= ping_port <= 65535 and
+                now_monotonic - self.last_ping_monotonic >= self.ping_period_sec):
             try:
                 self.udp_socket.sendto(
-                    b'PING', (self.udp_peer_host, self.udp_peer_port))
+                    b'PING', (ping_host, ping_port))
                 self.last_ping_monotonic = now_monotonic
             except OSError as error:
                 self.get_logger().warning('UDP PING failed: %s' % error)
         if (self.last_valid_udp_monotonic is not None and
                 now_monotonic - self.last_valid_udp_monotonic >
-                self.heartbeat_timeout_s):
+                self.link_timeout_sec):
             self._publish_link(False)
         connected = (heartbeat_is_current(
             self.last_heartbeat_ns, now_ns, self.heartbeat_timeout_s) or
                      (self.last_valid_udp_monotonic is not None and
                       now_monotonic - self.last_valid_udp_monotonic <=
-                      self.heartbeat_timeout_s))
+                      self.link_timeout_sec))
         output = String()
         output.data = json.dumps({
             'transport': self.transport.kind,
@@ -623,6 +695,11 @@ def main(args=None):
     """Run the car start gateway."""
     rclpy.init(args=args)
     node = CarStartGateway()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
+    try:
+        rclpy.spin(node)
+    except (KeyboardInterrupt, ExternalShutdownException):
+        pass
+    finally:
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
