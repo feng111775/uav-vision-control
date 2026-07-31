@@ -27,6 +27,16 @@ def _error_line(writer, count, error, now_ms, last_ms):
     return now_ms
 
 
+def _maybe_repeat_config(detector, protocol, now_ms):
+    if not detector.should_repeat_config(now_ms):
+        return False
+    try:
+        protocol.send_config()
+        return True
+    except Exception:
+        return False
+
+
 def run():
     camera = configure_camera()
     detector = (LegacyDetector if DETECTOR_BACKEND == 'legacy' else FastV2Detector)(
@@ -92,11 +102,7 @@ def run():
             except Exception:
                 pass
             last_log_ms = now_ms
-        if detector.should_repeat_config(now_ms):
-            try:
-                protocol.send_config()
-            except Exception:
-                pass
+        _maybe_repeat_config(detector, protocol, now_ms)
         detector.emit_diagnostics(now_ms)
         if TIMING_ENABLED and pyb.elapsed_millis(last_timing_ms) >= TIMING_LOG_PERIOD_MS:
             for name, values in detector.timing.summary().items():
