@@ -51,6 +51,7 @@ class MissionControllerNode(Node):
         defaults['guidance_max_speed'] = 0.5
         defaults['camera_x_sign'] = -1.0
         defaults['camera_y_sign'] = -1.0
+        defaults['dry_run_px4_commands'] = False
         for name, value in defaults.items():
             self.declare_parameter(name, value)
         logic_names = ('mission_mode', 'target_altitude', 'simulation_mode',
@@ -88,6 +89,8 @@ class MissionControllerNode(Node):
         self.payload_pulse_sent = False
         self.target_loss_since = None
         self.last_setpoint_mode = 'position'
+        self.dry_run_px4_commands = bool(
+            self.get_parameter('dry_run_px4_commands').value)
         px4_qos = QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT,
                              durability=DurabilityPolicy.TRANSIENT_LOCAL,
                              history=HistoryPolicy.KEEP_LAST, depth=1)
@@ -226,6 +229,9 @@ class MissionControllerNode(Node):
         msg.source_component = 1
         msg.confirmation = 0
         msg.from_external = True
+        if self.dry_run_px4_commands:
+            self.logic.event = 'DRY_RUN_COMMAND_%s' % name.upper()
+            return
         self.command_pub.publish(msg)
 
     def _publish_control(self, mode, position=None, velocity=None):

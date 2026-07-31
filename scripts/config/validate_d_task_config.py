@@ -26,7 +26,8 @@ def validate_data(data, name, source_text=""):
     if mode is not None and mode not in {"drop", "dynamic_land", "hover_test"}:
         errors.append("invalid mission_mode")
     competition = "competition" in os.path.basename(name)
-    first = "first_flight" in os.path.basename(name)
+    basename = os.path.basename(name)
+    first = basename in {"first_flight_real.yaml", "first_flight_bench.yaml"}
     if competition:
         if any(str(v).lower() == "mock" for v in values):
             errors.append("mock transport in competition")
@@ -36,9 +37,13 @@ def validate_data(data, name, source_text=""):
     if first:
         for suffix in ("enable_visual_follow", "enable_payload_release",
                        "enable_dynamic_landing", "enable_second_takeoff",
-                       "enable_auto_arm", "enable_control"):
+                       "enable_auto_arm"):
             if any(k.endswith(suffix) and bool(v) for k, v in flat.items()):
                 errors.append("unsafe first-flight option: " + suffix)
+        if any(k.endswith("enable_control") and v is not True for k, v in flat.items()):
+            errors.append("first-flight launch must keep enable_control true")
+        if mode is not None and mode != "hover_test":
+            errors.append("first-flight launch must use hover_test mission_mode")
     for key, value in flat.items():
         if key.endswith("transport") and value == "serial":
             base = key.rsplit(".", 1)[0]

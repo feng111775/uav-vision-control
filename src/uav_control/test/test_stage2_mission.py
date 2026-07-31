@@ -252,6 +252,14 @@ def test_second_prestream_resets_all_reused_command_trackers():
     assert "('mode', 'arm', 'land', 'disarm')" in source
 
 
+def test_dry_run_vehicle_commands_supported_for_bench_validation():
+    source = (Path(__file__).parents[1] / 'uav_control' /
+              'mission_controller_node.py').read_text()
+    assert "defaults['dry_run_px4_commands'] = False" in source
+    assert 'if self.dry_run_px4_commands:' in source
+    assert 'DRY_RUN_COMMAND_' in source
+
+
 def test_at_h_requires_position_velocity_altitude():
     logic = ready_logic()
     logic.position = (2, 3, logic.cruise_z)

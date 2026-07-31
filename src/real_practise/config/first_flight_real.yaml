@@ -4,6 +4,7 @@ mission_controller_node:
     simulation_mode: false
     competition_mode: false
     enable_control: true
+    dry_run_px4_commands: false
     enable_auto_arm: false
     enable_visual_follow: false
     enable_payload_release: false
@@ -22,10 +23,12 @@ mission_controller_node:
     safety_timeout: 0.50
     mission_timeout_seconds: 30.0
     max_tilt_rad: 0.35
-    mission_timeout_seconds: 30.0
 first_flight_supervisor_node:
   ros__parameters:
     simulation_mode: false
     status_timeout: 0.50
     position_timeout: 0.30
     attitude_timeout: 0.30
+    mission_state_timeout: 0.50
+    max_xy_speed: 0.15
+    max_z_speed: 0.15

@@ -1,21 +1,21 @@
 # 首飞集成审计（2026-07-31）
 
-工作区 `/home/xixi/px4_ros2_ws_firstflight`，基线 `ee2125d`，分支
-`feature/first-flight-hover-validation`。控制冻结commit
-`60ca82bea21301a8e14ec49a6b10612ecf927522` 无法在本地/远端/worktree核验；当前首飞入口基于总分支现有控制实现，等待控制组正式源码复核。
+工作区为 `/home/xixi/px4_ros2_ws_firstflight`，当前分支为
+`feature/first-flight-hover-validation`。当前 `/home/xixi/px4_ros2_ws` 主 worktree
+停留在 `feature/vision-red-assist`，未被改动。
 
-`real_practise` 原本不存在，现新增监督器、两个launch、参数和测试。总分支实际入口为
-`mission_controller_node`；`mission_offboard_controller`不存在。首飞launch不启动
-`offboard_control.py`、`vision_offboard_controller`、视觉节点、舵机或完整比赛任务。
+## 审计结论
 
-| 文件 | 节点 | PX4输入话题 | 首飞启动 | 冲突 |
-|---|---|---|---|---|
-| `uav_control/mission_controller_node.py` | `mission_controller_node` | OffboardControlMode、TrajectorySetpoint、VehicleCommand | 是（唯一） | 否 |
-| `uav_control/offboard_control.py` | `offboard_control` | 同上 | 否 | 仅在误启动时冲突 |
-| `uav_control/vision_offboard_controller.py` | `vision_offboard_controller` | 同上 | 否 | 仅在误启动时冲突 |
-| `real_practise/first_flight_supervisor_node.py` | `first_flight_supervisor_node` | 无 | 是 | 否 |
+- `integration/d-task-final` 当前不具备 `real_practise` 首飞入口，不能直接用于真实首飞。
+- `feature/first-flight-hover-validation` 已包含 `real_practise`、`first_flight_real.launch.py`
+  与首飞监督器，适合做无桨台架准备。
+- `first_flight_real.launch.py` 仅启动 `mission_controller_node` 与
+  `first_flight_supervisor_node`；没有视觉、投放、动态降落、二次起飞、自动 ARM、
+  Agent 启动或 `uxrce_dds_client start`。
+- `mission_controller_node` 仍订阅 `std_msgs/msg/Float32MultiArray` 视觉接口；视觉链同时存在
+  `uav_interfaces` 自定义消息发布者。该不一致必须在视觉闭环启用前修复。
+- 新增 `dry_run_px4_commands`，用于无桨阶段验证命令生成、ACK 处理和状态机，不绕过 PX4 安全检查。
 
-PX4 v1.16路径已核验为 `v1.16.0` / `6ea3539157ca358c70a515878b77077af7d4611d`。
-SITL能够启动并输出XRCE连接初始化，但本次未完成ROS自动任务闭环（未运行自动ARM/Trigger验收驱动，超时清理），因此不能宣称SITL通过。`rosdep`未执行：系统rosdep尚未初始化。
+## 当前总判断
 
-结论：`NOT_READY`（在完成完整v1.16 SITL闭环及真实无桨台架前，不得试飞）。
+结论保持 `NOT_READY`：代码已准备无桨台架验证，但在人工完成台架清单前，绝不允许带桨试飞。
