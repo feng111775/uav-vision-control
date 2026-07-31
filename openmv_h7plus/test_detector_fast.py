@@ -49,6 +49,28 @@ def test_roi_without_verify_period_uses_current_measurement_only():
     detector._circle_pairs.assert_not_called()
 
 
+def test_detect_records_one_detector_total_sample_per_call():
+    detector = FastV2Detector()
+    detector.timing = Mock()
+    detector.timing.begin.return_value = object()
+    detector._detect_impl = Mock(return_value={'valid': 0})
+    detector.detect(Image(), 'SEARCH')
+    detector.detect(Image(), 'SEARCH')
+    names = [call.args[0] for call in detector.timing.end.call_args_list]
+    assert names == ['detector_total', 'detector_total']
+    assert 'frame_total' not in names
+
+
+def test_fast_detector_source_does_not_record_frame_total():
+    source = Path(__file__).with_name('detector_fast.py').read_text(encoding='utf-8')
+    assert "timing.end('frame_total'" not in source
+
+
+def test_main_source_records_one_frame_total_at_loop_end():
+    source = Path(__file__).with_name('main.py').read_text(encoding='utf-8')
+    assert source.count("timing.end('frame_total'" ) == 1
+
+
 def test_verify_period_calls_circle_pairs_once_and_scores_once():
     detector = ready_detector()
     detector.frame = 1

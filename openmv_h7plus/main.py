@@ -53,6 +53,8 @@ def run():
     last_status = 'LOST'; capture_error_count = 0; detect_error_count = 0
 
     while True:
+        # frame_total covers the complete main-loop iteration; detector.py
+        # reports detector_total for the detection function itself.
         frame_started_us = pyb.micros()
         timing_started = detector.timing.begin()
         clock.tick()

@@ -279,7 +279,7 @@ class FastV2Detector(DTaskDetector):
         try:
             return self._detect_impl(image, mission_mode)
         finally:
-            self.timing.end('frame_total', started)
+            self.timing.end('detector_total', started)
 
     def _detect_impl(self, image, mission_mode='SEARCH'):
         self.frame += 1

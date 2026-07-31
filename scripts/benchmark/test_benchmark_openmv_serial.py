@@ -202,6 +202,16 @@ def test_timing_stats_include_roi_dimensions():
     assert report['timing_stage_stats']['find_circles']['roi_h'] == 76
 
 
+def test_timing_parser_keeps_detector_and_frame_totals_separate():
+    report = analyze_lines([
+        'D_TIMING,detector_total,avg_ms=4,p50_ms=4,p95_ms=5,p99_ms=6,max_ms=7,n=3\n',
+        'D_TIMING,frame_total,avg_ms=8,p50_ms=8,p95_ms=9,p99_ms=10,max_ms=11,n=3\n',
+        'D_TARGET_V2,1,100,1000,SEARCH,0,0,0,0,0,0.0000,0\n',
+    ], 1)
+    assert report['timing_stage_stats']['detector_total']['count'] == 3
+    assert report['timing_stage_stats']['frame_total']['max_ms'] == 11.0
+
+
 def test_malformed_timing_line_is_reported():
     report = analyze_lines([
         'D_TIMING,find_circles,avg_ms=bad,p50_ms=1,p95_ms=1,p99_ms=1,max_ms=1,n=1\n',
