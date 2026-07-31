@@ -1,7 +1,7 @@
 import pytest
 
 from uav_vision.h7_bridge_node import (
-    is_diagnostic_line, parse_detection_line, parse_status_line)
+    is_diagnostic_line, parse_detection_line, parse_status_line, parse_v2_line)
 
 
 def test_d_target_serial_parsing():
@@ -49,3 +49,17 @@ def test_fps_diagnostic_is_not_treated_as_protocol_data():
     assert is_diagnostic_line('D_VISION,status=CROSS_INVALID,fps=3.4')
     assert is_diagnostic_line('D_TIMING,find_circles,avg_ms=289.449')
     assert not is_diagnostic_line('D_TARGET,0,0,0,0,0,0,0')
+
+def test_v2_target_is_parsed_and_diagnostics_are_legal():
+    item = parse_v2_line('D_TARGET_V2,7,100,1200,SEARCH,1,160,120,50,30,0.2,80')
+    assert item['sequence'] == 7 and item['ticks'] == 100
+    for prefix in ('D_BOOT_V2,', 'D_CONFIG,', 'D_STATUS_V2,', 'D_DETECT_STATS,',
+                   'D_TIMING,', 'D_VISION,', 'D_ERROR,'):
+        assert is_diagnostic_line(prefix + 'x')
+    assert is_diagnostic_line('D_BOOT_V2')
+    assert is_diagnostic_line('D_CONFIG,')
+
+def test_malformed_v2_is_rejected():
+    import pytest
+    with pytest.raises(ValueError):
+        parse_v2_line('D_TARGET_V2,broken')

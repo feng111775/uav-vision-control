@@ -22,12 +22,12 @@ if [[ ! -f "$workspace/install/setup.bash" ]]; then
 fi
 
 content="[Unit]
-Description=D-task OpenMV vision chain (no PX4 control)
+Description=D-task OpenMV read-only vision chain
 After=local-fs.target
 
 [Service]
 Type=simple
-ExecStart=/bin/bash -lc 'source /opt/ros/jazzy/setup.bash && source \"$workspace/install/setup.bash\" && exec ros2 launch uav_vision d_task_vision.launch.py input_source:=h7'
+ExecStart=/bin/bash -lc 'source /opt/ros/jazzy/setup.bash && source \"$workspace/install/setup.bash\" && exec ros2 launch uav_vision h7_v2_readonly.launch.py port:=/dev/dtask_openmv baudrate:=115200 data_timeout_sec:=0.30 allow_legacy_protocol:=false'
 Restart=on-failure
 RestartSec=2
 TimeoutStopSec=10
@@ -47,5 +47,5 @@ fi
 mkdir -p "$unit_dir"
 printf '%s' "$content" >"$unit_path"
 systemctl --user daemon-reload
-systemctl --user enable --now d-task-vision.service
-echo "installed and started: $unit_path"
+systemctl --user disable --now d-task-vision.service 2>/dev/null || true
+echo "installed disabled read-only service template: $unit_path"
