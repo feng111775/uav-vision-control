@@ -121,7 +121,7 @@ class DTaskDetector:
         # antialiasing without becoming a fixed scene threshold.
         return [(0, min(255, max(12, value + 8)))]
 
-    def _search_regions(self, image, roi):
+    def _search_regions(self, image, roi, include_fallback=True):
         thresholds = self._adaptive_dark_threshold(image, roi)
         started = self.timing.begin()
         blobs = image.find_blobs(
@@ -146,7 +146,7 @@ class DTaskDetector:
             x1 = min(image.width(), x + width + margin)
             y1 = min(image.height(), y + height + margin)
             regions.append((x0, y0, x1 - x0, y1 - y0))
-        if not regions:
+        if not regions and include_fallback:
             regions.append(roi)
         return regions[:4]
 
@@ -233,11 +233,16 @@ class DTaskDetector:
         self.timing.end("cross_scoring", started)
         return angle, _clamp(best[0])
 
-    def _detect_roi(self, image, roi):
+    def _detect_roi(self, image, roi, regions=None, pairs_cache=None):
         best = None
-        for region in self._search_regions(image, roi):
-            for outer, inner, ratio, concentric in self._circle_pairs(
-                    image, region):
+        if regions is None:
+            regions = self._search_regions(image, roi)
+        pairs_cache = pairs_cache or {}
+        for region in regions:
+            pairs = pairs_cache.get(region)
+            if pairs is None:
+                pairs = self._circle_pairs(image, region)
+            for outer, inner, ratio, concentric in pairs:
                 cx = (outer[0] + inner[0]) // 2
                 cy = (outer[1] + inner[1]) // 2
                 angle, cross_score = self._cross(

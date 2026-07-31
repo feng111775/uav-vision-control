@@ -10,5 +10,6 @@ class TrackState:
         return None if self.last is None else bounded_roi(self.last['cx'],self.last['cy'],self.last['outer_diameter_px'],image.width(),image.height(),scale,self.lost)
     def update(self,result):
         self.frame+=1
-        if result and result.get('valid'): self.last=result;self.lost=0
+        if result and (result.get('valid') or result.get('measurement_valid')):
+            self.last=result;self.lost=0
         else:self.lost+=1
