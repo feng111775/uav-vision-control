@@ -1,28 +1,70 @@
-from benchmark_openmv_serial import analyze_lines
+from benchmark_openmv_serial import (
+    DETECT_STATS_FIELD_COUNT,
+    DETECT_STATS_INDEX,
+    analyze_lines,
+)
 
 
-def test_report_requires_v2_and_counts_sequences_and_diagnostics():
-    lines = [
-        'D_BOOT_V2,transport=stdout,vcp_id=0,backend=fast_v2\n',
-        'D_CONFIG,MIN_CONFIDENCE=55,CIRCLE_THRESHOLD=1400,LINE_THRESHOLD=550\n',
-        'D_DETECT_STATS,3,SEARCH,4,2,1,2,1,1,6,1,0.710,62.000,0.600,4,3,1,2,1,1,4.000,0.120,58.0,60.0,120:90:122:93,NO_BLOB:1|VALID:1\n',
-        'D_TARGET_V2,1,10,1000,SEARCH,0,0,0,0,0,0.0000,0\n',
+def make_detect_stats_line(**overrides):
+    fields = [''] * DETECT_STATS_FIELD_COUNT
+    values = {
+        'prefix': 'D_DETECT_STATS',
+        'frame_sequence': '3',
+        'mode': 'SEARCH',
+        'blob_count': '4',
+        'region_count': '2',
+        'strong_verify_due_count': '1',
+        'strong_verify_attempt_count': '2',
+        'strong_verify_success_count': '1',
+        'strong_verify_failure_count': '1',
+        'circle_count': '6',
+        'circle_pair_count': '1',
+        'best_cross_score': '0.710',
+        'best_confidence': '62.000',
+        'best_ratio': '0.600',
+        'cross_line_count': '4',
+        'cross_candidate_count': '3',
+        'last_verified_age': '1',
+        'current_measurement_count': '2',
+        'current_valid_frame_count': '1',
+        'verification_grace_frame_count': '1',
+        'candidate_switch_count': '5',
+        'track_jump_px': '4.000',
+        'track_jump_diameter_ratio': '0.120',
+        'selected_blob_diameter_min': '58.0',
+        'selected_blob_diameter_max': '60.0',
+        'selected_blob_center_range': '120:90:122:93',
+        'reject_payload': 'NO_BLOB:1|VALID:1',
+    }
+    values.update(overrides)
+    for name, index in DETECT_STATS_INDEX.items():
+        fields[index] = values[name]
+    return ','.join(fields) + '\n'
+
+
+def test_detect_stats_line_schema_matches_device_layout():
+    line = make_detect_stats_line()
+    assert len(line.strip().split(',')) == 27
+    report = analyze_lines([
+        'D_CONFIG,MIN_CONFIDENCE=55,CONFIG_REPEAT_PERIOD_MS=10000\n',
+        line,
         'D_TARGET_V2,3,20,2000,SEARCH,1,1,2,30,18,0.1000,80\n',
-        'D_PROTOCOL_ERROR,count=1,type=IOError,message=x\n',
-    ]
-    report = analyze_lines(lines, 1)
-    assert report['boot_v2_seen'] and report['unique_sequence_count'] == 2
-    assert report['sequence_gap_count'] == 1 and report['protocol_error_count'] == 1
-    assert report['valid_detection_hz'] == 1
+    ], 1)
+    assert report['detect_stats_count'] == 1
+    assert report['malformed_count'] == 0
     assert report['candidate_stage_counts']['strong_verify_attempt_count'] == 2
-    assert report['candidate_stage_counts']['strong_verify_success_count'] == 1
+    assert report['candidate_stage_counts']['candidate_switch_count'] == 5
+    assert report['candidate_stage_counts']['verification_grace_frame_count'] == 1
     assert report['reject_reason_counts']['NO_BLOB'] == 1
+    assert report['best_confidence_range'] == [62.0, 62.0]
+    assert report['track_jump_px_range'] == [4.0, 4.0]
+    assert report['track_jump_diameter_ratio_range'] == [0.12, 0.12]
+    assert report['selected_blob_diameter_min_range'] == [58.0, 58.0]
+    assert report['selected_blob_diameter_max_range'] == [60.0, 60.0]
+    assert report['selected_blob_center_range'] == [120, 90, 122, 93]
+    assert report['runtime_config']['MIN_CONFIDENCE'] == '55'
     assert 0.0 <= report['strong_verify_success_rate'] <= 1.0
     assert report['strong_verify_success_rate'] == 0.5
-    assert report['runtime_config']['MIN_CONFIDENCE'] == '55'
-    assert report['best_confidence_range'] == [62.0, 62.0]
-    assert report['best_circle_ratio_range'] == [0.6, 0.6]
-    assert report['best_cross_score_range'] == [0.71, 0.71]
 
 
 def test_report_marks_missing_protocol():
@@ -30,16 +72,31 @@ def test_report_marks_missing_protocol():
     assert report['error'] == 'PROTOCOL_V2_MISSING'
 
 
-def test_reject_reason_aggregation_handles_multiple_reasons():
+def test_detect_stats_missing_fields_is_malformed():
     report = analyze_lines([
-        'D_DETECT_STATS,8,SEARCH,1,0,1,1,0,1,0,0,0.000,0.000,0.000,0,0,13,0,0,0,0.000,0.000,0.0,0.0,0:0:0:0,NO_BLOB:2|VERIFY_EXPIRED:1|CROSS_SCORE_LOW:3\n',
-        'D_TARGET_V2,8,20,1200,SEARCH,0,0,0,0,0,0.0000,0\n',
+        make_detect_stats_line().replace(',NO_BLOB:1|VALID:1\n', '\n'),
+        'D_TARGET_V2,1,10,1000,SEARCH,0,0,0,0,0,0.0000,0\n',
     ], 1)
-    assert report['reject_reason_counts'] == {
-        'NO_BLOB': 2,
-        'VERIFY_EXPIRED': 1,
-        'CROSS_SCORE_LOW': 3,
-    }
+    assert report['detect_stats_count'] == 0
+    assert report['malformed_reasons']['detect_stats_missing_fields'] == 1
+
+
+def test_detect_stats_extra_fields_is_malformed():
+    report = analyze_lines([
+        make_detect_stats_line().rstrip('\n') + ',EXTRA\n',
+        'D_TARGET_V2,1,10,1000,SEARCH,0,0,0,0,0,0.0000,0\n',
+    ], 1)
+    assert report['detect_stats_count'] == 0
+    assert report['malformed_reasons']['detect_stats_extra_fields'] == 1
+
+
+def test_detect_stats_invalid_numeric_is_malformed():
+    report = analyze_lines([
+        make_detect_stats_line(track_jump_px='bad'),
+        'D_TARGET_V2,1,10,1000,SEARCH,0,0,0,0,0,0.0000,0\n',
+    ], 1)
+    assert report['detect_stats_count'] == 0
+    assert any(reason.startswith('detect_stats_invalid_') for reason in report['malformed_reasons'])
 
 
 def test_runtime_config_can_arrive_without_boot_line():

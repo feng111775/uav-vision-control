@@ -92,6 +92,11 @@ def run():
             except Exception:
                 pass
             last_log_ms = now_ms
+        if detector.should_repeat_config(now_ms):
+            try:
+                protocol.send_config()
+            except Exception:
+                pass
         detector.emit_diagnostics(now_ms)
         if TIMING_ENABLED and pyb.elapsed_millis(last_timing_ms) >= TIMING_LOG_PERIOD_MS:
             for name, values in detector.timing.summary().items():

@@ -14,6 +14,36 @@ except ImportError:
 DETECT_STATS_PREFIX = 'D_DETECT_STATS,'
 CONFIG_PREFIX = 'D_CONFIG,'
 
+DETECT_STATS_FIELDS = [
+    'prefix', 'frame_sequence', 'mode', 'blob_count', 'region_count',
+    'strong_verify_due_count', 'strong_verify_attempt_count',
+    'strong_verify_success_count', 'strong_verify_failure_count',
+    'circle_count', 'circle_pair_count', 'best_cross_score',
+    'best_confidence', 'best_ratio', 'cross_line_count',
+    'cross_candidate_count', 'last_verified_age',
+    'current_measurement_count', 'current_valid_frame_count',
+    'verification_grace_frame_count', 'candidate_switch_count',
+    'track_jump_px', 'track_jump_diameter_ratio',
+    'selected_blob_diameter_min', 'selected_blob_diameter_max',
+    'selected_blob_center_range', 'reject_payload',
+]
+DETECT_STATS_INDEX = {name: index for index, name in enumerate(DETECT_STATS_FIELDS)}
+DETECT_STATS_FIELD_COUNT = len(DETECT_STATS_FIELDS)
+
+INTEGER_FIELDS = (
+    'frame_sequence', 'blob_count', 'region_count', 'strong_verify_due_count',
+    'strong_verify_attempt_count', 'strong_verify_success_count',
+    'strong_verify_failure_count', 'circle_count', 'circle_pair_count',
+    'cross_line_count', 'cross_candidate_count', 'last_verified_age',
+    'current_measurement_count', 'current_valid_frame_count',
+    'verification_grace_frame_count', 'candidate_switch_count',
+)
+FLOAT_FIELDS = (
+    'best_cross_score', 'best_confidence', 'best_ratio', 'track_jump_px',
+    'track_jump_diameter_ratio', 'selected_blob_diameter_min',
+    'selected_blob_diameter_max',
+)
+
 
 def _parse_reject_counts(payload):
     counts = {}
@@ -28,9 +58,14 @@ def _parse_reject_counts(payload):
     return counts
 
 
+def _parse_center_range(payload):
+    parts = str(payload or '').split(':')
+    if len(parts) != 4:
+        raise ValueError('selected_blob_center_range')
+    return [int(value) for value in parts]
+
+
 def _update_range(ranges, key, value):
-    if value is None:
-        return
     current = ranges.get(key)
     if current is None:
         ranges[key] = [value, value]
@@ -39,139 +74,167 @@ def _update_range(ranges, key, value):
         current[1] = max(current[1], value)
 
 
+def _malformed(report, reason):
+    report['malformed_count'] += 1
+    report['malformed_reasons'][reason] = report['malformed_reasons'].get(reason, 0) + 1
+
+
+def _parse_detect_stats(line, report):
+    fields = line.split(',')
+    if len(fields) < DETECT_STATS_FIELD_COUNT:
+        _malformed(report, 'detect_stats_missing_fields')
+        return
+    if len(fields) > DETECT_STATS_FIELD_COUNT:
+        _malformed(report, 'detect_stats_extra_fields')
+        return
+    if fields[DETECT_STATS_INDEX['prefix']] != 'D_DETECT_STATS':
+        _malformed(report, 'detect_stats_bad_prefix')
+        return
+    parsed = {'mode': fields[DETECT_STATS_INDEX['mode']]}
+    try:
+        for name in INTEGER_FIELDS:
+            parsed[name] = int(fields[DETECT_STATS_INDEX[name]])
+        for name in FLOAT_FIELDS:
+            parsed[name] = float(fields[DETECT_STATS_INDEX[name]])
+        parsed['selected_blob_center_range'] = _parse_center_range(
+            fields[DETECT_STATS_INDEX['selected_blob_center_range']])
+        parsed['reject_payload'] = fields[DETECT_STATS_INDEX['reject_payload']]
+    except ValueError as error:
+        _malformed(report, 'detect_stats_invalid_%s' % str(error))
+        return
+    report['detect_stats_count'] += 1
+    stage_counts = report['candidate_stage_counts']
+    for name in INTEGER_FIELDS:
+        if name in stage_counts:
+            stage_counts[name] += parsed[name]
+    _update_range(report['best_confidence_range_obj'], 'best_confidence_range', parsed['best_confidence'])
+    _update_range(report['best_confidence_range_obj'], 'best_circle_ratio_range', parsed['best_ratio'])
+    _update_range(report['best_confidence_range_obj'], 'best_cross_score_range', parsed['best_cross_score'])
+    _update_range(report['best_confidence_range_obj'], 'track_jump_px_range', parsed['track_jump_px'])
+    _update_range(report['best_confidence_range_obj'], 'track_jump_diameter_ratio_range', parsed['track_jump_diameter_ratio'])
+    _update_range(report['best_confidence_range_obj'], 'selected_blob_diameter_min_range', parsed['selected_blob_diameter_min'])
+    _update_range(report['best_confidence_range_obj'], 'selected_blob_diameter_max_range', parsed['selected_blob_diameter_max'])
+    center_ranges = report['selected_blob_center_range']
+    if center_ranges is None:
+        report['selected_blob_center_range'] = parsed['selected_blob_center_range'][:]
+    else:
+        report['selected_blob_center_range'] = [
+            min(center_ranges[0], parsed['selected_blob_center_range'][0]),
+            min(center_ranges[1], parsed['selected_blob_center_range'][1]),
+            max(center_ranges[2], parsed['selected_blob_center_range'][2]),
+            max(center_ranges[3], parsed['selected_blob_center_range'][3]),
+        ]
+    reasons = _parse_reject_counts(parsed['reject_payload'])
+    for reason, count in reasons.items():
+        report['reject_reason_counts'][reason] = report['reject_reason_counts'].get(reason, 0) + count
+
+
 def analyze_lines(lines, seconds):
+    report = {
+        'serial_line_hz': 0.0,
+        'target_v2_hz': 0.0,
+        'unique_sequence_count': 0,
+        'new_frame_hz': 0.0,
+        'valid_detection_hz': 0.0,
+        'sequence_gap_count': 0,
+        'duplicate_sequence_count': 0,
+        'malformed_count': 0,
+        'malformed_reasons': {},
+        'protocol_error_count': 0,
+        'processing_p50_ms': 0.0,
+        'processing_p95_ms': 0.0,
+        'reported_camera_fps': 0.0,
+        'boot_v2_seen': False,
+        'status_v2_count': 0,
+        'detect_stats_count': 0,
+        'candidate_stage_counts': {
+            'blob_count': 0,
+            'region_count': 0,
+            'strong_verify_due_count': 0,
+            'strong_verify_attempt_count': 0,
+            'strong_verify_success_count': 0,
+            'strong_verify_failure_count': 0,
+            'circle_count': 0,
+            'circle_pair_count': 0,
+            'cross_line_count': 0,
+            'cross_candidate_count': 0,
+            'last_verified_age': 0,
+            'current_measurement_count': 0,
+            'current_valid_frame_count': 0,
+            'verification_grace_frame_count': 0,
+            'candidate_switch_count': 0,
+        },
+        'reject_reason_counts': {},
+        'strong_verify_attempt_count': 0,
+        'strong_verify_success_rate': 0.0,
+        'runtime_config': {},
+        'selected_blob_center_range': None,
+        'best_confidence_range_obj': {},
+    }
     target = []
     valid = 0
-    malformed = 0
-    status = 0
-    errors = 0
-    boot = False
     vision_fps = []
     sequences = []
-    reject_reason_counts = {}
-    stage_counts = {
-        'blob_count': 0,
-        'region_count': 0,
-        'strong_verify_due_count': 0,
-        'strong_verify_attempt_count': 0,
-        'strong_verify_success_count': 0,
-        'strong_verify_failure_count': 0,
-        'circle_count': 0,
-        'circle_pair_count': 0,
-        'cross_line_count': 0,
-        'cross_candidate_count': 0,
-        'last_verified_age': 0,
-        'current_measurement_count': 0,
-        'current_valid_frame_count': 0,
-        'verification_grace_frame_count': 0,
-        'candidate_switch_count': 0,
-    }
-    ranges = {
-        'best_confidence_range': None,
-        'best_circle_ratio_range': None,
-        'best_cross_score_range': None,
-    }
-    runtime_config = {}
-    strong_verify_successes = 0
-    detect_stats_count = 0
     for raw in lines:
         line = raw.decode('utf-8', 'replace').strip() if isinstance(raw, bytes) else str(raw).strip()
         if line.startswith('D_BOOT_V2,'):
-            boot = True
+            report['boot_v2_seen'] = True
         elif line.startswith(CONFIG_PREFIX):
             for item in line[len(CONFIG_PREFIX):].split(','):
                 if '=' not in item:
                     continue
                 key, value = item.split('=', 1)
-                runtime_config[key] = value
+                report['runtime_config'][key] = value
         elif line.startswith('D_PROTOCOL_ERROR,'):
-            errors += 1
+            report['protocol_error_count'] += 1
         elif line.startswith('D_STATUS_V2,'):
-            status += 1
+            report['status_v2_count'] += 1
         elif line.startswith('D_VISION,'):
             match = re.search(r'fps=([0-9.]+)', line)
             if match:
                 vision_fps.append(float(match.group(1)))
         elif line.startswith(DETECT_STATS_PREFIX):
-            fields = line.split(',')
-            if len(fields) != 26:
-                malformed += 1
-                continue
-            detect_stats_count += 1
-            try:
-                stage_counts['blob_count'] += int(fields[3])
-                stage_counts['region_count'] += int(fields[4])
-                stage_counts['strong_verify_due_count'] += int(fields[5])
-                stage_counts['strong_verify_attempt_count'] += int(fields[6])
-                stage_counts['strong_verify_success_count'] += int(fields[7])
-                stage_counts['strong_verify_failure_count'] += int(fields[8])
-                stage_counts['circle_count'] += int(fields[9])
-                stage_counts['circle_pair_count'] += int(fields[10])
-                _update_range(ranges, 'best_cross_score_range', float(fields[11]))
-                _update_range(ranges, 'best_confidence_range', float(fields[12]))
-                _update_range(ranges, 'best_circle_ratio_range', float(fields[13]))
-                stage_counts['cross_line_count'] += int(fields[14])
-                stage_counts['cross_candidate_count'] += int(fields[15])
-                stage_counts['last_verified_age'] += int(fields[16])
-                stage_counts['current_measurement_count'] += int(fields[17])
-                stage_counts['current_valid_frame_count'] += int(fields[18])
-                stage_counts['verification_grace_frame_count'] += int(fields[19])
-                stage_counts['candidate_switch_count'] += int(fields[19])
-                reasons = _parse_reject_counts(fields[25])
-                for reason, count in reasons.items():
-                    reject_reason_counts[reason] = reject_reason_counts.get(reason, 0) + count
-                strong_verify_successes += int(fields[7])
-            except (TypeError, ValueError):
-                malformed += 1
+            _parse_detect_stats(line, report)
         elif line.startswith('D_TARGET_V2,'):
             fields = line.split(',')
             if len(fields) != 12:
-                malformed += 1
+                _malformed(report, 'target_v2_bad_field_count')
                 continue
             try:
                 sequence = int(fields[1])
                 processing = float(fields[3])
                 is_valid = int(fields[5])
                 if sequence < 0 or processing < 0 or is_valid not in (0, 1):
-                    raise ValueError
+                    raise ValueError('target_v2_invalid_numeric')
                 sequences.append(sequence)
                 target.append(processing)
                 valid += is_valid
-            except (TypeError, ValueError):
-                malformed += 1
+            except ValueError as error:
+                _malformed(report, str(error))
     unique = sorted(set(sequences))
-    duplicates = len(sequences) - len(unique)
-    gaps = sum(max(0, b - a - 1) for a, b in zip(unique, unique[1:]))
-    target_hz = len(target) / max(seconds, 1e-9)
     values = sorted(target)
-    p50 = values[min(len(values) - 1, int(len(values) * .50))] if values else 0.0
-    p95 = values[min(len(values) - 1, int(len(values) * .95))] if values else 0.0
-    attempts = stage_counts['strong_verify_attempt_count']
-    report = {
-        'serial_line_hz': len(list(lines)) / max(seconds, 1e-9),
-        'target_v2_hz': target_hz,
-        'unique_sequence_count': len(unique),
-        'new_frame_hz': len(unique) / max(seconds, 1e-9),
-        'valid_detection_hz': valid / max(seconds, 1e-9),
-        'sequence_gap_count': gaps,
-        'duplicate_sequence_count': duplicates,
-        'malformed_count': malformed,
-        'protocol_error_count': errors,
-        'processing_p50_ms': p50 / 1000.0,
-        'processing_p95_ms': p95 / 1000.0,
-        'reported_camera_fps': sum(vision_fps) / len(vision_fps) if vision_fps else 0.0,
-        'boot_v2_seen': boot,
-        'status_v2_count': status,
-        'detect_stats_count': detect_stats_count,
-        'candidate_stage_counts': stage_counts,
-        'reject_reason_counts': reject_reason_counts,
-        'strong_verify_attempt_count': attempts,
-        'strong_verify_success_rate': (strong_verify_successes / attempts) if attempts else 0.0,
-        'best_confidence_range': ranges['best_confidence_range'] or [0.0, 0.0],
-        'best_circle_ratio_range': ranges['best_circle_ratio_range'] or [0.0, 0.0],
-        'best_cross_score_range': ranges['best_cross_score_range'] or [0.0, 0.0],
-        'runtime_config': runtime_config,
-    }
+    report['serial_line_hz'] = len(list(lines)) / max(seconds, 1e-9)
+    report['target_v2_hz'] = len(target) / max(seconds, 1e-9)
+    report['unique_sequence_count'] = len(unique)
+    report['new_frame_hz'] = len(unique) / max(seconds, 1e-9)
+    report['valid_detection_hz'] = valid / max(seconds, 1e-9)
+    report['sequence_gap_count'] = sum(max(0, b - a - 1) for a, b in zip(unique, unique[1:]))
+    report['duplicate_sequence_count'] = len(sequences) - len(unique)
+    report['processing_p50_ms'] = (values[min(len(values) - 1, int(len(values) * .50))] / 1000.0) if values else 0.0
+    report['processing_p95_ms'] = (values[min(len(values) - 1, int(len(values) * .95))] / 1000.0) if values else 0.0
+    report['reported_camera_fps'] = sum(vision_fps) / len(vision_fps) if vision_fps else 0.0
+    attempts = report['candidate_stage_counts']['strong_verify_attempt_count']
+    successes = report['candidate_stage_counts']['strong_verify_success_count']
+    report['strong_verify_attempt_count'] = attempts
+    report['strong_verify_success_rate'] = max(0.0, min(1.0, (successes / attempts) if attempts else 0.0))
+    ranges = report.pop('best_confidence_range_obj')
+    report['best_confidence_range'] = ranges.get('best_confidence_range', [0.0, 0.0])
+    report['best_circle_ratio_range'] = ranges.get('best_circle_ratio_range', [0.0, 0.0])
+    report['best_cross_score_range'] = ranges.get('best_cross_score_range', [0.0, 0.0])
+    report['track_jump_px_range'] = ranges.get('track_jump_px_range', [0.0, 0.0])
+    report['track_jump_diameter_ratio_range'] = ranges.get('track_jump_diameter_ratio_range', [0.0, 0.0])
+    report['selected_blob_diameter_min_range'] = ranges.get('selected_blob_diameter_min_range', [0.0, 0.0])
+    report['selected_blob_diameter_max_range'] = ranges.get('selected_blob_diameter_max_range', [0.0, 0.0])
     if not target:
         report['error'] = 'PROTOCOL_V2_MISSING'
     return report
