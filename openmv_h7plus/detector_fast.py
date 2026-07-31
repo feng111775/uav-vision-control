@@ -275,6 +275,13 @@ class FastV2Detector(DTaskDetector):
             self.diagnostics.note_full_search_reset()
 
     def detect(self, image, mission_mode='SEARCH'):
+        started = self.timing.begin()
+        try:
+            return self._detect_impl(image, mission_mode)
+        finally:
+            self.timing.end('frame_total', started)
+
+    def _detect_impl(self, image, mission_mode='SEARCH'):
         self.frame += 1
         self.mode = self._state_name()
         roi = self._search_roi(image)

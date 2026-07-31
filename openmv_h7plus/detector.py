@@ -26,6 +26,9 @@ from config import (
     MIN_CONFIDENCE, MIN_CROSS_SCORE, MIN_LINE_LENGTH_RATIO,
     MIN_OUTER_DIAMETER, OUTER_RADIUS_TOLERANCE_RATIO, ROI_FAILURE_LIMIT,
     ROI_SCALE_PERCENT, TARGET_RATIO_NOMINAL,
+    MAX_OUTER_CIRCLE_CANDIDATES, MAX_INNER_CIRCLE_CANDIDATES,
+    MAX_CIRCLE_PAIR_EVALUATIONS, MAX_USABLE_CROSS_LINES,
+    MAX_CROSS_PAIR_EVALUATIONS,
 )
 
 HALF_PI = math.pi / 2
@@ -33,7 +36,9 @@ REJECT_REASONS = (
     'NO_BLOB', 'BLOB_TOO_SMALL', 'BLOB_TOO_LARGE', 'BLOB_ASPECT_REJECT',
     'BLOB_ROUNDNESS_REJECT', 'NO_CIRCLE', 'NO_CONCENTRIC_PAIR',
     'RATIO_REJECT', 'CONCENTRIC_ERROR', 'NO_CROSS_LINES',
-    'CROSS_SCORE_LOW', 'CONFIDENCE_LOW', 'VERIFY_EXPIRED', 'EDGE_CLIPPED', 'VALID'
+    'CROSS_SCORE_LOW', 'CONFIDENCE_LOW', 'VERIFY_EXPIRED', 'EDGE_CLIPPED', 'VALID',
+    'CIRCLE_CANDIDATES_CLIPPED', 'CIRCLE_PAIR_LIMIT',
+    'CROSS_LINES_CLIPPED', 'CROSS_PAIR_LIMIT'
 )
 
 
@@ -42,6 +47,11 @@ class StageTiming:
         self.enabled = bool(enabled and pyb is not None)
         self.window = max(8, int(window))
         self.samples = {}
+        self.roi_dimensions = {}
+
+    def note_roi(self, name, roi):
+        if roi is not None and len(roi) >= 4:
+            self.roi_dimensions[name] = (int(roi[2]), int(roi[3]))
 
     def begin(self):
         return pyb.micros() if self.enabled else None
@@ -60,8 +70,9 @@ class StageTiming:
             ordered = sorted(values)
             p50 = ordered[min(len(ordered) - 1, int(len(ordered) * 0.50))]
             p95 = ordered[min(len(ordered) - 1, int(len(ordered) * 0.95))]
+            p99 = ordered[min(len(ordered) - 1, int(len(ordered) * 0.99))]
             result[name] = (
-                sum(values) / len(values), p50, p95, max(values), len(values))
+                sum(values) / len(values), p50, p95, p99, max(values), len(values))
         return result
 
 
@@ -475,6 +486,7 @@ class DTaskDetector:
     def _circle_pairs(self, image, candidate):
         candidate = _candidate_from_region(candidate)
         region = candidate['verify_roi']
+        self.timing.note_roi('find_circles', region)
         blob_diameter = max(1.0, float(candidate.get('expected_outer_diameter', candidate['diameter'])))
         outer_radius = blob_diameter / 2.0
         inner_radius = outer_radius * TARGET_RATIO_NOMINAL
@@ -500,40 +512,72 @@ class DTaskDetector:
             self.diagnostics.reject('NO_CIRCLE')
         started = self.timing.begin()
         values = []
+        candidate_cx = float(candidate.get('cx', region[0] + region[2] / 2.0))
+        candidate_cy = float(candidate.get('cy', region[1] + region[3] / 2.0))
+        center_limit = max(6.0, blob_diameter * 0.30)
         for circle in circles:
             radius = int(_value(circle, 'r', 2))
             diameter = radius * 2
             if MIN_CIRCLE_DIAMETER <= diameter <= MAX_OUTER_DIAMETER:
+                x = int(_value(circle, 'x', 0))
+                y = int(_value(circle, 'y', 1))
+                center_distance = math.sqrt((x - candidate_cx) ** 2 +
+                                            (y - candidate_cy) ** 2)
+                if center_distance > center_limit:
+                    continue
                 magnitude = float(_value(circle, 'magnitude', 3))
                 values.append((
-                    int(_value(circle, 'x', 0)),
-                    int(_value(circle, 'y', 1)), diameter,
+                    x, y, diameter,
                     _clamp(magnitude / 6000.0)))
+        outer_values = sorted(
+            (value for value in values if outer_min * 2 <= value[2] <= outer_max * 2),
+            key=lambda value: value[3], reverse=True)
+        inner_values = sorted(
+            (value for value in values if inner_min * 2 <= value[2] <= inner_max * 2),
+            key=lambda value: value[3], reverse=True)
+        clipped = max(0, len(outer_values) - MAX_OUTER_CIRCLE_CANDIDATES)
+        clipped += max(0, len(inner_values) - MAX_INNER_CIRCLE_CANDIDATES)
+        if clipped:
+            self.diagnostics.reject('CIRCLE_CANDIDATES_CLIPPED', clipped)
+        outer_values = outer_values[:MAX_OUTER_CIRCLE_CANDIDATES]
+        inner_values = inner_values[:MAX_INNER_CIRCLE_CANDIDATES]
         pairs = []
         ratio_rejects = 0
         concentric_rejects = 0
-        for outer in values:
+        evaluations = 0
+        pair_limit_hit = False
+        for outer in outer_values:
             if outer[2] < MIN_OUTER_DIAMETER:
                 continue
-            for inner in values:
+            for inner in inner_values:
                 if inner[2] >= outer[2]:
                     continue
                 ratio = inner[2] / outer[2]
                 self.diagnostics.note_ratio(ratio)
-                concentric = math.sqrt(
-                    (inner[0] - outer[0]) ** 2 +
-                    (inner[1] - outer[1]) ** 2) / outer[2]
                 if not (INNER_OUTER_RATIO_MIN <= ratio <= INNER_OUTER_RATIO_MAX):
                     ratio_rejects += 1
                     continue
+                if evaluations >= MAX_CIRCLE_PAIR_EVALUATIONS:
+                    pair_limit_hit = True
+                    break
+                evaluations += 1
+                concentric = math.sqrt(
+                    (inner[0] - outer[0]) ** 2 +
+                    (inner[1] - outer[1]) ** 2) / outer[2]
                 if concentric > MAX_CONCENTRIC_ERROR:
                     concentric_rejects += 1
                     continue
                 pairs.append((outer, inner, ratio, concentric))
+            if pair_limit_hit:
+                break
         self.timing.end('circle_pair_scoring', started)
+        if pair_limit_hit:
+            self.diagnostics.reject('CIRCLE_PAIR_LIMIT')
         self.diagnostics.note_circle_pairs(len(pairs))
         if not pairs and circles:
             self.diagnostics.reject('NO_CONCENTRIC_PAIR')
+            if not ratio_rejects and not concentric_rejects and len(circles) >= 2:
+                self.diagnostics.reject('CONCENTRIC_ERROR')
             if ratio_rejects:
                 self.diagnostics.reject('RATIO_REJECT', ratio_rejects)
             if concentric_rejects:
@@ -545,6 +589,7 @@ class DTaskDetector:
         roi = (max(0, cx - radius), max(0, cy - radius),
                min(image.width(), cx + radius) - max(0, cx - radius),
                min(image.height(), cy + radius) - max(0, cy - radius))
+        self.timing.note_roi('find_lines', roi)
         started = self.timing.begin()
         lines = image.find_lines(
             roi=roi, x_stride=LINE_X_STRIDE, y_stride=LINE_Y_STRIDE,
@@ -554,34 +599,67 @@ class DTaskDetector:
         self.diagnostics.note_cross_lines(len(lines))
         started = self.timing.begin()
         usable = []
+        clipped_lines = 0
         for line in lines:
             x1, y1 = _value(line, 'x1', 0), _value(line, 'y1', 1)
             x2, y2 = _value(line, 'x2', 2), _value(line, 'y2', 3)
             dx, dy = x2 - x1, y2 - y1
             length = math.sqrt(dx * dx + dy * dy)
             if length < inner_diameter * MIN_LINE_LENGTH_RATIO:
+                clipped_lines += 1
                 continue
             distance = abs(dy * cx - dx * cy + x2 * y1 - y2 * x1)
             distance /= max(1.0, length)
             if distance <= max(LINE_CENTER_DISTANCE_MIN, inner_diameter * LINE_CENTER_DISTANCE_RATIO):
-                usable.append((math.atan2(dy, dx), length, distance))
+                angle = math.atan2(dy, dx) % math.pi
+                usable.append((angle, length, distance))
+            else:
+                clipped_lines += 1
+        usable.sort(key=lambda item: (item[2], -item[1]))
+        # Keep the best line in each angular bucket first, then fill remaining
+        # slots by geometric quality. This prevents parallel noise dominating.
+        bucket_count = 12
+        buckets = {}
+        for line in usable:
+            bucket = int(line[0] / math.pi * bucket_count) % bucket_count
+            if bucket not in buckets:
+                buckets[bucket] = line
+        selected = list(buckets.values())
+        selected.extend(line for line in usable if line not in selected)
+        if len(selected) > MAX_USABLE_CROSS_LINES:
+            clipped_lines += len(selected) - MAX_USABLE_CROSS_LINES
+            selected = selected[:MAX_USABLE_CROSS_LINES]
+        usable = selected
+        if clipped_lines:
+            self.diagnostics.reject('CROSS_LINES_CLIPPED', clipped_lines)
         if len(usable) < 2:
             self.timing.end('cross_scoring', started)
             self.diagnostics.reject('NO_CROSS_LINES')
             return None, 0.0
         best = None
         candidate_count = 0
+        pair_limit_hit = False
         for index in range(len(usable)):
             for second_index in range(index + 1, len(usable)):
+                if candidate_count >= MAX_CROSS_PAIR_EVALUATIONS:
+                    pair_limit_hit = True
+                    break
                 candidate_count += 1
                 first, second = usable[index], usable[second_index]
-                raw_difference = abs((first[0] - second[0] + math.pi / 2) % math.pi - math.pi / 2)
+                raw_difference = abs((first[0] - second[0]) % math.pi)
+                raw_difference = min(raw_difference, math.pi - raw_difference)
+                if abs(raw_difference - math.pi / 2) > math.radians(CROSS_ANGLE_TOLERANCE_DEG):
+                    continue
                 orthogonal = 1.0 - abs(raw_difference - math.pi / 2) / math.radians(CROSS_ANGLE_TOLERANCE_DEG)
                 score = _clamp(orthogonal) * _clamp((first[1] + second[1]) / max(1.0, inner_diameter * CROSS_LINE_SUM_RATIO))
                 score *= _clamp(1.0 - (first[2] + second[2]) / max(1.0, inner_diameter * CROSS_DISTANCE_PENALTY_RATIO))
                 self.diagnostics.note_best_cross_score(score)
                 if best is None or score > best[0]:
                     best = (score, first[0])
+            if pair_limit_hit:
+                break
+        if pair_limit_hit:
+            self.diagnostics.reject('CROSS_PAIR_LIMIT')
         self.diagnostics.note_cross_candidates(candidate_count)
         if best is None or best[0] < MIN_CROSS_SCORE:
             self.timing.end('cross_scoring', started)

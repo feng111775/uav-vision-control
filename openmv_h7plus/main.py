@@ -106,9 +106,11 @@ def run():
         detector.emit_diagnostics(now_ms)
         if TIMING_ENABLED and pyb.elapsed_millis(last_timing_ms) >= TIMING_LOG_PERIOD_MS:
             for name, values in detector.timing.summary().items():
+                roi = detector.timing.roi_dimensions.get(name)
+                suffix = ',roi_w=%d,roi_h=%d' % roi if roi else ''
                 protocol._diagnostic_writer.write(
-                    'D_TIMING,%s,avg_ms=%.3f,p50_ms=%.3f,p95_ms=%.3f,max_ms=%.3f,n=%d\n' %
-                    (name, values[0], values[1], values[2], values[3], values[4]))
+                    'D_TIMING,%s,avg_ms=%.3f,p50_ms=%.3f,p95_ms=%.3f,p99_ms=%.3f,max_ms=%.3f,n=%d%s\n' %
+                    (name, values[0], values[1], values[2], values[3], values[4], values[5], suffix))
             last_timing_ms = now_ms
         detector.timing.end('frame_total', timing_started)
 

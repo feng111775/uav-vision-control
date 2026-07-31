@@ -179,3 +179,32 @@ def test_frame_intervals_handle_pyb_millis_wraparound():
     ], 1)
     assert report['frame_interval_p50_ms'] == 31.0
     assert report['frame_interval_max_ms'] == 31.0
+
+
+def test_timing_stats_are_parsed_per_stage():
+    report = analyze_lines([
+        'D_TIMING,find_circles,avg_ms=12.500,p50_ms=10.000,p95_ms=20.000,p99_ms=25.000,max_ms=30.000,n=8\n',
+        'D_TIMING,find_lines,avg_ms=2.500,p50_ms=2.000,p95_ms=4.000,p99_ms=5.000,max_ms=6.000,n=8\n',
+        'D_TARGET_V2,1,100,1000,SEARCH,0,0,0,0,0,0.0000,0\n',
+    ], 1)
+    assert report['timing_stage_stats']['find_circles'] == {
+        'count': 8, 'avg_ms': 12.5, 'p50_ms': 10.0, 'p95_ms': 20.0,
+        'p99_ms': 25.0, 'max_ms': 30.0}
+    assert report['timing_stage_stats']['find_lines']['max_ms'] == 6.0
+
+
+def test_timing_stats_include_roi_dimensions():
+    report = analyze_lines([
+        'D_TIMING,find_circles,avg_ms=1,p50_ms=1,p95_ms=2,p99_ms=2,max_ms=3,n=4,roi_w=76,roi_h=76\n',
+        'D_TARGET_V2,1,100,1000,SEARCH,0,0,0,0,0,0.0000,0\n',
+    ], 1)
+    assert report['timing_stage_stats']['find_circles']['roi_w'] == 76
+    assert report['timing_stage_stats']['find_circles']['roi_h'] == 76
+
+
+def test_malformed_timing_line_is_reported():
+    report = analyze_lines([
+        'D_TIMING,find_circles,avg_ms=bad,p50_ms=1,p95_ms=1,p99_ms=1,max_ms=1,n=1\n',
+        'D_TARGET_V2,1,100,1000,SEARCH,0,0,0,0,0,0.0000,0\n',
+    ], 1)
+    assert report['malformed_reasons']['timing_invalid_metrics'] == 1

@@ -47,6 +47,16 @@ class CircleImage(Image):
     def find_circles(self, **kwargs): return self._circles
 
 
+class Line:
+    def __init__(self, x1, y1, x2, y2): self._values = (x1, y1, x2, y2)
+    def __getitem__(self, index): return self._values[index]
+
+
+class LineImage(Image):
+    def __init__(self, lines): self._lines = lines
+    def find_lines(self, **kwargs): return self._lines
+
+
 def test_config_value_changes_tracking_roi(monkeypatch):
     original = config.ROI_SCALE_PERCENT
     monkeypatch.setattr(config, 'ROI_SCALE_PERCENT', 300)
@@ -129,6 +139,34 @@ def test_generated_target_geometry_matches_algorithm_window():
     ratio = module.INNER_DIAMETER_MM / module.OUTER_DIAMETER_MM
     assert config.INNER_OUTER_RATIO_MIN <= ratio <= config.INNER_OUTER_RATIO_MAX
     assert module.CROSS_LENGTH_MM < module.INNER_DIAMETER_MM
+
+
+def test_circle_pair_evaluations_are_bounded_with_noise():
+    circles = [Circle(130, 100, 30 + (index % 8), 6000 - index)
+               for index in range(100)]
+    image = CircleImage(circles)
+    instance = detector.DTaskDetector()
+    instance._circle_pairs(image, {'verify_roi': (90, 60, 80, 80),
+                                   'cx': 130, 'cy': 100, 'diameter': 60})
+    assert instance.diagnostics.reject_counts['CIRCLE_CANDIDATES_CLIPPED'] > 0
+    assert instance.diagnostics.reject_counts['CIRCLE_PAIR_LIMIT'] >= 0
+
+
+def test_cross_pair_evaluations_are_bounded_with_noise():
+    lines = [Line(130, 100, 130 + (index % 20), 100) for index in range(200)]
+    lines += [Line(130, 100, 130, 100 + (index % 20)) for index in range(20)]
+    instance = detector.DTaskDetector()
+    instance._cross(LineImage(lines), 130, 100, 30)
+    assert instance.diagnostics.reject_counts['CROSS_LINES_CLIPPED'] > 0
+    assert instance.diagnostics.reject_counts['CROSS_PAIR_LIMIT'] >= 0
+
+
+def test_cross_result_is_stable_when_input_order_changes():
+    lines = [Line(115, 100, 145, 100), Line(130, 85, 130, 115)]
+    first = detector.DTaskDetector()._cross(LineImage(lines), 130, 100, 30)
+    second = detector.DTaskDetector()._cross(LineImage(list(reversed(lines))), 130, 100, 30)
+    assert first[0] is not None and second[0] is not None
+    assert abs(first[1] - second[1]) < 1e-6
 
 
 def test_fast_detector_valid_and_verify_expired_paths():

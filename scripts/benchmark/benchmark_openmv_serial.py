@@ -142,6 +142,37 @@ def _parse_detect_stats(line, report):
         report['reject_reason_counts'][reason] = report['reject_reason_counts'].get(reason, 0) + count
 
 
+def _parse_timing(line, report):
+    fields = line.split(',')
+    if len(fields) not in (8, 10) or fields[0] != 'D_TIMING':
+        _malformed(report, 'timing_bad_fields')
+        return
+    values = {}
+    try:
+        for item in fields[2:]:
+            key, raw = item.split('=', 1)
+            values[key] = float(raw)
+        required = {'avg_ms', 'p50_ms', 'p95_ms', 'p99_ms', 'max_ms', 'n'}
+        if not required.issubset(values):
+            raise ValueError('timing_missing_metric')
+        if 'roi_w' in values or 'roi_h' in values:
+            if set(values) != required | {'roi_w', 'roi_h'}:
+                raise ValueError('timing_invalid_roi')
+        if values['n'] < 0 or any(values[key] < 0 for key in values if key != 'n'):
+            raise ValueError('timing_negative_metric')
+    except (ValueError, IndexError):
+        _malformed(report, 'timing_invalid_metrics')
+        return
+    stats = {
+        'count': int(values['n']), 'avg_ms': values['avg_ms'],
+        'p50_ms': values['p50_ms'], 'p95_ms': values['p95_ms'],
+        'p99_ms': values['p99_ms'], 'max_ms': values['max_ms']}
+    if 'roi_w' in values:
+        stats['roi_w'] = int(values['roi_w'])
+        stats['roi_h'] = int(values['roi_h'])
+    report['timing_stage_stats'][fields[1]] = stats
+
+
 def analyze_lines(lines, seconds):
     report = {
         'serial_line_hz': 0.0,
@@ -168,6 +199,7 @@ def analyze_lines(lines, seconds):
         'boot_v2_seen': False,
         'status_v2_count': 0,
         'detect_stats_count': 0,
+        'timing_stage_stats': {},
         'candidate_stage_counts': {
             'blob_count': 0,
             'region_count': 0,
@@ -224,6 +256,8 @@ def analyze_lines(lines, seconds):
                 vision_fps.append(float(match.group(1)))
         elif line.startswith(DETECT_STATS_PREFIX):
             _parse_detect_stats(line, report)
+        elif line.startswith('D_TIMING,'):
+            _parse_timing(line, report)
         elif line.startswith('D_TARGET_V2,'):
             fields = line.split(',')
             if len(fields) != 12:

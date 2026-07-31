@@ -17,7 +17,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from openmv_repl import DEFAULT_DEVICE, OpenMVRepl, verify_openmv  # noqa: E402
 
 FORMAL_FILES = (
-    "camera_config.py", "detector.py", "detector_fast.py", "protocol.py", "main.py")
+    "camera_config.py", "config.py", "detector.py", "detector_fast.py",
+    "protocol.py", "main.py")
 
 
 def sha256(path: Path) -> str:
@@ -59,9 +60,10 @@ def backup(mount: Path, root: Path) -> Path:
     return destination
 
 
-def copy_verified(source: Path, mount: Path, dry_run: bool) -> dict[str, str]:
+def copy_verified(source: Path, mount: Path, dry_run: bool,
+                  names: tuple[str, ...] = FORMAL_FILES) -> dict[str, str]:
     hashes = {}
-    for name in FORMAL_FILES:
+    for name in names:
         origin = source / name
         if not origin.is_file():
             raise FileNotFoundError(origin)
@@ -83,6 +85,8 @@ def main() -> int:
     parser.add_argument(
         "--backup-root", type=Path, default=Path.home() / "openmv_backups")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--files", nargs="+", choices=FORMAL_FILES,
+                        default=list(FORMAL_FILES))
     parser.add_argument("--rollback", type=Path)
     parser.add_argument("--no-unmount", action="store_true")
     args = parser.parse_args()
@@ -97,7 +101,8 @@ def main() -> int:
         print(json.dumps({"rollback": str(args.rollback), "dry_run": args.dry_run}))
         return 0
     backup_path = backup(mount, args.backup_root)
-    hashes = copy_verified(args.source.resolve(), mount, args.dry_run)
+    hashes = copy_verified(args.source.resolve(), mount, args.dry_run,
+                           tuple(args.files))
     print(json.dumps({
         "backup": str(backup_path), "mount": str(mount), "hashes": hashes,
         "dry_run": args.dry_run}, indent=2))
