@@ -19,6 +19,7 @@ htmlcov/
 
 # 本机 SITL rosbag、ULog、截图与分析产物（体积可达数 GB）
 test_results/
+vision_results/
 *.db3
 *.mcap
 *.ulg

@@ -1,5 +1,5 @@
 import math
-from uav_vision.vision_protocol import parse_target, Confirmation, ClockMapper
+from uav_vision.vision_protocol import parse_target, Confirmation, ClockMapper, SequenceTracker
 
 def v2(seq, valid=1, confidence=80):
  return 'D_TARGET_V2,%d,%d,1200,SEARCH,%d,200,100,80,48,0.0,%d' % (seq,seq*20,valid,confidence)
@@ -24,3 +24,12 @@ def test_geometry_signs_and_no_metrics():
  x,y=200,180
  assert (x-160)/160>0 and (y-120)/120>0
  assert math.isnan(float('nan'))
+
+def test_sequence_tracker_duplicate_gap_reorder_restart_and_wrap():
+ t=SequenceTracker()
+ assert t.accept(1)[0] is True
+ assert t.accept(1)[0] is False
+ assert t.accept(3)[0] is True and t.dropped_count == 1
+ assert t.accept(2)[0] is False and t.out_of_order_count == 1
+ t.last=100; assert t.accept(1)[0] is True and t.restart_count == 1
+ t.last=0xffffffff; assert t.accept(1)[0] is True

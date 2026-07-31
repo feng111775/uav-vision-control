@@ -33,3 +33,12 @@ main.py
 
 详细备份、部署、回滚和验收步骤见`docs/openmv_deployment.md`。OpenMV IDE与ROS桥
 不能同时占用USB CDC。未完成H7真机测试前，参数只是保守起点，不能声称达到15 Hz。
+
+
+## 2026-07-31 调试补充
+
+- 启动时额外输出 `D_CONFIG,...`，用于 PC 基准报告记录实际运行参数。
+- 检测链每秒输出一条 `D_DETECT_STATS,...` 汇总，包含 blob / region / 强验证 / 圆对 / 十字 / 置信度和拒绝原因。
+- `DEBUG_CAPTURE_ONCE=True` 时仅保存一次 `/flash/debug_raw.pgm` 与 `/flash/debug_threshold.pgm`，失败不会影响视觉循环。
+- 当前 `main.py` 默认调用 `SEARCH`，`FOLLOW` 与 `DROP_ALIGN` 仍等待稳定的 Pi→OpenMV 模式命令链接入。
+- 标定打印目标见 `docs/openmv_target_geometry.md` 与 `docs/assets/openmv_test_target.svg`。
