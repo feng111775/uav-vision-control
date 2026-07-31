@@ -554,7 +554,7 @@ def test_every_installed_launch_uses_only_the_unified_controller():
     launch_text = '\n'.join(
         path.read_text() for path in
         (PACKAGE_ROOT / 'launch').glob('*.launch.py'))
-    assert launch_text.count("executable='mission_controller_node'") == 4
+    assert launch_text.count("executable='mission_controller_node'") == 5
     assert "executable='offboard_control'" not in launch_text
     assert 'vision_offboard_controller' not in launch_text
 
