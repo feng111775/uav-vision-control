@@ -10,4 +10,7 @@ MIN_OUTER_DIAMETER, MAX_OUTER_DIAMETER = 24, 220
 INNER_OUTER_RATIO_MIN, INNER_OUTER_RATIO_MAX = .52, .68
 OUTPUT_PERIOD_MS = 0               # every snapshot is a new observation
 TIMING_ENABLED = False
+# One transport only; stdout is the CDC stream confirmed on /dev/ttyACM0.
+PROTOCOL_TRANSPORT = 'stdout'
+USB_VCP_ID = 0
 DEBUG_DRAW = False

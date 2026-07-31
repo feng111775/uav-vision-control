@@ -13,14 +13,19 @@ class FastV2Detector(DTaskDetector):
         # when candidate geometry exists and periodically while tracking.
         candidate=None
         search_roi=roi or (0,0,image.width(),image.height())
+        started = self.timing.begin()
         regions=self._search_regions(image,search_roi)
+        self.timing.end('candidate_search', started)
         verify_every=TRACK_FULL_VERIFY_INTERVAL if roi else SEARCH_FULL_VERIFY_INTERVAL
         force=(self.track.frame % verify_every)==0
         if regions and (force or roi is not None):
             for region in regions:
                 pairs=self._circle_pairs(image,region)
                 if pairs:
-                    candidate=self._detect_roi(image,region); break
+                    started = self.timing.begin()
+                    candidate=self._detect_roi(image,region)
+                    self.timing.end('roi_detect', started)
+                    break
         if candidate is None:
             self.track.update(None)
             if self.track.lost>ROI_MAX_LOST_FRAMES: self.track.last=None; self.mode='SEARCH'

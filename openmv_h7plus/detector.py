@@ -54,9 +54,10 @@ class StageTiming:
         result = {}
         for name, values in self.samples.items():
             ordered = sorted(values)
+            p50 = ordered[min(len(ordered) - 1, int(len(ordered) * 0.50))]
             p95 = ordered[min(len(ordered) - 1, int(len(ordered) * 0.95))]
             result[name] = (
-                sum(values) / len(values), p95, max(values), len(values))
+                sum(values) / len(values), p50, p95, max(values), len(values))
         return result
 
 
