@@ -69,9 +69,12 @@ class VisionChainBenchmark(Node):
         self.device_absent_started_monotonic = None; self.device_present_monotonic = None
         self.device_absent_duration_sec = 0.0; self.device_after = None
         self.device_absence_qualified = False
+        self.device_absence_qualified_monotonic = None
+        self.device_poll_count_while_absent = 0
         self.device_current_present = self.device_start['present']
         self.disconnected_timestamp = None; self.disconnected_monotonic = None
         self.last_disconnected_monotonic = None
+        self.disconnect_event_monotonic = None
         self.recovered_timestamp = None; self.recovered_monotonic = None
         self.disconnect_count_at_unplug_prompt = 0
         self.recovered_count_at_unplug_prompt = 0
@@ -139,6 +142,7 @@ class VisionChainBenchmark(Node):
         if msg.data == 'DISCONNECTED':
             self.disconnect += 1; self.disconnected_count += 1
             self.last_disconnected_monotonic = time.monotonic()
+            self.disconnect_event_monotonic = self.last_disconnected_monotonic
             if self.disconnected_timestamp is None:
                 self.disconnected_timestamp = self.last_disconnected_monotonic
                 self.disconnected_monotonic = self.disconnected_timestamp
@@ -161,26 +165,32 @@ class VisionChainBenchmark(Node):
         current = device_snapshot(self.device_path)
         self.device_current_present = current['present']
         now = time.time(); monotonic_now = time.monotonic()
-        if self.device_start['present'] and not current['present']:
-            if self.device_absent_timestamp is None:
-                self.device_absent_timestamp = now
-                self.device_absent_started_monotonic = monotonic_now
-        elif self.device_absent_timestamp is not None and current['present'] and self.device_present_timestamp is None:
+        if not current['present']:
+            if self.device_start['present']:
+                if self.device_absent_started_monotonic is None:
+                    self.device_absent_timestamp = now
+                    self.device_absent_started_monotonic = monotonic_now
+                self.device_poll_count_while_absent += 1
+                self.device_absent_duration_sec = monotonic_now - self.device_absent_started_monotonic
+                if self.device_absent_duration_sec >= 1.0:
+                    self.device_absence_qualified = True
+                    if self.device_absence_qualified_monotonic is None:
+                        self.device_absence_qualified_monotonic = monotonic_now
+        elif self.device_absent_started_monotonic is not None and self.device_present_timestamp is None:
             duration = monotonic_now - self.device_absent_started_monotonic
-            if duration >= 1.0:
+            self.device_absent_duration_sec = duration
+            if duration >= 1.0 and self.device_absence_qualified:
                 self.device_present_timestamp = now
                 self.device_present_monotonic = monotonic_now
-                self.device_absent_duration_sec = duration
                 self.device_after = current
             else:
                 # A short disappearance is serial/udev jitter, not a test event.
                 self.device_absent_timestamp = None
                 self.device_absent_started_monotonic = None
                 self.device_absent_duration_sec = 0.0
-        elif self.device_absent_timestamp is not None and self.device_present_timestamp is None:
-            self.device_absent_duration_sec = monotonic_now - self.device_absent_started_monotonic
-            if self.device_absent_duration_sec >= 1.0:
-                self.device_absence_qualified = True
+                self.device_absence_qualified = False
+                self.device_absence_qualified_monotonic = None
+                self.device_poll_count_while_absent = 0
         return current
 
     def physical_disconnect_ready(self):
@@ -188,6 +198,8 @@ class VisionChainBenchmark(Node):
                 self.device_absence_qualified and self.device_absent_timestamp is not None and
                 self.device_absent_duration_sec >= 1.0 and getattr(self, 'disconnected_timestamp', None) is not None and
                 self.disconnected_monotonic + 0.25 >= self.device_absent_started_monotonic and
+                self.disconnected_monotonic + 0.25 >= self.unplug_prompt_monotonic and
+                self.device_absent_started_monotonic + 0.25 >= self.unplug_prompt_monotonic and
                 self.disconnected_count > self.disconnect_count_at_unplug_prompt and
                 self.unplug_prompt_monotonic is not None)
 
@@ -263,9 +275,17 @@ class VisionChainBenchmark(Node):
             'usb_serial_before': self.device_start['serial'],
             'usb_serial_after': self.device_after['serial'] if self.device_after else '',
             'device_absent_timestamp': self.device_absent_timestamp,
+            'device_absent_started_monotonic': self.device_absent_started_monotonic,
+            'device_absence_qualified_monotonic': self.device_absence_qualified_monotonic,
+            'device_poll_count_while_absent': self.device_poll_count_while_absent,
             'disconnected_timestamp': self.disconnected_timestamp,
+            'disconnect_event_monotonic': self.disconnect_event_monotonic,
             'device_present_timestamp': self.device_present_timestamp,
             'recovered_timestamp': self.recovered_timestamp,
+            'unplug_prompt_monotonic': self.unplug_prompt_monotonic,
+            'disconnect_device_event_delta_ms': (
+                (self.disconnect_event_monotonic - self.device_absent_started_monotonic) * 1000.0
+                if self.disconnect_event_monotonic is not None and self.device_absent_started_monotonic is not None else None),
             'disconnect_count_at_unplug_prompt': self.disconnect_count_at_unplug_prompt,
             'recovered_count_at_unplug_prompt': self.recovered_count_at_unplug_prompt,
             'first_post_reconnect_frame_timestamp': self.first_post_reconnect_frame_timestamp,
@@ -405,9 +425,8 @@ def reconnect_run(node, seconds, baseline_timeout=30.0, disconnect_timeout=30.0,
                 node.post_reconnect_raw >= 60 and node.post_reconnect_tracked >= 60 and
                 node.post_reconnect_landing >= 60):
             break
-        limit = {'baseline': baseline_timeout, 'await_disconnect': baseline_timeout,
-                 'disconnect': disconnect_timeout, 'await_reconnect': disconnect_timeout,
-                 'reconnect': recovery_timeout, 'post_reconnect': post_timeout}[phase]
+        limit = {'baseline': baseline_timeout, 'await_disconnect': disconnect_timeout,
+                 'await_reconnect': recovery_timeout, 'post_reconnect': post_timeout}[phase]
         if now - phase_started > limit:
             break
     return phase

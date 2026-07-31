@@ -173,6 +173,55 @@ def test_reconnect_failure_report_is_phase_aware():
     assert secondary == ['device_absence_not_confirmed']
 
 
+def _poll_fixture(module):
+    node = module.VisionChainBenchmark.__new__(module.VisionChainBenchmark)
+    node.device_path = '/dev/test-openmv'
+    node.device_start = {'present': True}
+    node.device_current_present = True
+    node.device_absent_timestamp = None
+    node.device_absent_started_monotonic = None
+    node.device_present_timestamp = None
+    node.device_present_monotonic = None
+    node.device_absent_duration_sec = 0.0
+    node.device_after = None
+    node.device_absence_qualified = False
+    node.device_absence_qualified_monotonic = None
+    node.device_poll_count_while_absent = 0
+    return node
+
+
+def test_poll_device_accumulates_continuous_absence(monkeypatch):
+    import benchmark_ros_vision_chain as module
+    node = _poll_fixture(module)
+    wall = iter([100.0, 100.5, 101.0, 102.0])
+    mono = iter([10.0, 10.5, 11.0, 12.0])
+    monkeypatch.setattr(module.time, 'time', lambda: next(wall))
+    monkeypatch.setattr(module.time, 'monotonic', lambda: next(mono))
+    monkeypatch.setattr(module, 'device_snapshot', lambda _: {'present': False, 'path': '', 'serial': ''})
+    node.poll_device()
+    assert node.device_absent_duration_sec == 0.0 and not node.device_absence_qualified
+    node.poll_device()
+    assert node.device_absent_duration_sec == 0.5 and not node.device_absence_qualified
+    node.poll_device()
+    assert node.device_absence_qualified and node.device_absent_duration_sec == 1.0
+    node.poll_device()
+    assert node.device_absent_duration_sec == 2.0
+
+
+def test_poll_device_short_disappearance_resets_as_jitter(monkeypatch):
+    import benchmark_ros_vision_chain as module
+    node = _poll_fixture(module)
+    wall = iter([10.0, 10.4])
+    mono = iter([10.0, 10.4])
+    monkeypatch.setattr(module.time, 'time', lambda: next(wall))
+    monkeypatch.setattr(module.time, 'monotonic', lambda: next(mono))
+    states = iter([False, True])
+    monkeypatch.setattr(module, 'device_snapshot', lambda _: {'present': next(states), 'path': '/dev/test', 'serial': 'S'})
+    node.poll_device(); node.poll_device()
+    assert node.device_absent_started_monotonic is None
+    assert not node.device_absence_qualified and node.device_absent_duration_sec == 0.0
+
+
 def test_best_effort_publishers_reach_benchmark_topics():
     import pytest
     if __import__('importlib').util.find_spec('uav_interfaces') is None:
