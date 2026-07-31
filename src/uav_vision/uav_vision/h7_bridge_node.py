@@ -16,6 +16,20 @@ DIAGNOSTIC_TAGS = frozenset((
     'D_BOOT_V2', 'D_CONFIG', 'D_STATUS_V2', 'D_DETECT_STATS',
     'D_TIMING', 'D_VISION', 'D_ERROR', 'D_VISION_ERROR'))
 MAX_RX_BUFFER = 4096
+INITIAL_LINE_PREFIXES = (b'D_TARGET_V2,', b'D_BOOT_V2', b'D_CONFIG,', b'D_STATUS_V2,',
+                         b'D_DETECT_STATS,', b'D_TIMING,', b'D_VISION,', b'D_ERROR,',
+                         b'D_VISION_ERROR,', b'D_STATUS,')
+
+
+def discard_initial_partial(buffer):
+    """Drop a serial-open fragment, retaining a recognizable complete line."""
+    data = bytearray(buffer)
+    if not data or any(data.startswith(prefix) for prefix in INITIAL_LINE_PREFIXES):
+        return data, False, False
+    newline = data.find(b'\n')
+    if newline < 0:
+        return bytearray(), True, True
+    return data[newline + 1:], True, False
 
 
 def parse_detection_line(line, allow_legacy_protocol=False):
@@ -80,6 +94,8 @@ class H7BridgeNode(Node):
             Float64, self.get_parameter('target_age_topic').value, reliable)
         self.serial_port = None
         self._rx_buffer = bytearray()
+        self._discard_initial_partial = False
+        self.initial_partial_line_discarded = 0
         self._last_detection_time = None
         self._last_valid_time = None
         self._stale_published = False
@@ -141,6 +157,7 @@ class H7BridgeNode(Node):
         try:
             self.serial_port = serial.Serial(self.port, self.baudrate, timeout=0.005)
             self._rx_buffer.clear()
+            self._discard_initial_partial = True
             self._last_detection_time = None
             self._last_valid_time = None
             self._stale_published = True
@@ -210,6 +227,16 @@ class H7BridgeNode(Node):
             available = self.serial_port.in_waiting
             chunk = self.serial_port.read(available or 1)
             if chunk: self._rx_buffer.extend(chunk)
+            if self._discard_initial_partial and self._rx_buffer:
+                # A USB reopen can begin in the middle of a line.  Preserve a
+                # recognizable complete protocol line, otherwise discard only
+                # through its first newline and resume normal parsing.
+                self._rx_buffer, discarded, pending = discard_initial_partial(self._rx_buffer)
+                if discarded:
+                    self.initial_partial_line_discarded += 1
+                if pending:
+                    return
+                self._discard_initial_partial = False
             while b'\n' in self._rx_buffer:
                 raw, _, remainder = self._rx_buffer.partition(b'\n')
                 self._rx_buffer = bytearray(remainder)

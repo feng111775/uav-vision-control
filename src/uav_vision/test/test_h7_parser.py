@@ -1,7 +1,8 @@
 import pytest
 
 from uav_vision.h7_bridge_node import (
-    is_diagnostic_line, parse_detection_line, parse_status_line, parse_v2_line)
+    discard_initial_partial, is_diagnostic_line, parse_detection_line,
+    parse_status_line, parse_v2_line)
 
 
 def test_d_target_serial_parsing():
@@ -65,3 +66,19 @@ def test_malformed_v2_is_rejected():
     import pytest
     with pytest.raises(ValueError):
         parse_v2_line('D_TARGET_V2,broken')
+
+
+def test_initial_serial_fragment_is_discarded_until_newline():
+    remainder, discarded, pending = discard_initial_partial(b'1166,SEARCH,0\nD_TARGET_V2,')
+    assert discarded and not pending and remainder == b'D_TARGET_V2,'
+
+
+def test_complete_first_target_line_is_preserved():
+    line = b'D_TARGET_V2,1,100,1200,SEARCH,1,160,120,50,30,0.2,80\n'
+    remainder, discarded, pending = discard_initial_partial(line)
+    assert not discarded and not pending and remainder == line
+
+
+def test_fragment_without_newline_waits_and_does_not_count_protocol_error():
+    remainder, discarded, pending = discard_initial_partial(b'1166,SEARCH')
+    assert discarded and pending and remainder == b''

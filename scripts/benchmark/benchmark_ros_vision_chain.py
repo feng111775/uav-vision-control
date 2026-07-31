@@ -66,10 +66,16 @@ class VisionChainBenchmark(Node):
         self.device_path = '/dev/dtask_openmv'
         self.device_start = device_snapshot(self.device_path)
         self.device_absent_timestamp = None; self.device_present_timestamp = None
+        self.device_absent_started_monotonic = None; self.device_present_monotonic = None
         self.device_absent_duration_sec = 0.0; self.device_after = None
         self.device_absence_qualified = False
         self.device_current_present = self.device_start['present']
-        self.disconnected_timestamp = None; self.recovered_timestamp = None
+        self.disconnected_timestamp = None; self.disconnected_monotonic = None
+        self.last_disconnected_monotonic = None
+        self.recovered_timestamp = None; self.recovered_monotonic = None
+        self.disconnect_count_at_unplug_prompt = 0
+        self.recovered_count_at_unplug_prompt = 0
+        self.unplug_prompt_monotonic = None
         self.first_post_reconnect_frame_timestamp = None
         self.recovered_at = None
         qos = benchmark_qos_profile()
@@ -132,12 +138,20 @@ class VisionChainBenchmark(Node):
                 self.baseline_stale_count += 1
         if msg.data == 'DISCONNECTED':
             self.disconnect += 1; self.disconnected_count += 1
-            if self.device_absent_timestamp is not None and self.disconnected_timestamp is None:
-                self.disconnected_timestamp = time.time()
+            self.last_disconnected_monotonic = time.monotonic()
+            if self.disconnected_timestamp is None:
+                self.disconnected_timestamp = self.last_disconnected_monotonic
+                self.disconnected_monotonic = self.disconnected_timestamp
+            else:
+                self.disconnected_monotonic = self.last_disconnected_monotonic
         if msg.data == 'RECOVERED':
             self.reconnect += 1; self.recovered_count += 1
-            self.recovered_timestamp = time.time()
-            if self.disconnected_timestamp is not None and self.device_present_timestamp is not None and self.recovered_timestamp >= self.device_present_timestamp:
+            self.recovered_timestamp = time.monotonic()
+            self.recovered_monotonic = self.recovered_timestamp
+            if (self.disconnected_monotonic is not None and self.device_present_monotonic is not None and
+                    self.recovered_monotonic >= self.device_present_monotonic and
+                    self.unplug_prompt_monotonic is not None and
+                    self.recovered_monotonic >= self.unplug_prompt_monotonic):
                 self.ordered_disconnect_then_recovered = True
             self.reconnect_seen = True
             self.recovered_at = time.monotonic()
@@ -146,30 +160,36 @@ class VisionChainBenchmark(Node):
     def poll_device(self):
         current = device_snapshot(self.device_path)
         self.device_current_present = current['present']
-        now = time.time()
+        now = time.time(); monotonic_now = time.monotonic()
         if self.device_start['present'] and not current['present']:
             if self.device_absent_timestamp is None:
                 self.device_absent_timestamp = now
+                self.device_absent_started_monotonic = monotonic_now
         elif self.device_absent_timestamp is not None and current['present'] and self.device_present_timestamp is None:
-            duration = now - self.device_absent_timestamp
+            duration = monotonic_now - self.device_absent_started_monotonic
             if duration >= 1.0:
                 self.device_present_timestamp = now
+                self.device_present_monotonic = monotonic_now
                 self.device_absent_duration_sec = duration
                 self.device_after = current
-                self.device_absence_qualified = True
             else:
                 # A short disappearance is serial/udev jitter, not a test event.
                 self.device_absent_timestamp = None
+                self.device_absent_started_monotonic = None
                 self.device_absent_duration_sec = 0.0
         elif self.device_absent_timestamp is not None and self.device_present_timestamp is None:
-            self.device_absent_duration_sec = now - self.device_absent_timestamp
+            self.device_absent_duration_sec = monotonic_now - self.device_absent_started_monotonic
+            if self.device_absent_duration_sec >= 1.0:
+                self.device_absence_qualified = True
         return current
 
     def physical_disconnect_ready(self):
         return (self.device_start['present'] and not self.device_current_present and
                 self.device_absence_qualified and self.device_absent_timestamp is not None and
-                self.device_absent_duration_sec >= 1.0 and self.disconnected_timestamp is not None and
-                self.disconnected_timestamp >= self.device_absent_timestamp)
+                self.device_absent_duration_sec >= 1.0 and getattr(self, 'disconnected_timestamp', None) is not None and
+                self.disconnected_monotonic + 0.25 >= self.device_absent_started_monotonic and
+                self.disconnected_count > self.disconnect_count_at_unplug_prompt and
+                self.unplug_prompt_monotonic is not None)
 
     def report(self, seconds):
         unique = len(self.raw_by_sequence)
@@ -246,6 +266,8 @@ class VisionChainBenchmark(Node):
             'disconnected_timestamp': self.disconnected_timestamp,
             'device_present_timestamp': self.device_present_timestamp,
             'recovered_timestamp': self.recovered_timestamp,
+            'disconnect_count_at_unplug_prompt': self.disconnect_count_at_unplug_prompt,
+            'recovered_count_at_unplug_prompt': self.recovered_count_at_unplug_prompt,
             'first_post_reconnect_frame_timestamp': self.first_post_reconnect_frame_timestamp,
             'baseline_duplicate_count': self.baseline_tracker.duplicate_count,
             'baseline_gap_count': self.baseline_tracker.dropped_count,
@@ -333,6 +355,21 @@ def validate_report(report, require_reconnect=False):
     return failures
 
 
+def classify_reconnect_failures(failures, phase):
+    """Separate the first failed phase from checks that were never executable."""
+    recovery_checks = {'no_recovered', 'device_not_restored', 'usb_serial_mismatch',
+                       'usb_serial_unavailable', 'insufficient_post_reconnect_frames',
+                       'insufficient_post_reconnect_topic_frames',
+                       'post_reconnect_frequency_below_30hz', 'post_sequence_gaps',
+                       'bad_disconnect_recovered_order'}
+    if phase == 'await_disconnect' and failures:
+        primary = ['device_absence_qualification_state_machine_timeout']
+        skipped = sorted(set(failures) & recovery_checks)
+        secondary = [item for item in failures if item not in recovery_checks]
+        return primary, skipped, secondary
+    return list(failures[:1]), [], list(failures[1:])
+
+
 def reconnect_run(node, seconds, baseline_timeout=30.0, disconnect_timeout=30.0,
                   recovery_timeout=45.0, post_timeout=30.0):
     """Event-driven reconnect acceptance; stdin is polled without stopping ROS spin."""
@@ -351,12 +388,16 @@ def reconnect_run(node, seconds, baseline_timeout=30.0, disconnect_timeout=30.0,
                                     node.tracked and node.landing and node.health and
                                     node.baseline_stale_count == 0):
             print('UNPLUG_OPENMV_NOW', file=sys.stderr, flush=True)
+            node.disconnect_count_at_unplug_prompt = node.disconnected_count
+            node.recovered_count_at_unplug_prompt = node.recovered_count
+            node.unplug_prompt_monotonic = now
             phase = 'await_disconnect'; phase_started = now; prompted_disconnect = True
         if phase == 'await_disconnect' and node.physical_disconnect_ready():
             print('REPLUG_OPENMV_NOW', file=sys.stderr, flush=True)
             phase = 'await_reconnect'; phase_started = now; prompted_reconnect = True
         if (phase == 'await_reconnect' and node.device_present_timestamp is not None and
-                node.recovered_count and node.ordered_disconnect_then_recovered):
+                node.recovered_count > node.recovered_count_at_unplug_prompt and
+                node.ordered_disconnect_then_recovered):
             phase = 'post_reconnect'; phase_started = now
         if (phase == 'post_reconnect' and node.recovered_at is not None and
                 now - node.recovered_at >= 2.0 and
@@ -390,8 +431,12 @@ def main():
         result['health_message_count'] = len(node.health)
         result['reconnect_phase'] = phase
         failures = validate_report(result, args.require_reconnect)
+        primary, skipped, secondary = classify_reconnect_failures(failures, phase)
         result['acceptance_status'] = 'FAIL' if failures else 'PASS'
         result['failure_reasons'] = failures
+        result['primary_failure_reasons'] = primary
+        result['skipped_checks'] = skipped
+        result['secondary_failure_reasons'] = secondary
         node.destroy_node(); rclpy.shutdown()
     print(json.dumps(result, indent=2, sort_keys=True))
     raise SystemExit(1 if failures else 0)

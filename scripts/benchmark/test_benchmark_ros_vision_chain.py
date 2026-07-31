@@ -1,4 +1,5 @@
-from benchmark_ros_vision_chain import benchmark_qos_profile, validate_report
+from benchmark_ros_vision_chain import (benchmark_qos_profile, classify_reconnect_failures,
+                                        validate_report)
 from rclpy.qos import ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 import rclpy
 from rclpy.node import Node
@@ -127,6 +128,49 @@ def test_reconnect_rejects_status_only_without_device_serial():
         'launch_process_alive': True, 'bridge_process_alive': True,
         'interface_process_alive': True}
     assert 'usb_serial_unavailable' in validate_report(report, require_reconnect=True)
+
+
+def test_physical_disconnect_qualifies_while_device_is_still_absent():
+    benchmark_module = __import__('benchmark_ros_vision_chain', fromlist=['VisionChainBenchmark'])
+    node = benchmark_module.VisionChainBenchmark.__new__(benchmark_module.VisionChainBenchmark)
+    node.device_start = {'present': True}
+    node.device_current_present = False
+    node.device_absence_qualified = True
+    node.device_absent_timestamp = 100.0
+    node.device_absent_duration_sec = 1.2
+    node.device_absent_started_monotonic = 10.0
+    node.disconnected_monotonic = 10.1
+    node.disconnected_timestamp = 10.1
+    node.disconnect_count = 1
+    node.disconnected_count = 1
+    node.disconnect_count_at_unplug_prompt = 0
+    node.unplug_prompt_monotonic = 9.0
+    assert node.physical_disconnect_ready()
+
+
+def test_physical_disconnect_rejects_status_without_device_absence():
+    benchmark_module = __import__('benchmark_ros_vision_chain', fromlist=['VisionChainBenchmark'])
+    node = benchmark_module.VisionChainBenchmark.__new__(benchmark_module.VisionChainBenchmark)
+    node.device_start = {'present': True}
+    node.device_current_present = True
+    node.device_absence_qualified = False
+    node.device_absent_timestamp = None
+    node.device_absent_duration_sec = 0.0
+    node.device_absent_started_monotonic = None
+    node.disconnected_monotonic = 5.0
+    node.disconnect_count = 1
+    node.disconnect_count_at_unplug_prompt = 0
+    node.unplug_prompt_monotonic = 1.0
+    assert not node.physical_disconnect_ready()
+
+
+def test_reconnect_failure_report_is_phase_aware():
+    primary, skipped, secondary = classify_reconnect_failures(
+        ['device_absence_not_confirmed', 'no_recovered', 'usb_serial_mismatch'],
+        'await_disconnect')
+    assert primary == ['device_absence_qualification_state_machine_timeout']
+    assert skipped == ['no_recovered', 'usb_serial_mismatch']
+    assert secondary == ['device_absence_not_confirmed']
 
 
 def test_best_effort_publishers_reach_benchmark_topics():
