@@ -16,4 +16,6 @@ benchmark 对五个正式话题使用显式 `BEST_EFFORT + VOLATILE + KEEP_LAST`
 
 结果 `vision_results/reconnect_20260801_023201` 确认稳定基线、真实设备消失、DISCONNECTED 和进程清理均正常；失败原因是旧版 `poll_device()` 的首个 `if` 在设备持续离线时遮蔽了后续 `elif`，导致离线持续时间始终为 0。现版按“当前存在/当前不存在”两个互斥主分支累计单调时钟时长。
 
+结果 `vision_results/reconnect_20260801_024200` 已完成完整物理拔插恢复：稳定基线、设备消失、DISCONNECTED、同 USB 序列号恢复、RECOVERED、三路各 60 帧及零丢帧均通过。旧版唯一失败是将 RECOVERED 到首帧约 1.5 秒启动等待计入稳态帧率分母；现版分离恢复启动延迟与首帧到末帧稳态频率。
+
 验收关注：每个新序号只发布一次；重复、乱序不重复发布；丢帧计数正确；超过 0.30 s 只产生一次 STALE 无效转换；恢复后下一新帧恢复有效输出。无效几何量必须为 NaN，米制字段保持 NaN。

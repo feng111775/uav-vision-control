@@ -40,6 +40,13 @@ def device_snapshot(path='/dev/dtask_openmv'):
             'serial': props.get('ID_SERIAL_SHORT', ''), 'properties': props}
 
 
+def rate_from_timestamps(times):
+    """Steady-state rate, excluding startup time before the first sample."""
+    if len(times) < 2 or times[-1] <= times[0]:
+        return 0.0
+    return (len(times) - 1) / (times[-1] - times[0])
+
+
 class VisionChainBenchmark(Node):
     def __init__(self):
         super().__init__('benchmark_ros_vision_chain')
@@ -60,6 +67,8 @@ class VisionChainBenchmark(Node):
         self.baseline_frame_times = []; self.post_raw_times = []
         self.baseline_tracked_times = []
         self.post_tracked_times = []; self.post_landing_times = []
+        self.first_post_tracked_timestamp = None
+        self.first_post_landing_timestamp = None
         self.baseline_stale_count = 0
         self.invalid_observation_after_disconnect = False
         self.ordered_disconnect_then_recovered = False
@@ -113,7 +122,9 @@ class VisionChainBenchmark(Node):
         self.tracked_sequences.add(int(msg.frame_sequence))
         if self.reconnect_seen:
             self.post_reconnect_tracked += 1
-            self.post_tracked_times.append(time.monotonic())
+            timestamp = time.monotonic(); self.post_tracked_times.append(timestamp)
+            if self.first_post_tracked_timestamp is None:
+                self.first_post_tracked_timestamp = timestamp
         else:
             self.baseline_tracked_times.append(time.monotonic())
         if self.stale and not msg.measurement_valid:
@@ -128,7 +139,9 @@ class VisionChainBenchmark(Node):
         self.landing.append(msg)
         if self.reconnect_seen:
             self.post_reconnect_landing += 1
-            self.post_landing_times.append(time.monotonic())
+            timestamp = time.monotonic(); self.post_landing_times.append(timestamp)
+            if self.first_post_landing_timestamp is None:
+                self.first_post_landing_timestamp = timestamp
     def health_cb(self, msg): self.health.append(msg)
 
     def status_cb(self, msg):
@@ -216,7 +229,13 @@ class VisionChainBenchmark(Node):
         baseline_tracked_hz = ((len(self.baseline_tracked_times) - 1) /
                               (self.baseline_tracked_times[-1] - self.baseline_tracked_times[0])
                               if len(self.baseline_tracked_times) > 1 and self.baseline_tracked_times[-1] > self.baseline_tracked_times[0] else 0.0)
-        post_duration = max(0.001, time.monotonic() - self.recovered_at) if self.recovered_at else 0.001
+        post_end = time.monotonic()
+        post_duration = max(0.001, post_end - self.recovered_at) if self.recovered_at else 0.001
+        def window(times):
+            return times[-1] - times[0] if len(times) >= 2 and times[-1] > times[0] else 0.0
+        def stable_rate(times):
+            span = window(times)
+            return rate_from_timestamps(times) if span > 0.0 else 0.0
         return {
             'seconds': seconds, 'raw_target_v2_hz': len(self.raw) / max(seconds, 1e-9),
             'tracked_publish_hz': len(self.tracked) / max(seconds, 1e-9),
@@ -257,8 +276,29 @@ class VisionChainBenchmark(Node):
             'post_reconnect_raw_frame_count': self.post_reconnect_raw,
             'post_reconnect_tracked_frame_count': self.post_reconnect_tracked,
             'post_reconnect_landing_frame_count': self.post_reconnect_landing,
-            'post_reconnect_raw_hz': len(self.post_raw_times) / post_duration,
-            'post_reconnect_tracked_hz': len(self.post_tracked_times) / post_duration,
+            'post_reconnect_raw_hz': stable_rate(self.post_raw_times),
+            'post_reconnect_tracked_hz': stable_rate(self.post_tracked_times),
+            'post_reconnect_landing_hz': stable_rate(self.post_landing_times),
+            'post_reconnect_effective_raw_hz_from_recovered': len(self.post_raw_times) / post_duration,
+            'post_reconnect_effective_tracked_hz_from_recovered': len(self.post_tracked_times) / post_duration,
+            'post_reconnect_effective_landing_hz_from_recovered': len(self.post_landing_times) / post_duration,
+            'post_reconnect_raw_window_sec': window(self.post_raw_times),
+            'post_reconnect_tracked_window_sec': window(self.post_tracked_times),
+            'post_reconnect_landing_window_sec': window(self.post_landing_times),
+            'post_reconnect_raw_first_monotonic': self.post_raw_times[0] if self.post_raw_times else None,
+            'post_reconnect_raw_last_monotonic': self.post_raw_times[-1] if self.post_raw_times else None,
+            'post_reconnect_tracked_first_monotonic': self.post_tracked_times[0] if self.post_tracked_times else None,
+            'post_reconnect_tracked_last_monotonic': self.post_tracked_times[-1] if self.post_tracked_times else None,
+            'post_reconnect_landing_first_monotonic': self.post_landing_times[0] if self.post_landing_times else None,
+            'post_reconnect_landing_last_monotonic': self.post_landing_times[-1] if self.post_landing_times else None,
+            'recovered_to_first_raw_frame_ms': ((self.post_raw_times[0] - self.recovered_at) * 1000.0
+                                                if self.post_raw_times and self.recovered_at is not None else None),
+            'recovered_to_first_tracked_frame_ms': ((self.post_tracked_times[0] - self.recovered_at) * 1000.0
+                                                    if self.post_tracked_times and self.recovered_at is not None else None),
+            'recovered_to_first_landing_frame_ms': ((self.post_landing_times[0] - self.recovered_at) * 1000.0
+                                                    if self.post_landing_times and self.recovered_at is not None else None),
+            'device_present_to_recovered_ms': ((self.recovered_monotonic - self.device_present_monotonic) * 1000.0
+                                               if self.recovered_monotonic is not None and self.device_present_monotonic is not None else None),
             'invalid_observation_after_disconnect': self.invalid_observation_after_disconnect,
             'ordered_disconnect_then_recovered': self.ordered_disconnect_then_recovered,
             'launch_process_alive': self._nodes_alive(),
@@ -360,8 +400,11 @@ def validate_report(report, require_reconnect=False):
             failures.append('insufficient_post_reconnect_frames')
         if min(report.get('post_reconnect_raw_frame_count', 0), report.get('post_reconnect_tracked_frame_count', 0), report.get('post_reconnect_landing_frame_count', 0)) < 60:
             failures.append('insufficient_post_reconnect_topic_frames')
-        if report.get('post_reconnect_raw_hz', 0) < 30 or report.get('post_reconnect_tracked_hz', 0) < 30:
-            failures.append('post_reconnect_frequency_below_30hz')
+        for name in ('raw', 'tracked', 'landing'):
+            if report.get('post_reconnect_%s_hz' % name, 0) < 30:
+                failures.append('post_reconnect_%s_frequency_below_30hz' % name)
+            if report.get('post_reconnect_%s_window_sec' % name, 0) < 1.0:
+                failures.append('post_reconnect_%s_window_too_short' % name)
         if report.get('post_gap_count', 0) > max(2, report.get('post_reconnect_unique_frame_count', 0) * 0.10):
             failures.append('post_sequence_gaps')
         if not report.get('invalid_observation_after_disconnect', False):
@@ -380,7 +423,12 @@ def classify_reconnect_failures(failures, phase):
     recovery_checks = {'no_recovered', 'device_not_restored', 'usb_serial_mismatch',
                        'usb_serial_unavailable', 'insufficient_post_reconnect_frames',
                        'insufficient_post_reconnect_topic_frames',
-                       'post_reconnect_frequency_below_30hz', 'post_sequence_gaps',
+                       'post_reconnect_raw_frequency_below_30hz',
+                       'post_reconnect_tracked_frequency_below_30hz',
+                       'post_reconnect_landing_frequency_below_30hz',
+                       'post_reconnect_raw_window_too_short',
+                       'post_reconnect_tracked_window_too_short',
+                       'post_reconnect_landing_window_too_short', 'post_sequence_gaps',
                        'bad_disconnect_recovered_order'}
     if phase == 'await_disconnect' and failures:
         primary = ['device_absence_qualification_state_machine_timeout']
@@ -423,7 +471,9 @@ def reconnect_run(node, seconds, baseline_timeout=30.0, disconnect_timeout=30.0,
                 now - node.recovered_at >= 2.0 and
                 len(node.post_reconnect_sequences) >= 60 and
                 node.post_reconnect_raw >= 60 and node.post_reconnect_tracked >= 60 and
-                node.post_reconnect_landing >= 60):
+                node.post_reconnect_landing >= 60 and
+                all((len(stream) >= 2 and stream[-1] - stream[0] >= 1.0)
+                    for stream in (node.post_raw_times, node.post_tracked_times, node.post_landing_times))):
             break
         limit = {'baseline': baseline_timeout, 'await_disconnect': disconnect_timeout,
                  'await_reconnect': recovery_timeout, 'post_reconnect': post_timeout}[phase]

@@ -1,5 +1,5 @@
 from benchmark_ros_vision_chain import (benchmark_qos_profile, classify_reconnect_failures,
-                                        validate_report)
+                                        rate_from_timestamps, validate_report)
 from rclpy.qos import ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 import rclpy
 from rclpy.node import Node
@@ -24,6 +24,35 @@ def test_zero_messages_fail_acceptance():
     assert 'missing_health_message_count' in failures
 
 
+def test_steady_rate_excludes_recovered_startup_delay():
+    # RECOVERED at t=0, first frame at 1.5s, then 60 frames over ~1.28s (46Hz).
+    times = [1.5 + i / 46.0 for i in range(60)]
+    assert 45.0 < rate_from_timestamps(times) < 47.0
+    effective = len(times) / times[-1]
+    assert effective < rate_from_timestamps(times)
+
+
+def test_steady_rate_requires_two_ordered_samples():
+    assert rate_from_timestamps([]) == 0.0
+    assert rate_from_timestamps([1.0]) == 0.0
+    assert rate_from_timestamps([1.0, 1.0]) == 0.0
+    assert rate_from_timestamps([2.0, 1.0]) == 0.0
+
+
+def test_each_post_stream_has_its_own_frequency_failure():
+    report = {
+        'raw_target_v2_hz': 40, 'tracked_publish_hz': 40,
+        'tracked_unique_frame_hz': 40, 'health_message_count': 2,
+        'landing_error_message_count': 40, 'protocol_error_count': 0,
+        'px4_input_publisher_count': 0, 'processing_p50_ms': 1,
+        'post_reconnect_raw_hz': 46, 'post_reconnect_tracked_hz': 20,
+        'post_reconnect_landing_hz': 46,
+        'post_reconnect_raw_window_sec': 2, 'post_reconnect_tracked_window_sec': 2,
+        'post_reconnect_landing_window_sec': 2}
+    failures = validate_report(report, require_reconnect=True)
+    assert 'post_reconnect_tracked_frequency_below_30hz' in failures
+
+
 def test_reconnect_requires_disconnect_recovery_and_post_frame():
     report = {
         'raw_target_v2_hz': 20, 'tracked_publish_hz': 20,
@@ -41,7 +70,9 @@ def test_reconnect_requires_disconnect_recovery_and_post_frame():
         'disconnected_timestamp': 2, 'ordered_disconnect_then_recovered': True,
         'post_reconnect_raw_frame_count': 60, 'post_reconnect_tracked_frame_count': 60,
         'post_reconnect_landing_frame_count': 60, 'post_reconnect_raw_hz': 30,
-        'post_reconnect_tracked_hz': 30,
+        'post_reconnect_tracked_hz': 30, 'post_reconnect_landing_hz': 30,
+        'post_reconnect_raw_window_sec': 2, 'post_reconnect_tracked_window_sec': 2,
+        'post_reconnect_landing_window_sec': 2,
         'invalid_observation_after_disconnect': True,
         'launch_process_alive': True, 'bridge_process_alive': True,
         'interface_process_alive': True}
