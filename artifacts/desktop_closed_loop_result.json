@@ -1,0 +1,29 @@
+{
+  "passed": true,
+  "final_state": "COMPLETE",
+  "state_sequence": [
+    "WAIT_PX4",
+    "WAIT_SAFETY",
+    "WAIT_START",
+    "PRESTREAM",
+    "REQUEST_OFFBOARD",
+    "ARMING",
+    "TAKEOFF",
+    "HOVER_CONFIRM",
+    "SEARCH_TARGET",
+    "FOLLOW_TARGET",
+    "DROP_ALIGN",
+    "DROP_RELEASE",
+    "RETURN_H",
+    "LAND_H",
+    "WAIT_DISARM",
+    "COMPLETE"
+  ],
+  "hover_confirm_duration_s": 3.0,
+  "align_continuous_duration_s": 0.4,
+  "release_request_count": 1,
+  "release_ack_received": true,
+  "px4_input_topics_published": [],
+  "remaining_nodes": [],
+  "failure_reason": ""
+}

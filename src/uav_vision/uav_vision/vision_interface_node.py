@@ -10,6 +10,7 @@ from std_msgs.msg import String
 from uav_interfaces.msg import TargetObservation, LandingError, VisionHealth, MissionVisionState
 
 from .vision_protocol import parse_target, ClockMapper, Confirmation, SequenceTracker
+from .closed_loop_health import ClosedLoopHealthGate, HealthSample
 
 NAN = float('nan')
 STALE_TIMEOUT_SEC = 0.30
@@ -18,6 +19,27 @@ STALE_TIMEOUT_SEC = 0.30
 class VisionInterfaceNode(Node):
     def __init__(self):
         super().__init__('vision_interface_node')
+        self.declare_parameter('closed_loop_enable', False)
+        self.declare_parameter('closed_loop_min_fps', 5.0)
+        self.declare_parameter('closed_loop_stable_seconds', 2.0)
+        self.declare_parameter('closed_loop_receive_timeout_seconds', 0.30)
+        self.declare_parameter('closed_loop_source_age_limit_ms', 300.0)
+        self.declare_parameter('calibration_profile', '')
+        self.declare_parameter('calibration_loaded', False)
+        self.declare_parameter('replay_only', False)
+        self.closed_loop_enable = bool(self.get_parameter('closed_loop_enable').value)
+        self.closed_loop_min_fps = float(self.get_parameter('closed_loop_min_fps').value)
+        self.closed_loop_stable_seconds = float(self.get_parameter('closed_loop_stable_seconds').value)
+        self.closed_loop_receive_timeout = float(self.get_parameter('closed_loop_receive_timeout_seconds').value)
+        self.closed_loop_source_age_ms = float(self.get_parameter('closed_loop_source_age_limit_ms').value)
+        self.calibration_profile = str(self.get_parameter('calibration_profile').value)
+        self.calibration_loaded = bool(self.get_parameter('calibration_loaded').value) and bool(self.calibration_profile)
+        self.replay_only = bool(self.get_parameter('replay_only').value)
+        self.closed_loop_gate = ClosedLoopHealthGate(
+            min_fps=self.closed_loop_min_fps,
+            stable_seconds=self.closed_loop_stable_seconds,
+            receive_timeout_seconds=self.closed_loop_receive_timeout,
+            source_age_limit_ms=self.closed_loop_source_age_ms)
         best = QoSProfile(depth=5, reliability=ReliabilityPolicy.BEST_EFFORT)
         reliable = QoSProfile(depth=5, reliability=ReliabilityPolicy.RELIABLE)
         state_qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
@@ -62,6 +84,7 @@ class VisionInterfaceNode(Node):
             self.mapper.reset(); self.sequence.reset(); self.confirm = Confirmation()
         if status == 'DISCONNECTED':
             self.connected = False
+            self.closed_loop_gate.reset()
             self._publish_stale_once()
         elif status in ('RECOVERED', 'CONNECTED'):
             if status == 'RECOVERED': self.stats['reconnect_count'] += 1
@@ -100,6 +123,7 @@ class VisionInterfaceNode(Node):
         self.frames += 1; self.valid_frames += int(measurement_valid)
         self.confirmed_frames += int(confirmed)
         self.last_new = now; self.stale_published = False; self.connected = True
+        self.closed_loop_gate.observe_frame(now)
         item.update(measurement_valid=measurement_valid, confirmed=confirmed,
                     count=count, received_ns=now_ns)
         stamp_ns, synced = self.mapper.update(item['ticks'], now_ns)
@@ -172,21 +196,38 @@ class VisionInterfaceNode(Node):
                           last_measurement_age_ms=max(0.0, age) if math.isfinite(age) else NAN)
         h = VisionHealth(); h.header.stamp = self.get_clock().now().to_msg()
         h.camera_open = self.connected; h.frames_received = self.frames > 0
-        h.algorithm_alive = self.last_new is not None and age < 300.0
+        h.algorithm_alive = self.last_new is not None and age < self.closed_loop_source_age_ms
         h.protocol_ok = self.protocol_error_count == 0
-        h.calibration_loaded = False
+        h.calibration_loaded = self.calibration_loaded
+        h.last_measurement_age_ms = max(0.0, age) if math.isfinite(age) else NAN
+        h.performance_gate_passed = bool(new_fps >= self.closed_loop_min_fps and h.protocol_ok)
         h.ready_for_mission = bool(h.camera_open and h.frames_received and h.algorithm_alive and
-                                   h.protocol_ok and new_fps >= 20.0 and age < 300.0 and
+                                   h.protocol_ok and h.performance_gate_passed and age < self.closed_loop_source_age_ms and
                                    self.protocol_error_count == 0)
-        h.ready_for_closed_loop = False
-        h.performance_gate_passed = bool(new_fps >= 20.0 and h.protocol_ok)
+        health_sample = HealthSample(
+            now=now, camera_open=h.camera_open, frames_received=h.frames_received,
+            algorithm_alive=h.algorithm_alive, protocol_ok=h.protocol_ok,
+            ready_for_mission=h.ready_for_mission,
+            performance_gate_passed=h.performance_gate_passed,
+            calibration_loaded=self.calibration_loaded,
+            measured_fps=new_fps,
+            last_measurement_age_ms=h.last_measurement_age_ms,
+            receive_age_s=(age / 1000.0 if math.isfinite(age) else float('inf')),
+            recent_protocol_errors=self.protocol_error_count,
+            recent_duplicate_count=self.sequence.duplicate_count,
+            recent_out_of_order_count=self.sequence.out_of_order_count,
+            recent_stalled=(self.last_new is None or age > self.closed_loop_receive_timeout * 1000.0))
+        h.ready_for_closed_loop = self.closed_loop_gate.evaluate(
+            health_sample, closed_loop_enable=self.closed_loop_enable)
         h.input_fps = input_fps; h.new_frame_fps = new_fps; h.valid_detection_fps = valid_fps
         h.publish_fps = publish_fps; h.processing_p50_ms = self.stats['processing_p50_ms']
         h.processing_p95_ms = self.stats['processing_p95_ms']; h.serial_transport_p95_ms = NAN
-        h.end_to_end_p95_ms = NAN; h.last_measurement_age_ms = max(0.0, age) if math.isfinite(age) else NAN
+        h.end_to_end_p95_ms = NAN
         h.protocol_error_count = self.protocol_error_count; h.dropped_frame_count = self.sequence.dropped_count
         h.reconnect_count = self.stats['reconnect_count']; h.detector_backend = 'fast_v2'
-        h.current_mode = self.mode; h.status_text = 'READY_PIXEL_ONLY' if h.algorithm_alive else 'WAITING_FOR_CAMERA'
+        h.current_mode = self.mode
+        h.status_text = ('READY_FOR_CLOSED_LOOP' if h.ready_for_closed_loop else
+                         ('READY_PIXEL_ONLY' if h.algorithm_alive else 'WAITING_FOR_CAMERA'))
         self.health_pub.publish(h)
 
     @staticmethod

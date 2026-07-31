@@ -6,7 +6,20 @@ h7_bridge_node:
     detection_topic: /vision/h7/detection
     status_topic: /vision/h7/status
     target_age_topic: /vision/h7/target_age_ms
-    data_timeout_sec: 0.5
+    data_timeout_sec: 0.30
+
+vision_interface_node:
+  ros__parameters:
+    # Closed-loop remains opt-in; calibration is explicitly false until the
+    # four-direction prop-off check is completed on the target aircraft.
+    closed_loop_enable: false
+    closed_loop_min_fps: 5.0
+    closed_loop_stable_seconds: 2.0
+    closed_loop_receive_timeout_seconds: 0.30
+    closed_loop_source_age_limit_ms: 300.0
+    calibration_profile: ''
+    calibration_loaded: false
+    replay_only: false
 
 fake_h7_node:
   ros__parameters:

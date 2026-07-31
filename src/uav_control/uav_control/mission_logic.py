@@ -15,7 +15,9 @@ class MissionLogic:
                  hover_test_seconds=10.0, dwell_on_car_seconds=5.0,
                  mission_timeout_seconds=90.0, b_deadline_seconds=15.0,
                  altitude_tolerance=0.1, stable_seconds=1.0,
-                 payload_ack_timeout=3.0, touchdown_verify_seconds=1.0):
+                 payload_ack_timeout=3.0, touchdown_verify_seconds=1.0,
+                 visual_stable_seconds=0.4, auto_start_hover_test=False,
+                 communication_only=False, car_speed_mps=0.1):
         self.mode = parse_mission_mode(mission_mode)
         self.mode_name = mission_mode
         self.target_altitude = float(target_altitude)
@@ -38,6 +40,10 @@ class MissionLogic:
         self.payload_ack_timeout = float(payload_ack_timeout)
         self.touchdown_verify_seconds = max(
             0.0, float(touchdown_verify_seconds))
+        self.visual_stable_seconds = max(0.0, float(visual_stable_seconds))
+        self.auto_start_hover_test = bool(auto_start_hover_test)
+        self.communication_only = bool(communication_only)
+        self.car_speed_mps = float(car_speed_mps)
         self.reset()
 
     def reset(self):
@@ -61,6 +67,8 @@ class MissionLogic:
         self.car_regression = False
         self.target_ok = False
         self.aligned = False
+        self.visual_stable_since = None
+        self.drop_alignment_since = None
         self.touchdown = False
         self.payload_sent = False
         self.payload_ack = False
@@ -70,6 +78,8 @@ class MissionLogic:
         self.stable_since = None
 
     def transition(self, state, now, event=None):
+        if str(state) != 'DROP_ALIGN':
+            self.drop_alignment_since = None
         self.state = state
         self.state_since = float(now)
         self.stable_since = None
@@ -109,6 +119,28 @@ class MissionLogic:
             return False
         self.car_progress = value
         return True
+
+    def update_visual(self, target_ok, aligned, now):
+        """Update fresh visual qualification and its continuous timers."""
+        self.target_ok = bool(target_ok)
+        self.aligned = self.target_ok and bool(aligned)
+        if not self.target_ok:
+            self.visual_stable_since = None
+            self.drop_alignment_since = None
+            return
+        if self.visual_stable_since is None:
+            self.visual_stable_since = float(now)
+        if self.state == 'DROP_ALIGN' and self.aligned:
+            if self.drop_alignment_since is None:
+                self.drop_alignment_since = float(now)
+        else:
+            self.drop_alignment_since = None
+
+    def alignment_stable(self, now):
+        return (self.state == 'DROP_ALIGN' and self.aligned and
+                self.drop_alignment_since is not None and
+                float(now) - self.drop_alignment_since + 1e-9 >=
+                self.visual_stable_seconds)
 
     def auto_arm_allowed(self):
         base = all((self.enable_control, self.enable_auto_arm,
@@ -167,7 +199,9 @@ class MissionLogic:
             safe = self.simulation_mode or (self.safety_ready and self.attitude_valid)
             if safe:
                 self.transition('WAIT_START', now)
-        elif self.state == 'WAIT_START' and self.start_signal:
+        elif (self.state == 'WAIT_START' and
+              (self.start_signal or (self.auto_start_hover_test and
+                                     not self.communication_only))):
             self.started_at = now
             self.transition('PRESTREAM', now, 'MISSION_STARTED')
         elif (self.state in ('PRESTREAM', 'SECOND_PRESTREAM') and
@@ -202,7 +236,7 @@ class MissionLogic:
             self.transition('FOLLOW_TARGET', now)
         elif self.state == 'FOLLOW_TARGET' and self.aligned:
             self.transition('DROP_ALIGN' if self.mode_name == 'drop' else 'LANDING_ALIGN', now)
-        elif (self.state == 'DROP_ALIGN' and self.aligned and
+        elif (self.state == 'DROP_ALIGN' and self.alignment_stable(now) and
               self.at_cruise_altitude() and
               self.enable_payload_release and not self.payload_sent):
             self.payload_sent = True

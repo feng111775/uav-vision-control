@@ -12,6 +12,10 @@ def generate_launch_description():
         DeclareLaunchArgument('baudrate', default_value='115200'),
         DeclareLaunchArgument('data_timeout_sec', default_value='0.30'),
         DeclareLaunchArgument('allow_legacy_protocol', default_value='false'),
+        DeclareLaunchArgument('closed_loop_enable', default_value='false'),
+        DeclareLaunchArgument('closed_loop_min_fps', default_value='5.0'),
+        DeclareLaunchArgument('calibration_profile', default_value=''),
+        DeclareLaunchArgument('calibration_loaded', default_value='false'),
         Node(
             package='uav_vision', executable='h7_bridge_node', name='h7_bridge_node',
             parameters=[{
@@ -21,5 +25,10 @@ def generate_launch_description():
                 'allow_legacy_protocol': LaunchConfiguration('allow_legacy_protocol'),
             }], output='screen'),
         Node(package='uav_vision', executable='vision_interface_node',
-             name='vision_interface_node', output='screen'),
+             name='vision_interface_node', output='screen', parameters=[{
+                 'closed_loop_enable': LaunchConfiguration('closed_loop_enable'),
+                 'closed_loop_min_fps': LaunchConfiguration('closed_loop_min_fps'),
+                 'calibration_profile': LaunchConfiguration('calibration_profile'),
+                 'calibration_loaded': LaunchConfiguration('calibration_loaded'),
+             }]),
     ])

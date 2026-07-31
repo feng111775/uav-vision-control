@@ -168,9 +168,11 @@ def test_hover_test_ignores_visual_and_lands():
 def test_payload_once_and_ack():
     logic = ready_logic(enable_payload_release=True)
     logic.state = 'DROP_ALIGN'
-    logic.aligned = True
     logic.position = (2, 3, logic.cruise_z)
-    logic.step(1)
+    logic.update_visual(True, True, 0.0)
+    logic.step(0.0)
+    logic.update_visual(True, True, 0.4)
+    logic.step(0.4)
     assert logic.payload_sent and logic.state == 'DROP_RELEASE'
     logic.step(2)
     assert logic.state == 'DROP_RELEASE'
@@ -182,10 +184,12 @@ def test_payload_once_and_ack():
 def test_drop_altitude_gate_allows_horizontal_follow_velocity():
     logic = ready_logic(enable_payload_release=True)
     logic.state = 'DROP_ALIGN'
-    logic.aligned = True
     logic.position = (2, 3, logic.cruise_z)
     logic.velocity = (0.5, 0.0, 0.0)
-    logic.step(1)
+    logic.update_visual(True, True, 0.0)
+    logic.step(0.0)
+    logic.update_visual(True, True, 0.4)
+    logic.step(0.4)
     assert logic.state == 'DROP_RELEASE'
 
 

@@ -1,0 +1,103 @@
+{
+  "source_data_files": [
+    "test_data/vision/normal_light/sample_v2.log"
+  ],
+  "data_is_real_openmv_capture": true,
+  "capture_frames": 3,
+  "capture_sequence": [
+    1,
+    2,
+    3
+  ],
+  "capture_modes": [
+    "SEARCH",
+    "SEARCH",
+    "SEARCH"
+  ],
+  "replay_segments": [
+    {
+      "source": "test_data/vision/normal_light/sample_v2.log",
+      "start_line": 1,
+      "end_line": 3,
+      "order": 1
+    }
+  ],
+  "measured_fps": 50.0,
+  "configured_min_fps": 5.0,
+  "max_measurement_age_ms": 20.0,
+  "duplicate_count": 0,
+  "out_of_order_count": 0,
+  "reconnect_count": 0,
+  "ready_for_closed_loop_transitions": [
+    {
+      "time_s": 0.0,
+      "ready": false
+    },
+    {
+      "time_s": 0.2,
+      "ready": false
+    },
+    {
+      "time_s": 0.4,
+      "ready": false
+    },
+    {
+      "time_s": 0.6000000000000001,
+      "ready": false
+    },
+    {
+      "time_s": 0.8,
+      "ready": false
+    },
+    {
+      "time_s": 1.0,
+      "ready": false
+    },
+    {
+      "time_s": 1.2000000000000002,
+      "ready": false
+    },
+    {
+      "time_s": 1.4000000000000001,
+      "ready": false
+    },
+    {
+      "time_s": 1.6,
+      "ready": false
+    },
+    {
+      "time_s": 1.8,
+      "ready": false
+    },
+    {
+      "time_s": 2.0,
+      "ready": true
+    }
+  ],
+  "state_sequence": [
+    "WAIT_PX4",
+    "WAIT_SAFETY",
+    "WAIT_START",
+    "PRESTREAM",
+    "REQUEST_OFFBOARD",
+    "ARMING",
+    "TAKEOFF",
+    "HOVER_CONFIRM",
+    "SEARCH_TARGET",
+    "FOLLOW_TARGET",
+    "DROP_ALIGN",
+    "DROP_RELEASE",
+    "RETURN_H",
+    "LAND_H",
+    "WAIT_DISARM",
+    "COMPLETE"
+  ],
+  "hover_confirm_duration_s": 3.0,
+  "align_continuous_duration_s": 0.4,
+  "release_request_count": 1,
+  "release_ack_received": true,
+  "final_state": "COMPLETE",
+  "passed": true,
+  "failure_reason": "",
+  "coverage_note": "Capture contains only three SEARCH near-centre frames; this is replay plumbing evidence, not complete real-target coverage."
+}

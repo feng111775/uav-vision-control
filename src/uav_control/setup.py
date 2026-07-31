@@ -14,6 +14,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/config', glob('config/*.yaml')),
         ('share/' + package_name + '/launch', glob('launch/*.launch.py')),
+        ('share/' + package_name + '/scripts', glob('scripts/*.sh')),
     ],
     install_requires=['setuptools'],
     tests_require=['pytest'],
@@ -35,6 +36,8 @@ setup(
             'uav_control.mission_controller_node:main',
             'mission_dashboard_node = '
             'uav_control.mission_dashboard_node:main',
+            'car_start_gateway = uav_control.car_start_gateway:main',
+            'car_udp_trigger_node = uav_control.car_udp_trigger_node:main',
             'car_link_bridge_node = '
             'uav_control.hardware.car_link_bridge_node:main',
             'car_link_simulator_node = '
@@ -47,6 +50,8 @@ setup(
             'uav_control.integration.system_health_node:main',
             'safety_gate_node = '
             'uav_control.integration.safety_gate_node:main',
+            'mock_vision_v2_node = '
+            'uav_control.mock_vision_v2_node:main',
         ],
     },
 )

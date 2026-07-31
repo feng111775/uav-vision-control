@@ -1,6 +1,7 @@
 """ROS/PX4 v1.16 adapter for the unified D-task mission logic."""
 
 import math
+import time
 
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Path
@@ -11,6 +12,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Bool, Float32MultiArray, String, UInt8
+from uav_interfaces.msg import LandingError, TargetObservation, VisionHealth
 from uav_vision import d_task_schema as vision_schema
 
 from .mission_logic import MissionLogic
@@ -19,6 +21,7 @@ from .mission_schema import state_allows_flight_setpoint
 from .mission_schema import STATE_ID, TELEMETRY, TELEMETRY_LENGTH
 from .px4_command_tracker import CommandTracker
 from .touchdown_detector import TouchdownDetector
+from .vision_v2_contract import VisionV2Adapter
 from .visual_guidance import VisualGuidance
 
 
@@ -29,6 +32,7 @@ class MissionControllerNode(Node):
             'mission_mode': 'hover_test', 'target_altitude': 1.0,
             'simulation_mode': False, 'competition_mode': False,
             'enable_control': False, 'enable_auto_arm': False,
+            'auto_start_hover_test': False, 'communication_only': False,
             'enable_visual_follow': False, 'enable_payload_release': False,
             'enable_dynamic_landing': False, 'enable_second_takeoff': False,
             'prestream_seconds': 1.0, 'hover_confirm_seconds': 3.0,
@@ -44,6 +48,21 @@ class MissionControllerNode(Node):
         defaults['payload_ack_timeout'] = 3.0
         defaults['touchdown_verify_seconds'] = 1.0
         defaults['target_loss_abort_seconds'] = 1.0
+        defaults['vision_adapter_mode'] = 'v2_structured'
+        defaults['vision_receive_timeout_seconds'] = 0.30
+        defaults['vision_source_age_limit_seconds'] = 0.30
+        defaults['vision_min_confidence'] = 60.0
+        defaults['vision_health_required'] = True
+        defaults['vision_require_ready_for_closed_loop'] = True
+        defaults['vision_tracked_topic'] = '/vision/target/tracked'
+        defaults['vision_landing_topic'] = '/vision/landing_error'
+        defaults['vision_health_topic'] = '/vision/health'
+        defaults['vision_swap_xy'] = False
+        defaults['vision_invert_x'] = False
+        defaults['vision_invert_y'] = False
+        defaults['align_stable_duration_sec'] = 0.4
+        defaults['visual_stable_seconds'] = 0.4
+        defaults['car_speed_mps'] = 0.1
         defaults['kinematic_touchdown_height_tolerance'] = 0.0
         defaults['sitl_nav_land_after_touchdown'] = False
         defaults['guidance_kp_forward'] = 0.3
@@ -56,14 +75,27 @@ class MissionControllerNode(Node):
         logic_names = ('mission_mode', 'target_altitude', 'simulation_mode',
                        'competition_mode', 'enable_control', 'enable_auto_arm',
                        'enable_visual_follow', 'enable_payload_release',
+                       'auto_start_hover_test', 'communication_only',
                        'enable_dynamic_landing', 'enable_second_takeoff',
                        'prestream_seconds', 'hover_confirm_seconds',
                        'hover_test_seconds', 'dwell_on_car_seconds',
                        'mission_timeout_seconds', 'b_deadline_seconds',
-                       'altitude_tolerance', 'stable_seconds')
+                       'altitude_tolerance', 'stable_seconds',
+                       'visual_stable_seconds', 'car_speed_mps')
         logic_names = logic_names + (
             'payload_ack_timeout', 'touchdown_verify_seconds')
         self.logic = MissionLogic(**{n: self.get_parameter(n).value for n in logic_names})
+        self.logic.visual_stable_seconds = float(self.get_parameter(
+            'align_stable_duration_sec').value)
+        if str(self.get_parameter('vision_adapter_mode').value) not in (
+                'v2_structured', 'legacy_array'):
+            raise ValueError('vision_adapter_mode must be v2_structured or legacy_array')
+        if (not self.get_parameter('simulation_mode').value and
+                self.get_parameter('enable_auto_arm').value):
+            raise ValueError('enable_auto_arm requires simulation_mode=true')
+        if (not self.get_parameter('simulation_mode').value and
+                self.get_parameter('auto_start_hover_test').value):
+            raise ValueError('auto_start_hover_test requires simulation_mode=true')
         self.guidance = VisualGuidance(
             kp_forward=self.get_parameter('guidance_kp_forward').value,
             kp_left=self.get_parameter('guidance_kp_left').value,
@@ -80,6 +112,9 @@ class MissionControllerNode(Node):
         self.roll = self.pitch = self.yaw = 0.0
         self.error = [0.0] * vision_schema.LANDING_ERROR_LENGTH
         self.tracked = vision_schema.invalid_tracked()
+        self.vision_v2 = VisionV2Adapter(
+            self.get_parameter('vision_min_confidence').value,
+            self.get_parameter('vision_require_ready_for_closed_loop').value)
         self.touchdown_sensor = False
         self.path = Path()
         self.path.header.frame_id = 'map_ned'
@@ -128,8 +163,22 @@ class MissionControllerNode(Node):
         self.create_subscription(Bool, '/uav/mission/reset', self._reset, 10)
         self.create_subscription(Bool, '/uav/touchdown_sensor', self._touchdown_sensor, 10)
         self.create_subscription(Bool, '/uav/payload/release_ack', self._payload_ack, 10)
-        self.create_subscription(Float32MultiArray, '/vision/landing_error', self._error, 10)
-        self.create_subscription(Float32MultiArray, '/vision/target/tracked', self._tracked, 10)
+        mode = str(self.get_parameter('vision_adapter_mode').value)
+        if mode == 'v2_structured':
+            self.create_subscription(
+                LandingError, self.get_parameter('vision_landing_topic').value,
+                self._v2_landing, 5)
+            self.create_subscription(
+                TargetObservation, self.get_parameter('vision_tracked_topic').value,
+                self._v2_tracked, 5)
+            self.create_subscription(
+                VisionHealth, self.get_parameter('vision_health_topic').value,
+                self._v2_health, 5)
+        else:
+            self.create_subscription(
+                Float32MultiArray, '/vision/landing_error', self._error, 10)
+            self.create_subscription(
+                Float32MultiArray, '/vision/target/tracked', self._tracked, 10)
         self.create_timer(1.0 / self.get_parameter('control_rate_hz').value, self._timer)
 
     def now(self):
@@ -178,6 +227,10 @@ class MissionControllerNode(Node):
                 break
 
     def _start(self, msg):
+        if self.get_parameter('communication_only').value:
+            self.get_logger().warning(
+                'mission START ignored because communication_only=true')
+            return
         self.logic.start_signal = bool(msg.data)
 
     def _car(self, msg):
@@ -206,6 +259,15 @@ class MissionControllerNode(Node):
             self.tracked = vision_schema.validate_tracked(msg.data)
         except ValueError:
             self.tracked = vision_schema.invalid_tracked()
+
+    def _v2_landing(self, msg):
+        self.vision_v2.update_landing(msg, time.monotonic())
+
+    def _v2_tracked(self, msg):
+        self.vision_v2.update_tracked(msg, time.monotonic())
+
+    def _v2_health(self, msg):
+        self.vision_v2.update_health(msg, time.monotonic())
 
     def _publish_command(self, name, command, now, param1=0.0, param2=0.0):
         tracker = self.trackers[name]
@@ -265,14 +327,33 @@ class MissionControllerNode(Node):
                 self.last_safety is None or now -
                 self.last_safety > self.get_parameter('safety_timeout').value):
             self.logic.safety_ready = False
-        valid = self.error[vision_schema.VALID] == 1.0
-        confidence = self.error[vision_schema.ERROR_CONFIDENCE]
-        age = self.error[vision_schema.ERROR_TARGET_AGE_MS]
-        ex = self.error[vision_schema.ERROR_X_NORMALIZED]
-        ey = self.error[vision_schema.ERROR_Y_NORMALIZED]
-        self.logic.target_ok = valid and confidence >= 60.0 and age <= 250.0
-        self.logic.aligned = self.logic.target_ok and abs(ex) <= self.get_parameter(
+        if str(self.get_parameter('vision_adapter_mode').value) == 'v2_structured':
+            observation = self.vision_v2.observation(
+                time.monotonic(),
+                self.get_parameter('vision_receive_timeout_seconds').value,
+                self.get_parameter('vision_source_age_limit_seconds').value,
+                source_now=now)
+            valid = observation.control_allowed
+            confidence = observation.confidence
+            age = (now - observation.source_timestamp) * 1000.0 \
+                if observation.source_timestamp is not None else float('inf')
+            ex, ey = observation.error_x_norm, observation.error_y_norm
+        else:
+            valid = self.error[vision_schema.VALID] == 1.0
+            confidence = self.error[vision_schema.ERROR_CONFIDENCE]
+            age = self.error[vision_schema.ERROR_TARGET_AGE_MS]
+            ex = self.error[vision_schema.ERROR_X_NORMALIZED]
+            ey = self.error[vision_schema.ERROR_Y_NORMALIZED]
+            valid = valid and confidence >= 60.0 and age <= 250.0
+        if self.get_parameter('vision_swap_xy').value:
+            ex, ey = ey, ex
+        if self.get_parameter('vision_invert_x').value:
+            ex = -ex
+        if self.get_parameter('vision_invert_y').value:
+            ey = -ey
+        aligned = valid and abs(ex) <= self.get_parameter(
             'align_error').value and abs(ey) <= self.get_parameter('align_error').value
+        self.logic.update_visual(valid, aligned, now)
         if self.logic.state == 'DESCEND_ON_CAR' and not self.logic.target_ok:
             if self.target_loss_since is None:
                 self.target_loss_since = now

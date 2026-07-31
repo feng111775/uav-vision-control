@@ -4,6 +4,7 @@ mission_controller_node:
     # This profile is intentionally unable to arm or control a real aircraft.
     mission_mode: drop
     target_altitude: 1.5
+    car_speed_mps: 0.1
     altitude_tolerance: 0.1
     prestream_seconds: 1.0
     hover_confirm_seconds: 3.0
@@ -16,8 +17,23 @@ mission_controller_node:
     competition_mode: true
     enable_control: false
     enable_auto_arm: false
+    auto_start_hover_test: false
+    communication_only: false
     enable_visual_follow: true
     enable_payload_release: false
+    vision_adapter_mode: v2_structured
+    vision_tracked_topic: /vision/target/tracked
+    vision_landing_topic: /vision/landing_error
+    vision_health_topic: /vision/health
+    vision_receive_timeout_seconds: 0.30
+    vision_source_age_limit_seconds: 0.30
+    vision_min_confidence: 60.0
+    vision_health_required: true
+    vision_require_ready_for_closed_loop: true
+    vision_swap_xy: false
+    vision_invert_x: false
+    vision_invert_y: false
+    align_stable_duration_sec: 0.4
     enable_dynamic_landing: false
     enable_second_takeoff: false
     status_timeout: 1.0
