@@ -8,10 +8,9 @@ from px4_msgs.msg import (VehicleCommandAck, VehicleLandDetected,
                           VehicleLocalPosition, VehicleStatus)
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import (DurabilityPolicy, HistoryPolicy, QoSProfile,
-                       ReliabilityPolicy)
 from std_msgs.msg import Float32MultiArray, String
 
+from .px4_qos import px4_output_qos
 from .stage4c_core import StartProtocol
 
 
@@ -87,10 +86,7 @@ class SitlAcceptanceDriver(Node):
         self.create_subscription(
             String, '/uav_mission/payload/request',
             self._release_request, 10)
-        qos = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
-            durability=DurabilityPolicy.TRANSIENT_LOCAL,
-            history=HistoryPolicy.KEEP_LAST, depth=1)
+        qos = px4_output_qos()
         self.create_subscription(
             VehicleLocalPosition, '/fmu/out/vehicle_local_position',
             self._position, qos)

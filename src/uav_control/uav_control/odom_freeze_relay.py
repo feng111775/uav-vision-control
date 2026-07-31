@@ -7,12 +7,12 @@ from px4_msgs.msg import VehicleLocalPosition
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile
-from rclpy.qos import ReliabilityPolicy
 
 from std_msgs.msg import String
 
 from std_srvs.srv import SetBool
+
+from .px4_qos import px4_output_qos
 
 
 RAW_TOPIC = '/fmu/out/vehicle_local_position'
@@ -85,11 +85,7 @@ class OdomFreezeRelay(Node):
     def __init__(self):
         """Create relay endpoints with the production subscriber QoS."""
         super().__init__('phase4b3r_odom_relay')
-        qos = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
-            durability=DurabilityPolicy.TRANSIENT_LOCAL,
-            history=HistoryPolicy.KEEP_LAST,
-            depth=1)
+        qos = px4_output_qos()
         self.gate = RelayGate(self.now)
         self.publisher = self.create_publisher(
             VehicleLocalPosition, OUTPUT_TOPIC, qos)

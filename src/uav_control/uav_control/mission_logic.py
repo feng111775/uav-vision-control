@@ -89,7 +89,14 @@ class MissionLogic:
                  dwell_on_car_seconds=5.0, mission_timeout_seconds=90.0,
                  b_deadline_seconds=15.0, altitude_tolerance=0.1,
                  stable_seconds=1.0, visual_stable_seconds=0.5,
-                 payload_ack_timeout=3.0, dynamic_near_height_m=0.6):
+                 payload_ack_timeout=3.0, dynamic_near_height_m=0.6,
+                 mission_deadline_s=None, point_b_progress=None,
+                 point_d_progress=None, return_reserve_s=10.0,
+                 hover_altitude_m=1.5, hover_altitude_tolerance_m=0.1,
+                 hover_max_vertical_speed_mps=0.15,
+                 progress_timeout_seconds=2.0,
+                 point_b_deadline_s=15.0, point_b_soft_deadline_s=13.0,
+                 point_d_deadline_s=52.0, payload_latest_command_s=49.0):
         self.mode = parse_mission_mode(mission_mode)
         self.mode_name = str(mission_mode)
         self.target_altitude = float(target_altitude)
@@ -106,13 +113,39 @@ class MissionLogic:
         self.hover_confirm_seconds = float(hover_confirm_seconds)
         self.hover_test_seconds = float(hover_test_seconds)
         self.dwell_on_car_seconds = max(5.0, float(dwell_on_car_seconds))
-        self.mission_timeout_seconds = float(mission_timeout_seconds)
+        self.mission_timeout_seconds = float(
+            mission_timeout_seconds if mission_deadline_s is None
+            else mission_deadline_s)
         self.b_deadline_seconds = float(b_deadline_seconds)
         self.altitude_tolerance = float(altitude_tolerance)
         self.stable_seconds = float(stable_seconds)
         self.visual_stable_seconds = float(visual_stable_seconds)
         self.payload_ack_timeout = float(payload_ack_timeout)
         self.dynamic_near_height_m = float(dynamic_near_height_m)
+        self.point_b_progress = (None if point_b_progress is None else
+                                 int(point_b_progress))
+        self.point_d_progress = (None if point_d_progress is None else
+                                 int(point_d_progress))
+        self.return_reserve_s = float(return_reserve_s)
+        self.hover_altitude_m = float(hover_altitude_m)
+        self.hover_altitude_tolerance_m = float(hover_altitude_tolerance_m)
+        self.hover_max_vertical_speed_mps = float(hover_max_vertical_speed_mps)
+        self.progress_timeout_seconds = float(progress_timeout_seconds)
+        self.point_b_deadline_s = float(point_b_deadline_s)
+        self.point_b_soft_deadline_s = float(point_b_soft_deadline_s)
+        self.point_d_deadline_s = float(point_d_deadline_s)
+        self.payload_latest_command_s = float(payload_latest_command_s)
+        if (self.return_reserve_s < 0.0 or
+                self.hover_altitude_tolerance_m < 0.0 or
+                self.hover_max_vertical_speed_mps <= 0.0 or
+                self.progress_timeout_seconds <= 0.0 or
+                self.point_b_soft_deadline_s < 0.0 or
+                self.point_b_deadline_s <= self.point_b_soft_deadline_s or
+                self.point_d_deadline_s <= self.point_b_deadline_s or
+                self.payload_latest_command_s < self.point_b_deadline_s or
+                self.payload_latest_command_s >= self.point_d_deadline_s or
+                self.mission_timeout_seconds <= self.point_d_deadline_s):
+            raise ValueError('invalid drop mission timing or hover limits')
         self._handlers = {
             S.WAIT_PX4.value: self._wait_px4,
             S.WAIT_SAFETY.value: self._wait_safety,
@@ -162,9 +195,11 @@ class MissionLogic:
         self.offboard = False
         self.ever_offboard = False
         self.start_signal = False
+        self.start_time_hint = None
         self.safety_ready = False
         self.car_progress = CarProgress.UNKNOWN_OR_IDLE
         self.car_regression = False
+        self.last_car_progress_at = None
         self.target_ok = False
         self.aligned = False
         self.visual_stable_since = None
@@ -173,7 +208,13 @@ class MissionLogic:
         self.touchdown = False
         self.payload_sent = False
         self.payload_ack = False
+        self.payload_failure = None
         self.formed_follow_before_b = False
+        self.b_deadline_failed = False
+        self.b_soft_deadline_warned = False
+        self.payload_forbidden = False
+        self.d_deadline_failed = False
+        self.d_deadline_passed = False
         self.completed_before_d = False
         self.second_cycle = False
         self.disarm_confirmed = False
@@ -206,6 +247,11 @@ class MissionLogic:
         if self.started_at is None:
             return self.mission_timeout_seconds
         return max(0.0, self.mission_timeout_seconds - (now - self.started_at))
+
+    def elapsed_seconds(self, now):
+        if self.started_at is None:
+            return 0.0
+        return max(0.0, float(now) - self.started_at)
 
     def dwell_progress(self, now):
         if self.state != S.DWELL_5S.value:
@@ -284,6 +330,12 @@ class MissionLogic:
             self.transition(S.FAILSAFE, now, 'PX4_EXITED_OFFBOARD')
 
     def update_car_progress(self, value):
+        return self._update_car_progress(value, None)
+
+    def update_car_progress_at(self, value, now):
+        return self._update_car_progress(value, float(now))
+
+    def _update_car_progress(self, value, now):
         try:
             value = CarProgress(int(value))
         except (TypeError, ValueError):
@@ -295,8 +347,12 @@ class MissionLogic:
             self.event = 'CAR_PROGRESS_REGRESSION'
             return False
         if value == self.car_progress:
+            if now is not None:
+                self.last_car_progress_at = now
             return False
         self.car_progress = value
+        if now is not None:
+            self.last_car_progress_at = now
         return True
 
     def auto_arm_allowed(self):
@@ -327,6 +383,12 @@ class MissionLogic:
                 self.altitude_tolerance and
                 math.sqrt(sum(v * v for v in self.velocity)) < 0.25)
 
+    def hover_stable_condition(self):
+        return (self.position is not None and self.cruise_z is not None and
+                abs(self.position[2] - self.cruise_z) <=
+                self.hover_altitude_tolerance_m and
+                abs(self.velocity[2]) <= self.hover_max_vertical_speed_mps)
+
     def stable(self, condition, now, seconds):
         if not condition:
             self.stable_since = None
@@ -347,18 +409,80 @@ class MissionLogic:
             self.safety_block = reason
             self.transition(S.FAILSAFE, now, reason)
             return
+        if (self.mode_name == 'drop' and self.state in (
+                S.ALIGN_PLATFORM.value, S.DYNAMIC_DESCENT_HIGH.value,
+                S.DYNAMIC_DESCENT_NEAR.value, S.TOUCHDOWN_CHECK.value,
+                S.LANDED_ON_CAR.value, S.DWELL_5S.value,
+                S.DISARM_ON_CAR.value, S.SECOND_PRESTREAM.value,
+                S.SECOND_ARM.value, S.SECOND_TAKEOFF.value)):
+            self.transition(S.RETURN_HOME, now, 'DROP_MODE_OLD_LAND_STATE')
+            return
+        elapsed = self.elapsed_seconds(now)
         if (self.started_at is not None and
-                self.remaining_seconds(now) <= 0.0 and
+                self.remaining_seconds(now) <= self.return_reserve_s and
                 self.state not in (S.RETURN_HOME.value, S.FINAL_LAND.value)):
             self.safety_block = 'MISSION_DEADLINE_RETURN'
             self.transition(S.RETURN_HOME, now, 'MISSION_DEADLINE_RETURN')
+            return
+        if self.mode_name == 'drop' and self.started_at is not None:
+            if (elapsed >= self.point_b_soft_deadline_s and
+                    not self.formed_follow_before_b and
+                    not self.b_soft_deadline_warned):
+                self.b_soft_deadline_warned = True
+                self.safety_block = 'B_SOFT_DEADLINE_SEARCH'
+                self.event = 'B_SOFT_DEADLINE_SEARCH'
+            if (elapsed >= self.point_b_deadline_s and
+                    not self.formed_follow_before_b and
+                    not self.b_deadline_failed):
+                self.b_deadline_failed = True
+                self.safety_block = 'B_POINT_DEADLINE_MISSED'
+                self.event = ('B_POINT_DEADLINE_MISSED' if
+                              self.point_b_progress is not None else
+                              'B_FOLLOW_MILESTONE_MISSED')
+            if elapsed >= self.payload_latest_command_s and not self.payload_sent:
+                self.payload_forbidden = True
+                self.safety_block = 'PAYLOAD_LATEST_COMMAND_MISSED'
+                self.transition(S.RETURN_HOME, now,
+                                'PAYLOAD_LATEST_COMMAND_MISSED')
+                return
+            if elapsed >= self.point_d_deadline_s:
+                self.d_deadline_passed = bool(self.payload_ack)
+                if not self.payload_ack:
+                    self.d_deadline_failed = True
+                    self.safety_block = 'D_POINT_DEADLINE_MISSED'
+                    self.event = 'D_POINT_DEADLINE_MISSED'
+                else:
+                    self.event = 'D_POINT_DEADLINE_PASSED'
+                if self.state not in (S.RETURN_HOME.value,
+                                      S.FINAL_LAND.value):
+                    self.transition(S.RETURN_HOME, now, self.event)
+                return
         if (self.started_at is not None and
                 now - self.started_at >= self.b_deadline_seconds and
                 not self.formed_follow_before_b and
+                not self.b_deadline_failed and
                 self.state != S.RETURN_HOME.value and
                 self.car_progress < CarProgress.PASSED_B):
             self.event = 'B_FOLLOW_MILESTONE_MISSED'
-        if (self.car_progress >= CarProgress.PASSED_D and
+        if (self.mode_name == 'drop' and self.point_b_progress is not None and
+                self.started_at is not None and
+                self.car_progress >= self.point_b_progress and
+                not self.formed_follow_before_b and
+                self.state not in (S.RETURN_HOME.value, S.FINAL_LAND.value)):
+            self.safety_block = 'B_FOLLOW_CUTOFF'
+            self.transition(S.RETURN_HOME, now, 'B_FOLLOW_CUTOFF')
+            return
+        if (self.mode_name == 'drop' and self.point_b_progress is not None and
+                self.last_car_progress_at is not None and
+                self.started_at is not None and
+                now - self.last_car_progress_at > self.progress_timeout_seconds and
+                self.state not in (S.RETURN_HOME.value, S.FINAL_LAND.value)):
+            self.safety_block = 'CAR_PROGRESS_TIMEOUT'
+            self.transition(S.RETURN_HOME, now, 'CAR_PROGRESS_TIMEOUT')
+            return
+        d_progress = (CarProgress.PASSED_D if self.point_d_progress is None
+                      else self.point_d_progress)
+        if (self.car_progress >= d_progress and
                 not self.completed_before_d and self.state in (
                     S.SEARCH_CAR.value, S.VISION_FOLLOW.value,
                     S.ALIGN_FOR_DROP.value, S.PAYLOAD_RELEASE.value,
@@ -388,7 +512,9 @@ class MissionLogic:
                             self.enable_control))
         if start_requested and self.lock_home():
             self.start_signal = True
-            self.started_at = now
+            self.started_at = (now if self.start_time_hint is None else
+                               min(now, self.start_time_hint))
+            self.last_car_progress_at = now
             self.prestream_count = 0
             self.safety_block = 'NONE'
             self.transition(S.PRESTREAM, now, 'MISSION_STARTED')
@@ -429,16 +555,24 @@ class MissionLogic:
                 self.transition(S.FINAL_LAND, now)
         else:
             self.transition(S.HOVER_3S, now)
+            if self.hover_stable_condition():
+                self.stable_since = now
 
     def _hover_3s(self, now):
-        if now - self.state_since + 1e-9 >= max(
+        if not self.hover_stable_condition():
+            self.stable_since = None
+            return
+        if self.stable_since is None:
+            self.stable_since = now
+        if now - self.stable_since + 1e-9 >= max(
                 3.0, self.hover_confirm_seconds):
             self.transition(S.SEARCH_CAR, now)
 
     def _search_car(self, now):
         if self.visual_stable(now):
             self.transition(S.VISION_FOLLOW, now)
-            if self.car_progress < CarProgress.PASSED_B:
+            if (self.car_progress < CarProgress.PASSED_B and
+                    not self.b_deadline_failed):
                 self.formed_follow_before_b = True
 
     def _vision_follow(self, now):
@@ -450,7 +584,14 @@ class MissionLogic:
     def _align_for_drop(self, now):
         can_release = (self.alignment_stable(now) and
                        self.altitude_reached() and
-                       self.car_progress < CarProgress.PASSED_D)
+                       not self.payload_forbidden and
+                       self.car_progress < (CarProgress.PASSED_D if
+                                            self.point_d_progress is None else
+                                            self.point_d_progress))
+        if can_release and not self.enable_payload_release:
+            self.safety_block = 'PAYLOAD_RELEASE_DISABLED'
+            self.transition(S.FAILSAFE, now, 'PAYLOAD_RELEASE_DISABLED')
+            return
         if can_release and self.enable_payload_release and not self.payload_sent:
             self.payload_sent = True
             self.completed_before_d = True
@@ -461,9 +602,15 @@ class MissionLogic:
 
     def _wait_release_ack(self, now):
         if self.payload_ack:
-            self.transition(S.RETURN_HOME, now, 'PAYLOAD_ACK')
+            if self.elapsed_seconds(now) < self.point_d_deadline_s:
+                self.d_deadline_passed = True
+                self.transition(S.RETURN_HOME, now,
+                                'D_POINT_DEADLINE_PASSED')
+            else:
+                self.transition(S.RETURN_HOME, now, 'PAYLOAD_ACK')
         elif now - self.state_since >= self.payload_ack_timeout:
-            self.transition(S.RETURN_HOME, now, 'PAYLOAD_ACK_TIMEOUT')
+            self.safety_block = 'PAYLOAD_ACK_TIMEOUT'
+            self.transition(S.FAILSAFE, now, 'PAYLOAD_ACK_TIMEOUT')
 
     def _align_platform(self, now):
         if (self.enable_dynamic_landing and self.alignment_stable(now) and
@@ -543,7 +690,7 @@ class MissionLogic:
 
     def reset_if_safe(self):
         if not self.armed and self.state in (
-                S.COMPLETE.value, S.WAIT_PX4.value, S.WAIT_START.value):
+                S.WAIT_PX4.value, S.WAIT_START.value):
             self.reset()
             return True
         return False

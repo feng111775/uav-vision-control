@@ -5,10 +5,9 @@ import json
 from px4_msgs.msg import VehicleAttitude, VehicleLocalPosition, VehicleStatus
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile
-from rclpy.qos import ReliabilityPolicy
 from std_msgs.msg import Bool, String
 
+from .px4_qos import px4_output_qos
 from .readiness_core import ReadinessGate
 
 
@@ -40,10 +39,7 @@ class ReadinessGateNode(Node):
                 'allow_sitl_heading_quality_bypass'))
         self.started = self.now()
         self.exit_code = None
-        qos = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
-            durability=DurabilityPolicy.TRANSIENT_LOCAL,
-            history=HistoryPolicy.KEEP_LAST, depth=1)
+        qos = px4_output_qos()
         self.topics = {
             'status': self._param('status_topic'),
             'position': self._param('position_topic'),

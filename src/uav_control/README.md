@@ -1,3 +1,73 @@
+# Formal D-task mission_controller_node integration
+
+The formal competition chain is `mission_controller_node` plus
+`MissionLogic`/`mission_schema.py`. The `mission_manager` and `stage4c_core`
+Stage 4C launch chain below is frozen and is not part of this integration.
+
+The controller consumes `/vision/target/tracked` and
+`/vision/landing_error`, both `std_msgs/msg/Float32MultiArray`. The tracked
+array has at least 12 values:
+`[valid,cx,cy,outer_diameter_px,inner_diameter_px,angle,confidence,velocity_x,velocity_y,predicted_center_x,predicted_center_y,target_age_ms]`.
+The landing array has at least 8 values:
+`[valid,error_x_norm,error_y_norm,error_x_px,error_y_px,angle,confidence,target_age_ms]`.
+
+The controller requires both messages to be structurally valid, finite,
+`valid >= 0.5`, confidence at least `vision_min_confidence`, internal age at
+most `vision_max_target_age_ms`, and locally received within
+`vision_receive_timeout_sec`. Thus a stale final valid frame cannot keep
+control alive after the vision publisher stops.
+
+Camera error mapping is:
+
+```text
+(x, y) = (error_x_norm, error_y_norm)
+if vision_swap_xy: (x, y) = (y, x)
+mapped_x = vision_x_sign * x - vision_target_x_norm
+mapped_y = vision_y_sign * y - vision_target_y_norm
+```
+
+The default signs and gains are software-test defaults only. The camera
+direction is not calibrated for flight. Use `vision_swap_xy`,
+`vision_x_sign`, `vision_y_sign`, the target offsets, `vision_kp_x/y`,
+`vision_deadband_norm`, and the two alignment tolerances only after the
+five-direction ground calibration described below. Horizontal speed is capped
+at `vision_max_speed_mps <= 0.18`; `vision_max_accel_mps2` limits changes.
+Visual loss ramps horizontal velocity to zero, briefly holds/re-enters
+`SEARCH_CAR`, and after `vision_loss_abort_sec` enters the existing
+`RETURN_HOME` safety path. It never reuses an old error for control.
+
+Payload release uses only `/servo_command` (`std_msgs/msg/String`) with the
+exact command `throw`, and `/servo/result` (`std_msgs/msg/String`). The old
+`/uav/payload/release` and `/uav/payload/release_ack` Bool interface is no
+longer used by the formal controller. `throw` is published once after the
+existing `ALIGN_FOR_DROP` gate, and only a fresh exact `SUCCESS:throw` after
+that request enters `RETURN_HOME`. `FAILED:throw:*`,
+`REJECTED:throw:*`, unknown results, stale results, duplicates, and timeout
+never count as success; failure and timeout enter `FAILSAFE`. The default
+`enable_payload_release` is `false`, so no servo command is published and no
+success is fabricated.
+
+The existing start input remains `/car/mission_start`
+(`std_msgs/msg/Bool`). Repeated `true` messages do not restart an active or
+completed task. For software-only input, use:
+
+```bash
+ros2 topic pub --once /car/mission_start std_msgs/msg/Bool "{data: true}"
+```
+
+The default safe configuration is `config/first_flight_hover.yaml`: control,
+arming, visual follow and payload release are disabled. Software release
+testing must explicitly enable `enable_payload_release` and run only the
+servo node's dry-run configuration. Never use `dry_run=false` for this
+software validation.
+
+Five-direction ground calibration: with props removed and no payload, place
+the target at image center, then move it only right, left, down, up, and back
+to center. Record the signs of `error_x_norm` and `error_y_norm` relative to
+the desired vehicle motion, then set `vision_swap_xy` and the two signs. Check
+the configured center offsets with a centered target. Do not fly until the
+mapping is confirmed independently.
+
 # Stage 4C XTU mission framework
 
 This package keeps the accepted PX4 v1.16 controller and adds five ROS 2
@@ -294,3 +364,47 @@ at `/home/a-corn/XTU-uav-vision-control-git/src/uav_control`. This avoids
 building a stale copied package. The old workspace copy and its previous local
 build/install package directories were preserved outside the workspace at
 `/home/a-corn/px4_ros2_ws_4c3d_backups_20260730`; they are not runtime inputs.
+
+## Local UDP car-start gateway
+
+The formal `/car/mission_start` producer is `car_start_gateway`; do not run a second UDP trigger node alongside it. It accepts one ASCII frame per datagram:
+
+```text
+$EVT,<run_id>,START*HH\r\n
+$CAR,<run_id>,<state>,<elapsed_ms>,<progress_permille>,<line_mask>,<line_error>,<left_pwm>,<right_pwm>,<flags>*HH\r\n
+```
+
+`HH` is ASCII XOR over the payload after `$` and before `*`. No STM32 or ESP32 firmware source was found locally, so UART pins, UART instances, Wi-Fi mode, IP addresses, ports, run-id lifetime, and firmware field semantics remain unconfirmed.
+
+The gateway validates peer address when enabled, bounds datagram processing, publishes `/car/progress`, `/car/telemetry`, and `/car/link_alive`, and never publishes PX4 commands. Wire `progress_permille` is mapped to the frozen `0..5` stage enum only through explicit `car_point_*_progress_permille` parameters; no uncalibrated B/D claim is made. START delivery uses an atomic pending/committed journal and three bounded `Bool(true)` publications. Committed or older run IDs are rejected; a single BOOT/READY frame cannot clear the journal because the current protocol has no session or boot counter.
+
+`config/car_udp_localhost.yaml` is computer-only, using `127.0.0.1`, temporary test ports, and `/tmp` state. It does not confirm `192.168.4.1`.
+
+## Offline Raspberry Pi deployment checklist
+
+These commands were not executed. Replace placeholders only after the Raspberry Pi is independently powered and its IP is confirmed:
+
+```bash
+cd <LOCAL_REPO>
+git status --short
+git diff --check
+ping <PI_IP>
+ssh <PI_USER>@<PI_IP>
+hostname
+whoami
+ip address
+pwd
+ls -la /home/<PI_USER>
+find /home/<PI_USER> -maxdepth 3 -type d -name '*ros2*' -print
+tar -czf /tmp/uav_control-backup-$(date +%Y%m%d-%H%M%S).tar.gz <PI_WORKSPACE>/src/uav_control
+rsync -a --delete-delay --exclude build --exclude install --exclude log <LOCAL_REPO>/src/uav_control/ <PI_USER>@<PI_IP>:<PI_WORKSPACE>/src/uav_control/
+cd <PI_WORKSPACE>
+source /opt/ros/jazzy/setup.bash
+colcon build --packages-select uav_control --symlink-install
+source <PI_WORKSPACE>/install/setup.bash
+ros2 run uav_control car_start_gateway --ros-args -p transport:=udp -p real_transport_enabled:=true -p udp_host:=127.0.0.1 -p udp_peer_host:=127.0.0.1
+ros2 topic echo /car/link_alive
+ros2 topic echo /car/mission_start
+```
+
+No command changes Wi-Fi, Netplan, NetworkManager, routes, or network services. ESP32 Wi-Fi and real UDP testing are later steps.

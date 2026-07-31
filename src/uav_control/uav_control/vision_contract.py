@@ -11,6 +11,8 @@ ERROR_X_NORMALIZED = 1
 ERROR_Y_NORMALIZED = 2
 ERROR_CONFIDENCE = 6
 ERROR_TARGET_AGE_MS = 7
+TRACKED_CONFIDENCE = 6
+TRACKED_TARGET_AGE_MS = 11
 
 
 def invalid_tracked():
@@ -22,13 +24,13 @@ def invalid_landing_error():
 
 
 def _finite_array(values, length, label):
-    if len(values) != length:
-        raise ValueError(f'{label} must contain exactly {length} values')
+    if len(values) < length:
+        raise ValueError(f'{label} must contain at least {length} values')
     data = [float(value) for value in values]
     if not all(math.isfinite(value) for value in data):
         raise ValueError(f'{label} values must be finite')
-    if data[VALID] not in (0.0, 1.0):
-        raise ValueError('valid must be 0 or 1')
+    if data[VALID] < 0.0:
+        raise ValueError('valid cannot be negative')
     return data
 
 

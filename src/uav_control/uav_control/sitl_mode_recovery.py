@@ -7,11 +7,11 @@ from px4_msgs.msg import (
     VehicleCommand, VehicleCommandAck, VehicleLandDetected, VehicleStatus)
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import (
-    DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy)
 
 from uav_control.hover_matrix import (
     mode_recovery_safe, mode_recovery_status_valid, PreflightStability)
+
+from .px4_qos import px4_input_qos, px4_output_qos
 
 
 OFFBOARD_NAV_STATE = 14
@@ -44,13 +44,9 @@ class SitlModeRecovery(Node):
         self.verifier = PreflightStability(
             self.get_parameter('preflight_stable_seconds').value,
             self.get_parameter('max_message_age_seconds').value)
-        qos = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
-            durability=DurabilityPolicy.TRANSIENT_LOCAL,
-            history=HistoryPolicy.KEEP_LAST,
-            depth=10)
+        qos = px4_output_qos(depth=10)
         self.command_pub = self.create_publisher(
-            VehicleCommand, '/fmu/in/vehicle_command', qos)
+            VehicleCommand, '/fmu/in/vehicle_command', px4_input_qos(depth=10))
         self.create_subscription(
             VehicleStatus, '/fmu/out/vehicle_status_v1',
             self._status, qos)

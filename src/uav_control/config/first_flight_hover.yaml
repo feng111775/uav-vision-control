@@ -44,3 +44,26 @@ mission_controller_node:
     payload_ack_timeout: 3.0
     target_loss_abort_seconds: 1.0
     vision_timeout: 0.5
+    vision_tracked_topic: /vision/target/tracked
+    vision_landing_topic: /vision/landing_error
+    vision_min_confidence: 60.0
+    vision_max_target_age_ms: 300.0
+    vision_receive_timeout_sec: 0.3
+    vision_swap_xy: false
+    vision_x_sign: 1.0
+    vision_y_sign: 1.0
+    vision_target_x_norm: 0.0
+    vision_target_y_norm: 0.0
+    vision_kp_x: 0.25
+    vision_kp_y: 0.25
+    vision_max_speed_mps: 0.18
+    vision_max_accel_mps2: 0.30
+    vision_deadband_norm: 0.05
+    align_tolerance_x_norm: 0.10
+    align_tolerance_y_norm: 0.10
+    align_stable_duration_sec: 0.8
+    vision_loss_hover_sec: 0.20
+    vision_loss_abort_sec: 1.0
+    servo_command_topic: /servo_command
+    servo_result_topic: /servo/result
+    servo_release_timeout_sec: 5.0

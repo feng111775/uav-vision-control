@@ -82,6 +82,7 @@ def test_start_gateway_requires_px4_aware_manager_readiness():
     gateway = (root / 'car_start_gateway.py').read_text()
     manager = (root / 'mission_manager.py').read_text()
     assert "'/uav_mission/readiness'" in gateway
+    assert "'/car/mission_start'" in gateway
     assert "'/uav_mission/readiness'" in manager
     assert 'self.px4_ok and not self.failsafe' in manager
     assert 'self.heading is not None' in manager

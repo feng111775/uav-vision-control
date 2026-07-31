@@ -8,7 +8,7 @@ import pytest
 
 from uav_control.car_marker_vision import normalize_marker_error
 from uav_control.car_start_gateway import (
-    heartbeat_is_current, StartTransport)
+    heartbeat_is_current, parse_start_text_frame, StartTransport)
 from uav_control.stage4c_core import (
     MarkerObservation, MissionConfig, MissionFlow, MissionState,
     PersistentPayloadGate)
@@ -27,9 +27,12 @@ def test_real_start_transports_fail_closed_without_parameters_or_backend():
             serial_baud=115200)
     with pytest.raises(ValueError):
         StartTransport('udp', real_enabled=True)
-    with pytest.raises(ValueError):
-        StartTransport(
-            'udp', real_enabled=True, udp_host='192.0.2.1', udp_port=5000)
+    transport = StartTransport(
+        'udp', real_enabled=True, udp_host='127.0.0.1', udp_port=5000)
+    assert transport.kind == 'udp'
+    assert transport.real_enabled is True
+    assert transport.udp_host == '127.0.0.1'
+    assert transport.udp_port == 5000
 
 
 @pytest.mark.parametrize('last,now,timeout,expected', [
@@ -41,6 +44,24 @@ def test_real_start_transports_fail_closed_without_parameters_or_backend():
 ])
 def test_heartbeat_freshness_boundaries(last, now, timeout, expected):
     assert heartbeat_is_current(last, now, timeout) is expected
+
+
+@pytest.mark.parametrize('payload,expected', [
+    ('CAR_START', ('udp-text', 'default', 0)),
+    ('START,1', ('udp-text', '1', 1)),
+    ('CAR_START,7', ('udp-text', '7', 7)),
+])
+def test_text_start_frames_are_parsed_without_widening_protocol(
+        payload, expected):
+    parsed = parse_start_text_frame(payload)
+    assert (parsed['session_id'], parsed['start_id'],
+            parsed['sender_counter']) == expected
+
+
+@pytest.mark.parametrize('payload', ['', 'STOP', 'START,', 'CAR_START,'])
+def test_invalid_text_start_frames_are_rejected(payload):
+    with pytest.raises(ValueError):
+        parse_start_text_frame(payload)
 
 
 def test_marker_pixel_normalization_and_invalid_input():

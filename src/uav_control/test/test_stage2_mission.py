@@ -192,7 +192,7 @@ def test_d_passed_before_completion_forces_return(state):
     assert not logic.payload_sent
 
 
-def test_release_is_single_and_ack_timeout_returns_home():
+def test_release_is_single_and_ack_timeout_enters_failsafe():
     logic = ready_logic(
         'drop', enable_payload_release=True, payload_ack_timeout=1.0)
     logic.state = S.ALIGN_FOR_DROP.value
@@ -204,7 +204,7 @@ def test_release_is_single_and_ack_timeout_returns_home():
     logic.step(1.4)
     assert logic.state == S.WAIT_RELEASE_ACK.value
     logic.step(2.4)
-    assert logic.state == S.RETURN_HOME.value
+    assert logic.state == S.FAILSAFE.value
     assert logic.payload_sent
 
 
@@ -405,6 +405,14 @@ def test_defaults_disable_arm_disarm_second_takeoff_and_commands():
 
 def test_final_land_is_not_an_offboard_control_output_state():
     assert control_output_allowed(S.FINAL_LAND.value, False)
+
+
+def test_final_land_stops_reissuing_nav_land_after_px4_enters_auto_land():
+    source = (
+        Path(__file__).parents[1] / 'uav_control' /
+        'mission_controller_node.py').read_text()
+    assert "self.logic.state == 'FINAL_LAND' and self.logic.armed" in source
+    assert 'VehicleStatus.NAVIGATION_STATE_AUTO_LAND' in source
     source = Path(
         __file__).parents[1] / 'uav_control' / 'mission_controller_node.py'
     text = source.read_text(encoding='utf-8')

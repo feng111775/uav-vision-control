@@ -6,10 +6,10 @@ import time
 from px4_msgs.msg import VehicleStatus
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import (
-    DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy)
 
 from uav_control.hover_matrix import PreflightStability
+
+from .px4_qos import px4_output_qos
 
 
 class SitlPreflightGate(Node):
@@ -25,11 +25,7 @@ class SitlPreflightGate(Node):
             self.get_parameter('stable_seconds').value,
             self.get_parameter('max_message_age_seconds').value)
         self.passed = False
-        qos = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
-            durability=DurabilityPolicy.TRANSIENT_LOCAL,
-            history=HistoryPolicy.KEEP_LAST,
-            depth=10)
+        qos = px4_output_qos(depth=10)
         self.create_subscription(
             VehicleStatus, '/fmu/out/vehicle_status_v1',
             self._status, qos)

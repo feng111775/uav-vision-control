@@ -7,13 +7,12 @@ import time
 from px4_msgs.msg import VehicleLocalPosition, VehicleStatus
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile
-from rclpy.qos import ReliabilityPolicy
 from std_msgs.msg import Bool, Float32MultiArray, String
 
 from uav_control.mission_schema import TELEMETRY
 
 from .hover_matrix import HoverMetrics
+from .px4_qos import px4_output_qos
 
 
 class SitlResultRecorder(Node):
@@ -49,10 +48,7 @@ class SitlResultRecorder(Node):
         self.pending_failure_reason = None
         self.abort_requested_at = None
         self.exit_code = None
-        qos = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
-            durability=DurabilityPolicy.TRANSIENT_LOCAL,
-            history=HistoryPolicy.KEEP_LAST, depth=1)
+        qos = px4_output_qos()
         self.create_subscription(
             VehicleStatus, '/fmu/out/vehicle_status_v1',
             self._status, qos)

@@ -249,7 +249,7 @@ def test_launch_starts_exactly_five_nodes_and_safe_controller():
 
 def test_stage4c_topics_use_single_namespace():
     root = Path(__file__).parents[1] / 'uav_control'
-    for name in ('car_start_gateway.py', 'car_marker_vision.py',
+    for name in ('car_marker_vision.py',
                  'mission_offboard_controller.py', 'payload_release.py',
                  'mission_manager.py'):
         text = (root / name).read_text()
