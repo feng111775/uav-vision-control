@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
-transport=""
-device=""
-baudrate=""
+transport="serial"
+device="/dev/ttyAMA0"
+baudrate="921600"
 port=""
 dry_run=false
 while (($#)); do
@@ -27,7 +27,7 @@ case "$transport" in
     [ -n "$device" ] && [ -n "$baudrate" ] || {
       echo "--device and --baudrate are required for serial" >&2; exit 2; }
     [ -e "$device" ] || { echo "device does not exist: $device" >&2; exit 1; }
-    command=("$agent" serial --dev "$device" -b "$baudrate")
+    command=("$agent" serial --dev "$device" -b "$baudrate" -v 4)
     ;;
   *) echo "--transport must be udp4 or serial" >&2; exit 2;;
 esac

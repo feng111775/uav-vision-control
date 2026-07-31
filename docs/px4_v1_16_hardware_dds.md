@@ -14,13 +14,30 @@ SITL 已验证的 Agent 形式是：
 MicroXRCEAgent udp4 -p 8888
 ```
 
-真机预计采用经电气和线序确认的 TELEM USB-UART 串口，或经过验证的 USB
-链路。实际端口、稳定设备别名、波特率和 PX4 参数均为未配置。本仓库不会
-自动修改 PX4 参数。先完成人工身份、线序、电平和参数核对，再用：
+已验证的真机链路为 Pixhawk 6C Mini 的 GPS2（`/dev/ttyS6`）到树莓派
+`/dev/ttyAMA0`，两端均使用 921600。PX4 端使用 `UXRCE_DDS_CFG=202`
+选择 GPS2，`GPS_2_CONFIG=0` 保持 GPS2 串口为普通串口。PX4 端与树莓派
+Agent 的波特率必须完全一致；本仓库不会自动修改 PX4 参数，参数仍需在
+真机上只读核验。
+
+树莓派正式 Agent 启动命令为：
+
+```bash
+MicroXRCEAgent serial --dev /dev/ttyAMA0 -b 921600 -v 4
+```
+
+PX4 手动排错命令为：
+
+```text
+uxrce_dds_client stop
+uxrce_dds_client start -t serial -d /dev/ttyS6 -b 921600
+```
+
+先完成人工身份、线序、电平和参数核对，再可用包装器进行 dry-run：
 
 ```bash
 scripts/pi/start_microxrce_agent.sh --transport serial \
-  --device /dev/dtask_pixhawk --baudrate <实测值> --dry-run
+  --device /dev/ttyAMA0 --baudrate 921600 --dry-run
 ```
 
 包装器缺少任一值即失败，不使用 sudo。真机必须重新核对七个冻结 `/fmu`
