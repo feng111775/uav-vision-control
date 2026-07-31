@@ -92,6 +92,8 @@ class H7BridgeNode(Node):
         self.oversized_buffer_count = 0
         self.serial_disconnect_count = 0
         self.serial_reconnect_count = 0
+        self.unknown_line_count = 0
+        self._last_logged_status = None
         self.create_timer(0.01, self._read_serial)
         self.create_timer(2.0, self._open_serial)
         self.create_timer(0.1, self._check_timeout)
@@ -103,6 +105,9 @@ class H7BridgeNode(Node):
     def _publish_status(self, status):
         message = String(); message.data = status
         self.status_publisher.publish(message)
+        if status != self._last_logged_status:
+            self.get_logger().info('status_transition=%s' % status)
+            self._last_logged_status = status
 
     def _publish_detection(self, data):
         message = Float32MultiArray(); message.data = data
@@ -169,6 +174,17 @@ class H7BridgeNode(Node):
                 self._last_detection_time = time.monotonic()
                 self._stale_published = False
                 return
+            if not line.startswith('D_TARGET,') and not (self.allow_legacy and line.startswith('TARGET,')):
+                tag = line.split(',', 1)[0].strip().split()[0] if line.strip() else ''
+                if tag == 'D_TARGET_V2':
+                    self.malformed_target_count += 1
+                    self._publish_status('PROTOCOL_ERROR')
+                    self._warn('malformed_target_tag=D_TARGET_V2 unknown_line_repr=%s' % repr(line[:160]))
+                    return
+                safe = repr(line[:160]).replace('\\n', ' ')
+                self.unknown_line_count += 1
+                self._warn('unknown_line_tag=%s unknown_line_repr=%s' % (tag, safe))
+                return
             data = parse_detection_line(line, self.allow_legacy)
         except (UnicodeDecodeError, TypeError, ValueError) as error:
             is_v2 = (raw.startswith(b'D_TARGET_V2,') if isinstance(raw, bytes)
@@ -176,7 +192,11 @@ class H7BridgeNode(Node):
             if is_v2:
                 self.malformed_target_count += 1
                 self._publish_status('PROTOCOL_ERROR')
-            self._warn('invalid H7 line ignored: %s' % error)
+                self._warn('malformed_target_tag=D_TARGET_V2 error=%s unknown_line_repr=%s' %
+                           (error, repr(str(line)[:160])))
+            else:
+                self._warn('invalid H7 line ignored: %s unknown_line_repr=%s' %
+                           (error, repr(str(line)[:160])))
             return
         now = time.monotonic()
         self._last_detection_time = now; self._stale_published = False

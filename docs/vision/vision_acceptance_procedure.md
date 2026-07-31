@@ -8,4 +8,6 @@ benchmark 对五个正式话题使用显式 `BEST_EFFORT + VOLATILE + KEEP_LAST`
 
 历史结果 `vision_results/reconnect_20260801_010831` 证明 USB 串口确实发生了断开与恢复，但旧脚本在用户按回车后才启动 benchmark，未形成有效的 ROS 完整重连验收结果；该目录保留用于追溯。
 
+历史结果 `vision_results/reconnect_20260801_012750` 为确认的假阳性：用户未进行物理拔插，脚本却因 STALE/状态消息和过松的恢复帧条件判定 PASS。现行流程要求设备节点真实消失并持续至少 1 秒、收到 DISCONNECTED、设备以相同 USB 序列号恢复、收到 RECOVERED，随后再验证至少 60 个稳定新帧。
+
 验收关注：每个新序号只发布一次；重复、乱序不重复发布；丢帧计数正确；超过 0.30 s 只产生一次 STALE 无效转换；恢复后下一新帧恢复有效输出。无效几何量必须为 NaN，米制字段保持 NaN。

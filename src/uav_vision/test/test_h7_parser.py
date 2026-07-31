@@ -56,6 +56,8 @@ def test_v2_target_is_parsed_and_diagnostics_are_legal():
     for prefix in ('D_BOOT_V2,', 'D_CONFIG,', 'D_STATUS_V2,', 'D_DETECT_STATS,',
                    'D_TIMING,', 'D_VISION,', 'D_ERROR,'):
         assert is_diagnostic_line(prefix + 'x')
+    assert is_diagnostic_line('D_VISION_ERROR')
+    assert is_diagnostic_line('D_VISION_ERROR,stage=verify')
     assert is_diagnostic_line('D_BOOT_V2')
     assert is_diagnostic_line('D_CONFIG,')
 

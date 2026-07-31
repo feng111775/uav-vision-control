@@ -30,10 +30,17 @@ def test_reconnect_requires_disconnect_recovery_and_post_frame():
         'landing_error_message_count': 20, 'protocol_error_count': 0,
         'px4_input_publisher_count': 0, 'processing_p50_ms': 1,
         'disconnect_transition_count': 1, 'stale_transition_count': 0,
-        'reconnect_transition_count': 2, 'post_reconnect_unique_frame_count': 3,
-        'baseline_unique_frame_count': 5, 'disconnected_count': 1,
+        'reconnect_transition_count': 1, 'post_reconnect_unique_frame_count': 60,
+        'baseline_unique_frame_count': 60, 'baseline_raw_hz': 30, 'baseline_tracked_hz': 30,
+        'baseline_stale_count': 0, 'disconnected_count': 1,
         'stale_count': 0, 'recovered_count': 1,
-        'ordered_disconnect_then_recovered': True,
+        'device_present_at_start': True, 'device_absent_observed': True,
+        'device_absent_duration_sec': 1.1, 'device_present_after_absent': True,
+        'usb_serial_before': 'ABC', 'usb_serial_after': 'ABC',
+        'disconnected_timestamp': 2, 'ordered_disconnect_then_recovered': True,
+        'post_reconnect_raw_frame_count': 60, 'post_reconnect_tracked_frame_count': 60,
+        'post_reconnect_landing_frame_count': 60, 'post_reconnect_raw_hz': 30,
+        'post_reconnect_tracked_hz': 30,
         'invalid_observation_after_disconnect': True,
         'launch_process_alive': True, 'bridge_process_alive': True,
         'interface_process_alive': True}
@@ -57,7 +64,7 @@ def test_reconnect_validation_rejects_missing_baseline_and_order():
     assert 'no_baseline_frames' in failures
     assert 'no_recovered' in failures
     assert 'bad_disconnect_recovered_order' in failures
-    assert 'no_post_reconnect_frame' in failures
+    assert 'insufficient_post_reconnect_frames' in failures
 
 
 def test_initial_connected_does_not_satisfy_reconnect():
@@ -74,6 +81,52 @@ def test_initial_connected_does_not_satisfy_reconnect():
         'launch_process_alive': True, 'bridge_process_alive': True,
         'interface_process_alive': True}
     assert 'no_recovered' in validate_report(report, require_reconnect=True)
+
+
+def test_reconnect_requires_real_device_events_and_stable_rates():
+    report = {
+        'raw_target_v2_hz': 40, 'tracked_publish_hz': 40,
+        'tracked_unique_frame_hz': 40, 'health_message_count': 10,
+        'landing_error_message_count': 40, 'protocol_error_count': 0,
+        'px4_input_publisher_count': 0, 'processing_p50_ms': 1,
+        'device_present_at_start': True, 'device_absent_observed': False,
+        'baseline_unique_frame_count': 4, 'baseline_raw_hz': 2,
+        'baseline_tracked_hz': 2, 'baseline_stale_count': 1,
+        'disconnected_count': 1, 'recovered_count': 1,
+        'device_present_after_absent': True, 'usb_serial_before': 'A',
+        'usb_serial_after': 'A', 'post_reconnect_unique_frame_count': 1,
+        'post_reconnect_raw_frame_count': 1, 'post_reconnect_tracked_frame_count': 1,
+        'post_reconnect_landing_frame_count': 1, 'post_reconnect_raw_hz': 1,
+        'post_reconnect_tracked_hz': 1, 'ordered_disconnect_then_recovered': True,
+        'invalid_observation_after_disconnect': True,
+        'launch_process_alive': True, 'bridge_process_alive': True,
+        'interface_process_alive': True}
+    failures = validate_report(report, require_reconnect=True)
+    assert 'device_absence_not_confirmed' in failures
+    assert 'baseline_frequency_below_30hz' in failures
+    assert 'insufficient_post_reconnect_frames' in failures
+
+
+def test_reconnect_rejects_status_only_without_device_serial():
+    report = {
+        'raw_target_v2_hz': 40, 'tracked_publish_hz': 40,
+        'tracked_unique_frame_hz': 40, 'health_message_count': 10,
+        'landing_error_message_count': 40, 'protocol_error_count': 0,
+        'px4_input_publisher_count': 0, 'processing_p50_ms': 1,
+        'device_present_at_start': True, 'device_absent_observed': True,
+        'device_absent_duration_sec': 2, 'device_present_after_absent': True,
+        'usb_serial_before': '', 'usb_serial_after': '',
+        'baseline_unique_frame_count': 60, 'baseline_raw_hz': 30,
+        'baseline_tracked_hz': 30, 'baseline_stale_count': 0,
+        'disconnected_count': 1, 'disconnected_timestamp': 2,
+        'recovered_count': 1, 'ordered_disconnect_then_recovered': True,
+        'post_reconnect_unique_frame_count': 60,
+        'post_reconnect_raw_frame_count': 60, 'post_reconnect_tracked_frame_count': 60,
+        'post_reconnect_landing_frame_count': 60, 'post_reconnect_raw_hz': 30,
+        'post_reconnect_tracked_hz': 30, 'invalid_observation_after_disconnect': True,
+        'launch_process_alive': True, 'bridge_process_alive': True,
+        'interface_process_alive': True}
+    assert 'usb_serial_unavailable' in validate_report(report, require_reconnect=True)
 
 
 def test_best_effort_publishers_reach_benchmark_topics():

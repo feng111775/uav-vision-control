@@ -4,7 +4,9 @@
 import argparse
 import json
 import math
+import os
 import select
+import subprocess
 import sys
 import time
 
@@ -22,6 +24,22 @@ def benchmark_qos_profile():
                       history=HistoryPolicy.KEEP_LAST)
 
 
+def device_snapshot(path='/dev/dtask_openmv'):
+    present = os.path.exists(path)
+    resolved = os.path.realpath(path) if present else ''
+    props = {}
+    if present:
+        try:
+            output = subprocess.check_output(
+                ['udevadm', 'info', '--query=property', '--name', path],
+                text=True, stderr=subprocess.DEVNULL)
+            props = dict(line.split('=', 1) for line in output.splitlines() if '=' in line)
+        except (OSError, subprocess.CalledProcessError):
+            props = {}
+    return {'present': present, 'path': resolved,
+            'serial': props.get('ID_SERIAL_SHORT', ''), 'properties': props}
+
+
 class VisionChainBenchmark(Node):
     def __init__(self):
         super().__init__('benchmark_ros_vision_chain')
@@ -31,6 +49,7 @@ class VisionChainBenchmark(Node):
         self.tracked_sequences = set()
         self.landing = []; self.health = []; self.status = []
         self.sequences = SequenceTracker(); self.age = []; self.processing = []
+        self.baseline_tracker = SequenceTracker(); self.post_tracker = SequenceTracker()
         self.stale = 0; self.disconnect = 0; self.reconnect = 0
         self.invalid_after_stale = False
         self.reconnect_seen = False; self.post_reconnect_sequences = set()
@@ -38,8 +57,21 @@ class VisionChainBenchmark(Node):
         self.stale_count = 0; self.recovered_count = 0
         self.baseline_sequences = set(); self.post_reconnect_raw = 0
         self.post_reconnect_tracked = 0; self.post_reconnect_landing = 0
+        self.baseline_frame_times = []; self.post_raw_times = []
+        self.baseline_tracked_times = []
+        self.post_tracked_times = []; self.post_landing_times = []
+        self.baseline_stale_count = 0
         self.invalid_observation_after_disconnect = False
         self.ordered_disconnect_then_recovered = False
+        self.device_path = '/dev/dtask_openmv'
+        self.device_start = device_snapshot(self.device_path)
+        self.device_absent_timestamp = None; self.device_present_timestamp = None
+        self.device_absent_duration_sec = 0.0; self.device_after = None
+        self.device_absence_qualified = False
+        self.device_current_present = self.device_start['present']
+        self.disconnected_timestamp = None; self.recovered_timestamp = None
+        self.first_post_reconnect_frame_timestamp = None
+        self.recovered_at = None
         qos = benchmark_qos_profile()
         self.create_subscription(String, '/vision/internal/h7/raw', self.raw_cb, qos)
         self.create_subscription(self._message_types[0], '/vision/target/tracked', self.tracked_cb, qos)
@@ -56,16 +88,25 @@ class VisionChainBenchmark(Node):
         self.processing.append(item['processing_us'] / 1000.0)
         self.sequences.accept(item['sequence'])
         if self.reconnect_seen:
+            self.post_tracker.accept(item['sequence'])
             self.post_reconnect_sequences.add(item['sequence'])
             self.post_reconnect_raw += 1
+            self.post_raw_times.append(time.monotonic())
+            if self.first_post_reconnect_frame_timestamp is None:
+                self.first_post_reconnect_frame_timestamp = time.time()
         elif len(self.baseline_sequences) < 10000:
+            self.baseline_tracker.accept(item['sequence'])
             self.baseline_sequences.add(item['sequence'])
+            self.baseline_frame_times.append(time.monotonic())
 
     def tracked_cb(self, msg):
         self.tracked.append(msg)
         self.tracked_sequences.add(int(msg.frame_sequence))
         if self.reconnect_seen:
             self.post_reconnect_tracked += 1
+            self.post_tracked_times.append(time.monotonic())
+        else:
+            self.baseline_tracked_times.append(time.monotonic())
         if self.stale and not msg.measurement_valid:
             self.invalid_after_stale = True
         if (self.disconnected_count or self.stale_count) and not msg.measurement_valid:
@@ -78,6 +119,7 @@ class VisionChainBenchmark(Node):
         self.landing.append(msg)
         if self.reconnect_seen:
             self.post_reconnect_landing += 1
+            self.post_landing_times.append(time.monotonic())
     def health_cb(self, msg): self.health.append(msg)
 
     def status_cb(self, msg):
@@ -86,13 +128,48 @@ class VisionChainBenchmark(Node):
             self.initial_connected_count += 1
         if msg.data == 'STALE':
             self.stale += 1; self.stale_count += 1
+            if not self.reconnect_seen:
+                self.baseline_stale_count += 1
         if msg.data == 'DISCONNECTED':
             self.disconnect += 1; self.disconnected_count += 1
+            if self.device_absent_timestamp is not None and self.disconnected_timestamp is None:
+                self.disconnected_timestamp = time.time()
         if msg.data == 'RECOVERED':
             self.reconnect += 1; self.recovered_count += 1
-            if self.disconnected_count or self.stale_count:
+            self.recovered_timestamp = time.time()
+            if self.disconnected_timestamp is not None and self.device_present_timestamp is not None and self.recovered_timestamp >= self.device_present_timestamp:
                 self.ordered_disconnect_then_recovered = True
             self.reconnect_seen = True
+            self.recovered_at = time.monotonic()
+            self.post_tracker.reset()
+
+    def poll_device(self):
+        current = device_snapshot(self.device_path)
+        self.device_current_present = current['present']
+        now = time.time()
+        if self.device_start['present'] and not current['present']:
+            if self.device_absent_timestamp is None:
+                self.device_absent_timestamp = now
+        elif self.device_absent_timestamp is not None and current['present'] and self.device_present_timestamp is None:
+            duration = now - self.device_absent_timestamp
+            if duration >= 1.0:
+                self.device_present_timestamp = now
+                self.device_absent_duration_sec = duration
+                self.device_after = current
+                self.device_absence_qualified = True
+            else:
+                # A short disappearance is serial/udev jitter, not a test event.
+                self.device_absent_timestamp = None
+                self.device_absent_duration_sec = 0.0
+        elif self.device_absent_timestamp is not None and self.device_present_timestamp is None:
+            self.device_absent_duration_sec = now - self.device_absent_timestamp
+        return current
+
+    def physical_disconnect_ready(self):
+        return (self.device_start['present'] and not self.device_current_present and
+                self.device_absence_qualified and self.device_absent_timestamp is not None and
+                self.device_absent_duration_sec >= 1.0 and self.disconnected_timestamp is not None and
+                self.disconnected_timestamp >= self.device_absent_timestamp)
 
     def report(self, seconds):
         unique = len(self.raw_by_sequence)
@@ -100,6 +177,14 @@ class VisionChainBenchmark(Node):
         confirmed = sum(int(msg.confirmed) for msg in self.tracked)
         landing_valid = sum(int(msg.valid) for msg in self.landing)
         health = self.health[-1] if self.health else None
+        node_counts = self.node_instance_counts()
+        baseline_hz = ((len(self.baseline_frame_times) - 1) /
+                       (self.baseline_frame_times[-1] - self.baseline_frame_times[0])
+                       if len(self.baseline_frame_times) > 1 and self.baseline_frame_times[-1] > self.baseline_frame_times[0] else 0.0)
+        baseline_tracked_hz = ((len(self.baseline_tracked_times) - 1) /
+                              (self.baseline_tracked_times[-1] - self.baseline_tracked_times[0])
+                              if len(self.baseline_tracked_times) > 1 and self.baseline_tracked_times[-1] > self.baseline_tracked_times[0] else 0.0)
+        post_duration = max(0.001, time.monotonic() - self.recovered_at) if self.recovered_at else 0.001
         return {
             'seconds': seconds, 'raw_target_v2_hz': len(self.raw) / max(seconds, 1e-9),
             'tracked_publish_hz': len(self.tracked) / max(seconds, 1e-9),
@@ -107,9 +192,12 @@ class VisionChainBenchmark(Node):
             'valid_detection_hz': valid / max(seconds, 1e-9),
             'confirmed_detection_hz': confirmed / max(seconds, 1e-9),
             'landing_error_valid_hz': landing_valid / max(seconds, 1e-9),
-            'duplicate_frame_sequence_count': self.sequences.duplicate_count,
-            'sequence_gap_count': self.sequences.dropped_count,
-            'out_of_order_sequence_count': self.sequences.out_of_order_count,
+            # Phase trackers intentionally exclude the OpenMV counter reset at reconnect.
+            'duplicate_frame_sequence_count': (self.baseline_tracker.duplicate_count +
+                                                self.post_tracker.duplicate_count),
+            'sequence_gap_count': self.baseline_tracker.dropped_count + self.post_tracker.dropped_count,
+            'out_of_order_sequence_count': (self.baseline_tracker.out_of_order_count +
+                                            self.post_tracker.out_of_order_count),
             'protocol_error_count': int(getattr(health, 'protocol_error_count', 0) if health else 0),
             'capture_stamp_valid_ratio': (sum(int(m.capture_stamp_valid) for m in self.tracked) /
                                           len(self.tracked) if self.tracked else 0.0),
@@ -131,14 +219,40 @@ class VisionChainBenchmark(Node):
             'stale_count': self.stale_count,
             'recovered_count': self.recovered_count,
             'baseline_unique_frame_count': len(self.baseline_sequences),
+            'baseline_raw_hz': baseline_hz,
+            'baseline_tracked_hz': baseline_tracked_hz,
+            'baseline_stale_count': self.baseline_stale_count,
             'post_reconnect_raw_frame_count': self.post_reconnect_raw,
             'post_reconnect_tracked_frame_count': self.post_reconnect_tracked,
             'post_reconnect_landing_frame_count': self.post_reconnect_landing,
+            'post_reconnect_raw_hz': len(self.post_raw_times) / post_duration,
+            'post_reconnect_tracked_hz': len(self.post_tracked_times) / post_duration,
             'invalid_observation_after_disconnect': self.invalid_observation_after_disconnect,
             'ordered_disconnect_then_recovered': self.ordered_disconnect_then_recovered,
             'launch_process_alive': self._nodes_alive(),
             'bridge_process_alive': 'h7_bridge_node' in self.get_node_names(),
             'interface_process_alive': 'vision_interface_node' in self.get_node_names(),
+            'node_instance_counts': node_counts,
+            'device_present_at_start': self.device_start['present'],
+            'device_absent_observed': self.device_absent_timestamp is not None,
+            'device_absence_qualified': self.device_absence_qualified,
+            'device_absent_duration_sec': self.device_absent_duration_sec,
+            'device_present_after_absent': self.device_present_timestamp is not None,
+            'device_path_before': self.device_start['path'],
+            'device_path_after': self.device_after['path'] if self.device_after else '',
+            'usb_serial_before': self.device_start['serial'],
+            'usb_serial_after': self.device_after['serial'] if self.device_after else '',
+            'device_absent_timestamp': self.device_absent_timestamp,
+            'disconnected_timestamp': self.disconnected_timestamp,
+            'device_present_timestamp': self.device_present_timestamp,
+            'recovered_timestamp': self.recovered_timestamp,
+            'first_post_reconnect_frame_timestamp': self.first_post_reconnect_frame_timestamp,
+            'baseline_duplicate_count': self.baseline_tracker.duplicate_count,
+            'baseline_gap_count': self.baseline_tracker.dropped_count,
+            'baseline_out_of_order_count': self.baseline_tracker.out_of_order_count,
+            'post_duplicate_count': self.post_tracker.duplicate_count,
+            'post_gap_count': self.post_tracker.dropped_count,
+            'post_out_of_order_count': self.post_tracker.out_of_order_count,
         }
 
     @staticmethod
@@ -156,6 +270,12 @@ class VisionChainBenchmark(Node):
         names = self.get_node_names()
         return 'h7_bridge_node' in names and 'vision_interface_node' in names
 
+    def node_instance_counts(self):
+        names = self.get_node_names()
+        return {'h7_bridge_node': names.count('h7_bridge_node'),
+                'vision_interface_node': names.count('vision_interface_node'),
+                'benchmark_ros_vision_chain': names.count('benchmark_ros_vision_chain')}
+
 
 def validate_report(report, require_reconnect=False):
     failures = []
@@ -170,21 +290,46 @@ def validate_report(report, require_reconnect=False):
     if report.get('processing_p50_ms') is None:
         failures.append('processing_metric_unavailable')
     if require_reconnect:
-        if report.get('baseline_unique_frame_count', 0) <= 0:
+        if not report.get('device_present_at_start', False):
+            failures.append('device_missing_at_start')
+        if report.get('baseline_unique_frame_count', 0) < 60:
             failures.append('no_baseline_frames')
-        if report.get('disconnected_count', 0) + report.get('stale_count', 0) <= 0:
-            failures.append('no_disconnect_or_stale')
+        if report.get('baseline_raw_hz', 0) < 30 or report.get('baseline_tracked_hz', 0) < 30:
+            failures.append('baseline_frequency_below_30hz')
+        if report.get('baseline_stale_count', 0) > 0:
+            failures.append('baseline_stale')
+        if report.get('baseline_gap_count', 0) > max(2, report.get('baseline_unique_frame_count', 0) * 0.10):
+            failures.append('baseline_sequence_gaps')
+        if not report.get('device_absent_observed', False) or report.get('device_absent_duration_sec', 0) < 1.0:
+            failures.append('device_absence_not_confirmed')
+        if report.get('disconnected_count', 0) <= 0 or not report.get('disconnected_timestamp'):
+            failures.append('no_disconnected_after_device_absence')
         if report.get('recovered_count', 0) <= 0:
             failures.append('no_recovered')
+        if not report.get('device_present_after_absent', False):
+            failures.append('device_not_restored')
+        if report.get('usb_serial_before') != report.get('usb_serial_after'):
+            failures.append('usb_serial_mismatch')
+        if not report.get('usb_serial_before') or not report.get('usb_serial_after'):
+            failures.append('usb_serial_unavailable')
         if not report.get('ordered_disconnect_then_recovered', False):
             failures.append('bad_disconnect_recovered_order')
-        if report.get('post_reconnect_unique_frame_count', 0) <= 0:
-            failures.append('no_post_reconnect_frame')
+        if report.get('post_reconnect_unique_frame_count', 0) < 60:
+            failures.append('insufficient_post_reconnect_frames')
+        if min(report.get('post_reconnect_raw_frame_count', 0), report.get('post_reconnect_tracked_frame_count', 0), report.get('post_reconnect_landing_frame_count', 0)) < 60:
+            failures.append('insufficient_post_reconnect_topic_frames')
+        if report.get('post_reconnect_raw_hz', 0) < 30 or report.get('post_reconnect_tracked_hz', 0) < 30:
+            failures.append('post_reconnect_frequency_below_30hz')
+        if report.get('post_gap_count', 0) > max(2, report.get('post_reconnect_unique_frame_count', 0) * 0.10):
+            failures.append('post_sequence_gaps')
         if not report.get('invalid_observation_after_disconnect', False):
             failures.append('no_invalid_observation_after_disconnect')
         if not (report.get('launch_process_alive') and report.get('bridge_process_alive') and
                 report.get('interface_process_alive')):
             failures.append('vision_nodes_not_alive')
+        counts = report.get('node_instance_counts', {})
+        if counts and (counts.get('h7_bridge_node') != 1 or counts.get('vision_interface_node') != 1):
+            failures.append('duplicate_or_missing_vision_nodes')
     return failures
 
 
@@ -195,26 +340,29 @@ def reconnect_run(node, seconds, baseline_timeout=30.0, disconnect_timeout=30.0,
     prompted_disconnect = False; prompted_reconnect = False
     while time.monotonic() - started < seconds:
         rclpy.spin_once(node, timeout_sec=0.05)
+        node.poll_device()
         now = time.monotonic()
-        if phase == 'baseline' and node.baseline_sequences and node.tracked and node.landing and node.health:
-            print('BASELINE_READY: unplug OpenMV, then press Enter', file=sys.stderr, flush=True)
+        baseline_duration = (node.baseline_frame_times[-1] - node.baseline_frame_times[0]
+                             if len(node.baseline_frame_times) > 1 else 0.0)
+        baseline_hz = ((len(node.baseline_frame_times) - 1) / baseline_duration
+                       if baseline_duration > 0 else 0.0)
+        if phase == 'baseline' and (len(node.baseline_sequences) >= 60 and
+                                    baseline_duration >= 2.0 and baseline_hz >= 30.0 and
+                                    node.tracked and node.landing and node.health and
+                                    node.baseline_stale_count == 0):
+            print('UNPLUG_OPENMV_NOW', file=sys.stderr, flush=True)
             phase = 'await_disconnect'; phase_started = now; prompted_disconnect = True
-        if phase == 'await_disconnect' and sys.stdin.isatty():
-            ready, _, _ = select.select([sys.stdin], [], [], 0)
-            if ready:
-                sys.stdin.readline(); phase = 'disconnect'; phase_started = now
-                print('DISCONNECT_REQUESTED: remove OpenMV', file=sys.stderr, flush=True)
-        if phase in ('disconnect', 'await_disconnect') and (node.disconnected_count or node.stale_count):
-            print('DISCONNECT_OBSERVED: insert OpenMV again, then press Enter', file=sys.stderr, flush=True)
+        if phase == 'await_disconnect' and node.physical_disconnect_ready():
+            print('REPLUG_OPENMV_NOW', file=sys.stderr, flush=True)
             phase = 'await_reconnect'; phase_started = now; prompted_reconnect = True
-        if phase == 'await_reconnect' and sys.stdin.isatty():
-            ready, _, _ = select.select([sys.stdin], [], [], 0)
-            if ready:
-                sys.stdin.readline(); phase = 'reconnect'; phase_started = now
-                print('RECONNECT_REQUESTED: waiting for RECOVERED and new frames', file=sys.stderr, flush=True)
-        if phase in ('reconnect', 'await_reconnect') and node.recovered_count and node.reconnect_seen:
+        if (phase == 'await_reconnect' and node.device_present_timestamp is not None and
+                node.recovered_count and node.ordered_disconnect_then_recovered):
             phase = 'post_reconnect'; phase_started = now
-        if phase == 'post_reconnect' and node.post_reconnect_sequences and node.post_reconnect_tracked and node.post_reconnect_landing:
+        if (phase == 'post_reconnect' and node.recovered_at is not None and
+                now - node.recovered_at >= 2.0 and
+                len(node.post_reconnect_sequences) >= 60 and
+                node.post_reconnect_raw >= 60 and node.post_reconnect_tracked >= 60 and
+                node.post_reconnect_landing >= 60):
             break
         limit = {'baseline': baseline_timeout, 'await_disconnect': baseline_timeout,
                  'disconnect': disconnect_timeout, 'await_reconnect': disconnect_timeout,
