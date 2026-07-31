@@ -3,6 +3,7 @@ from pathlib import Path
 from unittest.mock import Mock
 sys.path.insert(0, str(Path(__file__).parent))
 from detector_fast import FastV2Detector
+from config import ACQUIRE_FAILURE_LIMIT, ACQUIRE_MAX_AGE
 
 
 class Image:
@@ -137,6 +138,28 @@ def test_no_target_background_keeps_full_search():
         result = detector.detect(Image(), 'SEARCH')
         assert result['valid'] == 0
     assert detector.verified_track_active is False
+
+
+def test_idle_empty_frames_do_not_acquire_timeout_or_reset():
+    detector = FastV2Detector()
+    detector._search_regions = Mock(return_value=[])
+    for _ in range(ACQUIRE_MAX_AGE + ACQUIRE_FAILURE_LIMIT + 10):
+        result = detector.detect(Image(), 'SEARCH')
+        assert result['valid'] == 0
+    assert detector.acquire_candidate is None
+    assert detector.acquire_age == 0
+    assert detector.acquire_failure_count == 0
+    assert detector.diagnostics.acquire_timeout_count == 0
+    assert detector.diagnostics.full_search_reset_count == 0
+
+
+def test_acquire_candidate_loss_can_timeout():
+    detector = FastV2Detector()
+    detector._update_acquire(REGION)
+    for _ in range(max(ACQUIRE_MAX_AGE, ACQUIRE_FAILURE_LIMIT)):
+        detector._update_acquire(None)
+    assert detector.diagnostics.acquire_timeout_count >= 1
+    assert detector.diagnostics.full_search_reset_count >= 1
 
 
 def test_strong_verify_success_establishes_verified_track():

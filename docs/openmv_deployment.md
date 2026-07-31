@@ -6,7 +6,7 @@
 
 ## 文件和工具
 
-正式板载文件仅为`camera_config.py`、`detector.py`、`protocol.py`和`main.py`。
+正式板载文件包括`camera_config.py`、`detector.py`、`detector_fast.py`、`protocol.py`和`main.py`。
 旧`thresholds.py`不参与正式算法，也不由部署工具复制。
 
 ```bash

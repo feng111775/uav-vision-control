@@ -249,6 +249,8 @@ class FastV2Detector(DTaskDetector):
 
     def _update_acquire(self, candidate):
         if candidate is None:
+            if self.acquire_candidate is None:
+                return
             self.acquire_failure_count += 1
             self.acquire_age += 1
         elif self.acquire_candidate is None:

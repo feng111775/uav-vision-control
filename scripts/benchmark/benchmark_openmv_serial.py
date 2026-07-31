@@ -156,6 +156,14 @@ def analyze_lines(lines, seconds):
         'protocol_error_count': 0,
         'processing_p50_ms': 0.0,
         'processing_p95_ms': 0.0,
+        'processing_p99_ms': 0.0,
+        'processing_max_ms': 0.0,
+        'frame_interval_p50_ms': 0.0,
+        'frame_interval_p95_ms': 0.0,
+        'frame_interval_p99_ms': 0.0,
+        'frame_interval_max_ms': 0.0,
+        'frame_interval_over_300ms_count': 0,
+        'frame_interval_over_500ms_count': 0,
         'reported_camera_fps': 0.0,
         'boot_v2_seen': False,
         'status_v2_count': 0,
@@ -193,6 +201,9 @@ def analyze_lines(lines, seconds):
     valid = 0
     vision_fps = []
     sequences = []
+    unique_sequences = set()
+    frame_intervals_ms = []
+    previous_capture_ticks = None
     for raw in lines:
         line = raw.decode('utf-8', 'replace').strip() if isinstance(raw, bytes) else str(raw).strip()
         if line.startswith('D_BOOT_V2,'):
@@ -220,11 +231,19 @@ def analyze_lines(lines, seconds):
                 continue
             try:
                 sequence = int(fields[1])
+                capture_ticks_ms = int(fields[2])
                 processing = float(fields[3])
                 is_valid = int(fields[5])
-                if sequence < 0 or processing < 0 or is_valid not in (0, 1):
+                if sequence < 0 or capture_ticks_ms < 0 or processing < 0 or is_valid not in (0, 1):
                     raise ValueError('target_v2_invalid_numeric')
                 sequences.append(sequence)
+                if sequence not in unique_sequences:
+                    if previous_capture_ticks is not None:
+                        # pyb.millis() is an unsigned 32-bit millisecond clock.
+                        delta_ticks = (capture_ticks_ms - previous_capture_ticks) % (1 << 32)
+                        frame_intervals_ms.append(float(delta_ticks))
+                    unique_sequences.add(sequence)
+                    previous_capture_ticks = capture_ticks_ms
                 target.append(processing)
                 valid += is_valid
             except ValueError as error:
@@ -242,6 +261,16 @@ def analyze_lines(lines, seconds):
     report['processing_p95_ms'] = (values[min(len(values) - 1, int(len(values) * .95))] / 1000.0) if values else 0.0
     report['processing_p99_ms'] = (values[min(len(values) - 1, int(len(values) * .99))] / 1000.0) if values else 0.0
     report['processing_max_ms'] = (values[-1] / 1000.0) if values else 0.0
+    interval_values = sorted(frame_intervals_ms)
+    report['frame_interval_p50_ms'] = (interval_values[min(len(interval_values) - 1, int(len(interval_values) * .50))]
+                                       if interval_values else 0.0)
+    report['frame_interval_p95_ms'] = (interval_values[min(len(interval_values) - 1, int(len(interval_values) * .95))]
+                                       if interval_values else 0.0)
+    report['frame_interval_p99_ms'] = (interval_values[min(len(interval_values) - 1, int(len(interval_values) * .99))]
+                                       if interval_values else 0.0)
+    report['frame_interval_max_ms'] = max(interval_values) if interval_values else 0.0
+    report['frame_interval_over_300ms_count'] = sum(value > 300.0 for value in frame_intervals_ms)
+    report['frame_interval_over_500ms_count'] = sum(value > 500.0 for value in frame_intervals_ms)
     report['reported_camera_fps'] = sum(vision_fps) / len(vision_fps) if vision_fps else 0.0
     attempts = report['candidate_stage_counts']['strong_verify_attempt_count']
     successes = report['candidate_stage_counts']['strong_verify_success_count']

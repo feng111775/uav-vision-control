@@ -16,7 +16,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from openmv_repl import DEFAULT_DEVICE, OpenMVRepl, verify_openmv  # noqa: E402
 
-FORMAL_FILES = ("camera_config.py", "detector.py", "protocol.py", "main.py")
+FORMAL_FILES = (
+    "camera_config.py", "detector.py", "detector_fast.py", "protocol.py", "main.py")
 
 
 def sha256(path: Path) -> str:

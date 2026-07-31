@@ -154,3 +154,28 @@ def test_strong_verify_success_rate_bounded():
     ], 1)
     assert 0.0 <= report['strong_verify_success_rate'] <= 1.0
     assert report['strong_verify_success_rate'] == 0.6
+
+
+def test_frame_intervals_ignore_duplicates_and_count_sequence_gaps():
+    report = analyze_lines([
+        'D_TARGET_V2,10,1000,1000,SEARCH,0,0,0,0,0,0.0000,0\n',
+        'D_TARGET_V2,10,1000,1100,SEARCH,0,0,0,0,0,0.0000,0\n',
+        'D_TARGET_V2,12,1200,1200,SEARCH,0,0,0,0,0,0.0000,0\n',
+        'D_TARGET_V2,13,1550,1300,SEARCH,0,0,0,0,0,0.0000,0\n',
+        'D_TARGET_V2,14,2151,1400,SEARCH,0,0,0,0,0,0.0000,0\n',
+    ], 1)
+    assert report['duplicate_sequence_count'] == 1
+    assert report['sequence_gap_count'] == 1
+    assert report['frame_interval_p50_ms'] == 350.0
+    assert report['frame_interval_max_ms'] == 601.0
+    assert report['frame_interval_over_300ms_count'] == 2
+    assert report['frame_interval_over_500ms_count'] == 1
+
+
+def test_frame_intervals_handle_pyb_millis_wraparound():
+    report = analyze_lines([
+        'D_TARGET_V2,1,4294967290,1000,SEARCH,0,0,0,0,0,0.0000,0\n',
+        'D_TARGET_V2,2,25,1000,SEARCH,0,0,0,0,0,0.0000,0\n',
+    ], 1)
+    assert report['frame_interval_p50_ms'] == 31.0
+    assert report['frame_interval_max_ms'] == 31.0
