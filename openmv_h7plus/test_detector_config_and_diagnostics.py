@@ -118,12 +118,13 @@ def test_fast_detector_valid_and_verify_expired_paths():
                                 'cy': 100, 'outer_diameter_px': 50}
     detector_fast.last_verified_success_frame = 1
     detector_fast.last_verified_success_result = verified
+    detector_fast.verified_track_active = True
     detector_fast._search_regions = Mock(return_value=[region])
     detector_fast.frame = 2
     result = detector_fast.detect(Image(), 'FOLLOW')
     assert result['valid'] == 1
     detector_fast.last_verified_success_frame = 0
-    detector_fast.frame = 20
+    detector_fast.frame = 30
     result = detector_fast.detect(Image(), 'FOLLOW')
     assert result['valid'] == 0
     assert result['status'] in ('VERIFY_EXPIRED', 'CROSS_INVALID')

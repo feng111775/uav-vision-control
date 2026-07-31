@@ -25,7 +25,12 @@ DETECT_STATS_FIELDS = [
     'verification_grace_frame_count', 'candidate_switch_count',
     'track_jump_px', 'track_jump_diameter_ratio',
     'selected_blob_diameter_min', 'selected_blob_diameter_max',
-    'selected_blob_center_range', 'reject_payload',
+    'selected_blob_center_range',
+    'expected_outer_diameter', 'current_blob_diameter',
+    'hough_radius_min', 'hough_radius_max',
+    'edge_clipped_count', 'full_search_reset_count',
+    'acquire_timeout_count', 'verified_track_reset_count',
+    'reject_payload',
 ]
 DETECT_STATS_INDEX = {name: index for index, name in enumerate(DETECT_STATS_FIELDS)}
 DETECT_STATS_FIELD_COUNT = len(DETECT_STATS_FIELDS)
@@ -37,11 +42,14 @@ INTEGER_FIELDS = (
     'cross_line_count', 'cross_candidate_count', 'last_verified_age',
     'current_measurement_count', 'current_valid_frame_count',
     'verification_grace_frame_count', 'candidate_switch_count',
+    'edge_clipped_count', 'full_search_reset_count',
+    'acquire_timeout_count', 'verified_track_reset_count',
 )
 FLOAT_FIELDS = (
     'best_cross_score', 'best_confidence', 'best_ratio', 'track_jump_px',
     'track_jump_diameter_ratio', 'selected_blob_diameter_min',
-    'selected_blob_diameter_max',
+    'selected_blob_diameter_max', 'expected_outer_diameter',
+    'current_blob_diameter', 'hough_radius_min', 'hough_radius_max',
 )
 
 
@@ -114,6 +122,10 @@ def _parse_detect_stats(line, report):
     _update_range(report['best_confidence_range_obj'], 'track_jump_diameter_ratio_range', parsed['track_jump_diameter_ratio'])
     _update_range(report['best_confidence_range_obj'], 'selected_blob_diameter_min_range', parsed['selected_blob_diameter_min'])
     _update_range(report['best_confidence_range_obj'], 'selected_blob_diameter_max_range', parsed['selected_blob_diameter_max'])
+    _update_range(report['best_confidence_range_obj'], 'expected_outer_diameter_range', parsed['expected_outer_diameter'])
+    _update_range(report['best_confidence_range_obj'], 'current_blob_diameter_range', parsed['current_blob_diameter'])
+    _update_range(report['best_confidence_range_obj'], 'hough_radius_min_range', parsed['hough_radius_min'])
+    _update_range(report['best_confidence_range_obj'], 'hough_radius_max_range', parsed['hough_radius_max'])
     center_ranges = report['selected_blob_center_range']
     if center_ranges is None:
         report['selected_blob_center_range'] = parsed['selected_blob_center_range'][:]
@@ -163,6 +175,10 @@ def analyze_lines(lines, seconds):
             'current_valid_frame_count': 0,
             'verification_grace_frame_count': 0,
             'candidate_switch_count': 0,
+            'edge_clipped_count': 0,
+            'full_search_reset_count': 0,
+            'acquire_timeout_count': 0,
+            'verified_track_reset_count': 0,
         },
         'reject_reason_counts': {},
         'strong_verify_attempt_count': 0,
@@ -222,6 +238,8 @@ def analyze_lines(lines, seconds):
     report['duplicate_sequence_count'] = len(sequences) - len(unique)
     report['processing_p50_ms'] = (values[min(len(values) - 1, int(len(values) * .50))] / 1000.0) if values else 0.0
     report['processing_p95_ms'] = (values[min(len(values) - 1, int(len(values) * .95))] / 1000.0) if values else 0.0
+    report['processing_p99_ms'] = (values[min(len(values) - 1, int(len(values) * .99))] / 1000.0) if values else 0.0
+    report['processing_max_ms'] = (values[-1] / 1000.0) if values else 0.0
     report['reported_camera_fps'] = sum(vision_fps) / len(vision_fps) if vision_fps else 0.0
     attempts = report['candidate_stage_counts']['strong_verify_attempt_count']
     successes = report['candidate_stage_counts']['strong_verify_success_count']
@@ -235,6 +253,10 @@ def analyze_lines(lines, seconds):
     report['track_jump_diameter_ratio_range'] = ranges.get('track_jump_diameter_ratio_range', [0.0, 0.0])
     report['selected_blob_diameter_min_range'] = ranges.get('selected_blob_diameter_min_range', [0.0, 0.0])
     report['selected_blob_diameter_max_range'] = ranges.get('selected_blob_diameter_max_range', [0.0, 0.0])
+    report['expected_outer_diameter_range'] = ranges.get('expected_outer_diameter_range', [0.0, 0.0])
+    report['current_blob_diameter_range'] = ranges.get('current_blob_diameter_range', [0.0, 0.0])
+    report['hough_radius_min_range'] = ranges.get('hough_radius_min_range', [0.0, 0.0])
+    report['hough_radius_max_range'] = ranges.get('hough_radius_max_range', [0.0, 0.0])
     if not target:
         report['error'] = 'PROTOCOL_V2_MISSING'
     return report
