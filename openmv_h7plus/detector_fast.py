@@ -20,7 +20,9 @@ class FastV2Detector(DTaskDetector):
         force=(self.track.frame % verify_every)==0
         if regions and (force or roi is not None):
             for region in regions:
+                started = self.timing.begin()
                 pairs=self._circle_pairs(image,region)
+                self.timing.end('strong_verify', started)
                 if pairs:
                     started = self.timing.begin()
                     candidate=self._detect_roi(image,region)
