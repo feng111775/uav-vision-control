@@ -1,6 +1,7 @@
 import pytest
 
-from uav_vision.h7_bridge_node import parse_detection_line
+from uav_vision.h7_bridge_node import (
+    is_diagnostic_line, parse_detection_line, parse_status_line)
 
 
 def test_d_target_serial_parsing():
@@ -29,3 +30,22 @@ def test_legacy_mode_only_accepts_unambiguous_no_target_heartbeat():
 def test_bad_lines_rejected(line):
     with pytest.raises(ValueError):
         parse_detection_line(line)
+
+
+@pytest.mark.parametrize('status', [
+    'TRACKING', 'LOST', 'CROSS_INVALID', 'DETECT_ERROR'])
+def test_diagnostic_status_protocol(status):
+    assert parse_status_line('D_STATUS,' + status) == status
+
+
+def test_invalid_diagnostic_status_does_not_break_detection_parser():
+    with pytest.raises(ValueError):
+        parse_status_line('D_STATUS,UNKNOWN')
+    assert parse_detection_line(
+        'D_TARGET,1,160,120,100,60,0,80')[0] == 1.0
+
+
+def test_fps_diagnostic_is_not_treated_as_protocol_data():
+    assert is_diagnostic_line('D_VISION,status=CROSS_INVALID,fps=3.4')
+    assert is_diagnostic_line('D_TIMING,find_circles,avg_ms=289.449')
+    assert not is_diagnostic_line('D_TARGET,0,0,0,0,0,0,0')

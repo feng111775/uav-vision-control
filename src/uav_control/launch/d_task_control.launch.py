@@ -10,7 +10,8 @@ from launch_ros.actions import Node
 
 
 PROFILES = {'sitl_drop', 'sitl_dynamic_land', 'first_flight_hover',
-            'competition_drop', 'competition_dynamic_land'}
+            'competition_drop', 'competition_dynamic_land',
+            'competition_emergency_final'}
 
 
 def _launch(context):

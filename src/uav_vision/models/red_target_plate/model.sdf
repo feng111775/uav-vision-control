@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sdf version='1.9'>
+  <model name='red_target_plate'>
+    <static>true</static>
+    <pose>0 0 0.01 0 0 0</pose>
+    <link name='plate'>
+      <visual name='visual'>
+        <geometry>
+          <box><size>1.2 1.2 0.02</size></box>
+        </geometry>
+        <material>
+          <ambient>0.8 0.0 0.0 1.0</ambient>
+          <diffuse>0.8 0.0 0.0 1.0</diffuse>
+          <specular>0.1 0.1 0.1 1.0</specular>
+        </material>
+      </visual>
+      <collision name='collision'>
+        <geometry>
+          <box><size>1.2 1.2 0.02</size></box>
+        </geometry>
+      </collision>
+    </link>
+  </model>
+</sdf>

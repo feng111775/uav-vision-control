@@ -1,4 +1,4 @@
-"""Detect the largest red Gazebo target and publish H7-compatible data."""
+"""Detect the largest red Gazebo target and publish formal D-task data."""
 
 import math
 
@@ -10,7 +10,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float32MultiArray
 
-from .detection import INVALID_DETECTION
+from .d_task_schema import invalid_detection
 
 
 class RedTargetDetector:
@@ -53,11 +53,11 @@ class RedTargetDetector:
             [red2_h_max, 255, 255], dtype=np.uint8)
 
     def detect(self, image):
-        """Return a nine-value detection, debug image, and binary mask."""
+        """Return a seven-value detection, debug image, and binary mask."""
         if not isinstance(image, np.ndarray) or image.size == 0:
-            return list(INVALID_DETECTION), None, None
+            return list(invalid_detection()), None, None
         if image.ndim != 3 or image.shape[2] not in (3, 4):
-            return list(INVALID_DETECTION), None, None
+            return list(invalid_detection()), None, None
 
         bgr = image[:, :, :3]
         debug_image = bgr.copy()
@@ -82,8 +82,7 @@ class RedTargetDetector:
             contour for contour in contours
             if cv2.contourArea(contour) >= self.min_area
         ]
-        invalid = list(INVALID_DETECTION)
-        invalid[7:] = [float(width), float(height)]
+        invalid = list(invalid_detection())
         if not candidates:
             return invalid, debug_image, mask
 
@@ -92,9 +91,11 @@ class RedTargetDetector:
         x, y, box_width, box_height = cv2.boundingRect(contour)
         center_x = min(float(width - 1), max(0.0, x + box_width / 2.0))
         center_y = min(float(height - 1), max(0.0, y + box_height / 2.0))
+        outer_diameter = float(max(box_width, box_height))
+        inner_diameter = float(max(1.0, min(box_width, box_height)))
         result = [
-            1.0, center_x, center_y, float(box_width), float(box_height),
-            area, self.confidence, float(width), float(height),
+            1.0, center_x, center_y, outer_diameter, inner_diameter,
+            0.0, self.confidence,
         ]
         if not all(math.isfinite(value) for value in result):
             return list(INVALID_DETECTION), debug_image, mask
@@ -167,7 +168,7 @@ class GazeboRedTargetDetectorNode(Node):
             self.get_logger().warning(
                 'Invalid camera image: %s' % error,
                 throttle_duration_sec=5.0)
-            detection, debug_image = list(INVALID_DETECTION), None
+            detection, debug_image = list(invalid_detection()), None
 
         self.publish_detection(detection)
         if self.debug and debug_image is not None:

@@ -25,6 +25,7 @@ from .mission_schema import (SAFETY_BLOCK_CODES, STATE_ID, TELEMETRY,
 from .px4_command_tracker import CommandTracker
 from .px4_qos import px4_input_qos, px4_output_qos
 from .safety_config import validate_safety_parameters
+from .search_guidance import SearchGuidance
 from .touchdown_detector import TouchdownDetector
 from .visual_guidance import map_camera_error, VisualGuidance
 
@@ -77,6 +78,16 @@ class MissionControllerNode(Node):
             'dynamic_near_height_m': 0.6, 'visual_stable_seconds': 0.4,
             'min_target_altitude': 0.5, 'max_target_altitude': 2.0,
             'command_timeout': 1.0, 'command_max_attempts': 3}
+        defaults.update({
+            'enable_search_motion': False,
+            'search_speed_mps': 0.18,
+            'search_forward_offset_m': 0.50,
+            'search_forward_span_m': 0.40,
+            'search_lateral_extent_m': 0.25,
+            'search_arrival_tolerance_m': 0.08,
+            'search_waypoint_timeout_seconds': 6.0,
+            'search_max_radius_m': 1.00,
+        })
         defaults['odom_gate_min_frames'] = 20
         defaults['odom_gate_min_source_span_seconds'] = 1.0
         defaults['payload_ack_timeout'] = 5.0
@@ -189,6 +200,14 @@ class MissionControllerNode(Node):
             max_acceleration=self.get_parameter(
                 'vision_max_accel_mps2').value)
         self.touchdown = TouchdownDetector()
+        self.search_guidance = SearchGuidance(
+            self.get_parameter('search_speed_mps').value,
+            self.get_parameter('search_forward_offset_m').value,
+            self.get_parameter('search_forward_span_m').value,
+            self.get_parameter('search_lateral_extent_m').value,
+            self.get_parameter('search_arrival_tolerance_m').value,
+            self.get_parameter('search_waypoint_timeout_seconds').value,
+            self.get_parameter('search_max_radius_m').value)
         timeout = self.get_parameter('command_timeout').value
         attempts = self.get_parameter('command_max_attempts').value
         self.trackers = {name: CommandTracker(timeout, attempts) for name in
@@ -714,6 +733,10 @@ class MissionControllerNode(Node):
             # disarm transaction instead of clearing it on the next cycle.
             self.logic.touchdown = False
         self.logic.step(now)
+        if (self.logic.state == 'SEARCH_CAR' and
+                self.last_state != 'SEARCH_CAR' and self.logic.h is not None):
+            self.search_guidance.start(
+                self.logic.h[0], self.logic.h[1], self.logic.h[3], now)
         if self.logic.state == 'SECOND_PRESTREAM' and self.last_state != self.logic.state:
             self.trackers['mode'].reset()
             self.trackers['arm'].reset()
@@ -794,6 +817,11 @@ class MissionControllerNode(Node):
                 else:
                     self._publish_control(
                         'position', position=self.logic.position)
+            elif (self.logic.state == 'SEARCH_CAR' and
+                  self.get_parameter('enable_search_motion').value):
+                n, e = self.search_guidance.velocity(
+                    self.logic.position, now, paused=target_ok)
+                self._publish_control('velocity', velocity=(n, e, 0.0))
             elif self.logic.state == 'FINAL_LAND':
                 # NAV_LAND transfers control back to PX4. Continuing to send
                 # the cruise-altitude Offboard setpoint here can keep the
