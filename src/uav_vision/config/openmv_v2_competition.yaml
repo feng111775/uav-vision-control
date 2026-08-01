@@ -1,0 +1,19 @@
+h7_bridge_node:
+  ros__parameters:
+    port: /dev/dtask_openmv
+    baudrate: 115200
+    data_timeout_sec: 0.30
+    allow_legacy_protocol: false
+
+vision_interface_node:
+  ros__parameters:
+    closed_loop_enable: false
+    closed_loop_min_fps: 20.0
+    closed_loop_max_measurement_age_ms: 300.0
+    closed_loop_warmup_sec: 3.0
+    closed_loop_warmup_frames: 30
+    closed_loop_max_recent_drop_count: 3
+    closed_loop_max_recent_protocol_errors: 0
+    camera_mount_profile: unverified
+    camera_orientation_verified: false
+    coordinate_mapping_verified: false

@@ -21,7 +21,7 @@ def _nodes(context):
             'profile must be readonly_bench, no_prop_control, or real_competition')
     control_cfg = _config(
         'uav_control', 'config/competition_emergency_final.yaml')
-    vision_cfg = _config('uav_vision', 'config/red_target_hardware.yaml')
+    vision_cfg = _config('uav_vision', 'config/openmv_v2_competition.yaml')
     acceptance_cfg = _config(
         'uav_vision', 'config/openmv_downward_v1_acceptance.yaml')
     if profile == 'real_competition':
