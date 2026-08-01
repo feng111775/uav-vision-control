@@ -9,6 +9,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 from std_msgs.msg import String
 from uav_interfaces.msg import TargetObservation, LandingError, VisionHealth, MissionVisionState
 
+from .closed_loop_gate import ClosedLoopGate, GateSample
 from .vision_protocol import parse_target, ClockMapper, Confirmation, SequenceTracker
 
 NAN = float('nan')
@@ -28,6 +29,27 @@ class VisionInterfaceNode(Node):
         self.create_subscription(String, '/vision/internal/h7/raw', self.raw_cb, 20)
         self.create_subscription(String, '/vision/h7/status', self.status_cb, 10)
         self.create_subscription(MissionVisionState, '/uav/mission/state', self.state_cb, state_qos)
+        for name, value in (
+            ('closed_loop_enable', False),
+            ('closed_loop_min_fps', 20.0),
+            ('closed_loop_max_measurement_age_ms', 300.0),
+            ('closed_loop_warmup_sec', 3.0),
+            ('closed_loop_warmup_frames', 30),
+            ('closed_loop_max_recent_drop_count', 3),
+            ('closed_loop_max_recent_protocol_errors', 0),
+            ('closed_loop_soft_failure_count', 3),
+            ('camera_mount_profile', 'unverified'),
+            ('camera_orientation_verified', False),
+            ('coordinate_mapping_verified', False),
+        ):
+            self.declare_parameter(name, value)
+        self.closed_loop_gate = ClosedLoopGate(
+            self.get_parameter('closed_loop_warmup_sec').value,
+            self.get_parameter('closed_loop_warmup_frames').value,
+            self.get_parameter('closed_loop_max_recent_drop_count').value,
+            self.get_parameter('closed_loop_max_recent_protocol_errors').value,
+            self.get_parameter('closed_loop_soft_failure_count').value,
+        )
         self.mapper = ClockMapper(); self.sequence = SequenceTracker(); self.confirm = Confirmation()
         self.mode = 'SEARCH'; self.last = None; self.last_new = None
         self.connected = False; self.stale_published = False
@@ -178,15 +200,53 @@ class VisionInterfaceNode(Node):
         h.ready_for_mission = bool(h.camera_open and h.frames_received and h.algorithm_alive and
                                    h.protocol_ok and new_fps >= 20.0 and age < 300.0 and
                                    self.protocol_error_count == 0)
-        h.ready_for_closed_loop = False
-        h.performance_gate_passed = bool(new_fps >= 20.0 and h.protocol_ok)
+        performance_ok = bool(
+            new_fps >= float(self.get_parameter('closed_loop_min_fps').value)
+            and self.stats['last_measurement_age_ms'] <= float(
+                self.get_parameter('closed_loop_max_measurement_age_ms').value)
+            and self.sequence.dropped_count <= int(
+                self.get_parameter('closed_loop_max_recent_drop_count').value)
+            and self.protocol_error_count <= int(
+                self.get_parameter('closed_loop_max_recent_protocol_errors').value)
+        )
+        gate_sample = GateSample(
+            enabled=bool(self.get_parameter('closed_loop_enable').value),
+            camera_open=h.camera_open,
+            frames_received=h.frames_received,
+            algorithm_alive=h.algorithm_alive,
+            protocol_ok=h.protocol_ok,
+            performance_ok=performance_ok,
+            orientation_ok=bool(self.get_parameter(
+                'camera_orientation_verified').value),
+            mapping_ok=bool(self.get_parameter(
+                'coordinate_mapping_verified').value),
+            camera_mount_profile=str(self.get_parameter(
+                'camera_mount_profile').value),
+            disconnected=not self.connected,
+            stale=bool(self.stale_published),
+            data_age_ok=bool(
+                math.isfinite(age) and age <= float(
+                    self.get_parameter(
+                        'closed_loop_max_measurement_age_ms').value)),
+            capture_stamp_ok=bool(self.last is not None and self.last.get(
+                'capture_stamp_valid', False)),
+            sequence_gap_severe=self.sequence.dropped_count > int(
+                self.get_parameter('closed_loop_max_recent_drop_count').value),
+        )
+        h.performance_gate_passed = performance_ok
+        h.ready_for_closed_loop = self.closed_loop_gate.update(
+            time.monotonic(), gate_sample)
         h.input_fps = input_fps; h.new_frame_fps = new_fps; h.valid_detection_fps = valid_fps
         h.publish_fps = publish_fps; h.processing_p50_ms = self.stats['processing_p50_ms']
         h.processing_p95_ms = self.stats['processing_p95_ms']; h.serial_transport_p95_ms = NAN
         h.end_to_end_p95_ms = NAN; h.last_measurement_age_ms = max(0.0, age) if math.isfinite(age) else NAN
         h.protocol_error_count = self.protocol_error_count; h.dropped_frame_count = self.sequence.dropped_count
         h.reconnect_count = self.stats['reconnect_count']; h.detector_backend = 'fast_v2'
-        h.current_mode = self.mode; h.status_text = 'READY_PIXEL_ONLY' if h.algorithm_alive else 'WAITING_FOR_CAMERA'
+        h.current_mode = self.mode
+        h.status_text = (
+            'READY_FOR_CLOSED_LOOP' if h.ready_for_closed_loop else
+            'READY_PIXEL_ONLY' if h.algorithm_alive else
+            'WAITING_FOR_CAMERA')
         self.health_pub.publish(h)
 
     @staticmethod

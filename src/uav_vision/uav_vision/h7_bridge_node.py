@@ -7,9 +7,9 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 import serial
 from serial import SerialException
-from std_msgs.msg import Float32MultiArray, Float64, String
+from std_msgs.msg import Float64, String
 
-from .d_task_schema import invalid_detection, validate_detection
+from .d_task_schema import validate_detection
 from .vision_protocol import parse_target
 
 DIAGNOSTIC_TAGS = frozenset((
@@ -75,7 +75,6 @@ class H7BridgeNode(Node):
         super().__init__('h7_bridge_node')
         self.declare_parameter('port', '/dev/dtask_openmv')
         self.declare_parameter('baudrate', 115200)
-        self.declare_parameter('detection_topic', '/vision/h7/detection')
         self.declare_parameter('status_topic', '/vision/h7/status')
         self.declare_parameter('target_age_topic', '/vision/h7/target_age_ms')
         self.declare_parameter('data_timeout_sec', 0.30)
@@ -85,8 +84,6 @@ class H7BridgeNode(Node):
         self.allow_legacy = bool(self.get_parameter('allow_legacy_protocol').value)
         self.data_timeout = float(self.get_parameter('data_timeout_sec').value)
         reliable = 10
-        self.publisher = self.create_publisher(
-            Float32MultiArray, self.get_parameter('detection_topic').value, reliable)
         self.raw_publisher = self.create_publisher(String, '/vision/internal/h7/raw', 20)
         self.status_publisher = self.create_publisher(
             String, self.get_parameter('status_topic').value, reliable)
@@ -125,13 +122,6 @@ class H7BridgeNode(Node):
             self.get_logger().info('status_transition=%s' % status)
             self._last_logged_status = status
 
-    def _publish_detection(self, data):
-        message = Float32MultiArray(); message.data = data
-        self.publisher.publish(message)
-
-    def _publish_invalid(self):
-        self._publish_detection(invalid_detection())
-
     def _mark_disconnected(self):
         was_connected = self.serial_port is not None or self._ever_connected
         if self.serial_port is not None:
@@ -147,7 +137,6 @@ class H7BridgeNode(Node):
         if was_connected:
             self.serial_disconnect_count += 1
         if not self._disconnected_published:
-            self._publish_invalid()
             self._publish_status('DISCONNECTED')
             self._disconnected_published = True
 
@@ -218,7 +207,8 @@ class H7BridgeNode(Node):
         now = time.monotonic()
         self._last_detection_time = now; self._stale_published = False
         if data[0] == 1.0: self._last_valid_time = now
-        self._publish_detection(data)
+        # Formal V2 consumers use /vision/internal/h7/raw. Do not publish the
+        # retired Float32MultiArray interface from the bridge.
 
     def _read_serial(self):
         if self.serial_port is None or not self.serial_port.is_open:
@@ -256,7 +246,7 @@ class H7BridgeNode(Node):
         if self.serial_port is None or self._last_detection_time is None:
             return
         if now - self._last_detection_time > self.data_timeout and not self._stale_published:
-            self._publish_invalid(); self._publish_status('STALE'); self._stale_published = True
+            self._publish_status('STALE'); self._stale_published = True
 
     def destroy_node(self):
         if self.serial_port is not None and self.serial_port.is_open:

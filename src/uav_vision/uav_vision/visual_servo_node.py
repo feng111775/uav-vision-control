@@ -1,4 +1,4 @@
-"""将滤波后的H7Plus目标位置转换为ROS FLU水平速度。"""
+"""将正式D-task检测转换为ROS FLU水平速度。"""
 
 import math
 
@@ -9,8 +9,7 @@ from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
 from std_msgs.msg import String
 
-from .detection import normalized_geometry
-from .detection import validate_detection
+from .d_task_schema import CENTER_X, CENTER_Y, VALID, validate_detection
 
 ZERO_VELOCITY = (0.0, 0.0)
 
@@ -22,10 +21,11 @@ class VisualServoController:
                  deadband_x=0.05, deadband_y=0.05,
                  max_velocity=0.3, stale_timeout=0.3,
                  sign_x=-1.0, sign_y=-1.0,
-                 camera_mode='down', front_approach_velocity=0.12):
+                 camera_mode='down', front_approach_velocity=0.12,
+                 image_width=640.0, image_height=480.0):
         parameters = [kp_x, kp_y, deadband_x, deadband_y,
                       max_velocity, stale_timeout,
-                      sign_x, sign_y]
+                      sign_x, sign_y, image_width, image_height]
         if not all(math.isfinite(float(value)) for value in parameters):
             raise ValueError('视觉伺服参数必须是有限数值')
         if kp_x < 0.0 or kp_y < 0.0:
@@ -53,12 +53,18 @@ class VisualServoController:
         self.camera_mode = camera_mode
         self.front_approach_velocity = min(
             float(front_approach_velocity), self.max_velocity)
+        if image_width <= 0.0 or image_height <= 0.0:
+            raise ValueError('image_width和image_height必须为正数')
+        self.image_width = float(image_width)
+        self.image_height = float(image_height)
+        self.image_center_x = self.image_width / 2.0
+        self.image_center_y = self.image_height / 2.0
         self.last_message_time = None
         self.latest_velocity = ZERO_VELOCITY
 
     @staticmethod
     def validate(values):
-        """严格校验携带图像尺寸的九字段滤波检测数据。"""
+        """严格校验正式七字段检测数据。"""
         try:
             data = validate_detection(values)
         except (TypeError, ValueError) as error:
@@ -82,17 +88,20 @@ class VisualServoController:
             self.latest_velocity = ZERO_VELOCITY
             return self.latest_velocity
 
-        error_x, error_y, _, _, _ = normalized_geometry(data)
+        error_x = ((data[CENTER_X] - self.image_center_x)
+                   / self.image_center_x)
+        error_y = ((data[CENTER_Y] - self.image_center_y)
+                   / self.image_center_y)
         left_velocity = 0.0
         forward_velocity = 0.0
 
-        if abs(error_x) > self.deadband_x:
+        if data[VALID] == 1.0 and abs(error_x) > self.deadband_x:
             left_velocity = self.sign_x * self.kp_x * error_x
         if self.camera_mode == 'front':
             # 前视图像的纵向像素误差主要受目标高度和俯仰影响，不能用来
             # 判断目标在机体前方还是后方。有效目标始终以受限速度接近。
             forward_velocity = self.front_approach_velocity
-        elif abs(error_y) > self.deadband_y:
+        elif data[VALID] == 1.0 and abs(error_y) > self.deadband_y:
             forward_velocity = self.sign_y * self.kp_y * error_y
 
         self.latest_velocity = (
@@ -137,6 +146,8 @@ class VisualServoNode(Node):
         self.declare_parameter('sign_y', -1.0)
         self.declare_parameter('camera_mode', 'down')
         self.declare_parameter('front_approach_velocity', 0.12)
+        self.declare_parameter('image_width', 640.0)
+        self.declare_parameter('image_height', 480.0)
         self.declare_parameter('selected_camera_topic', '')
         self.declare_parameter('camera_source_timeout', 0.3)
         self.declare_parameter(
@@ -147,7 +158,7 @@ class VisualServoNode(Node):
 
         names = ('kp_x', 'kp_y', 'deadband_x', 'deadband_y', 'max_velocity',
                  'stale_timeout', 'sign_x', 'sign_y', 'camera_mode',
-                 'front_approach_velocity')
+                 'front_approach_velocity', 'image_width', 'image_height')
         values = {name: self.get_parameter(name).value for name in names}
         self.controller = VisualServoController(**values)
         self.publisher = self.create_publisher(

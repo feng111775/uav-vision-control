@@ -26,7 +26,7 @@ class SafetyGateNode(Node):  # noqa: D101
         self.failsafe = self.armed = False
         self.mission_state = "UNKNOWN"
         self.subsystems = {}
-        self.ready_pub = self.create_publisher(Bool, "/uav/safety/ready", 10)
+        self.ready_pub = self.create_publisher(Bool, "/uav/readiness/ready", 10)
         self.reason_pub = self.create_publisher(String, "/uav/safety/reason", 10)
         px4_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,

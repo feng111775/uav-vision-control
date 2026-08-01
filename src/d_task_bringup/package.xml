@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>d_task_bringup</name>
+  <version>0.1.0</version>
+  <description>Unified first-task bringup and acceptance entry points.</description>
+  <maintainer email="xixi@todo.todo">xixi</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_python</buildtool_depend>
+  <depend>launch</depend>
+  <depend>launch_ros</depend>
+  <depend>ament_index_python</depend>
+  <depend>uav_control</depend>
+  <depend>uav_vision</depend>
+  <depend>servo_control</depend>
+  <exec_depend>python3</exec_depend>
+  <test_depend>python3-pytest</test_depend>
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

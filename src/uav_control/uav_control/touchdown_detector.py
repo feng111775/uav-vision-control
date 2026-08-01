@@ -9,10 +9,15 @@ class TouchdownDetector:
         self.candidate_since = None
         self.confirmed = False
 
-    def update(self, now, sensor_contact, kinematic_contact, vz, roll, pitch):
+    def candidate(self, sensor_contact, kinematic_contact, vz, roll, pitch):
+        """Return the instantaneous conservative touchdown candidate."""
         stable = abs(vz) <= self.max_vz and abs(
             roll) <= self.max_tilt and abs(pitch) <= self.max_tilt
-        candidate = stable and (bool(sensor_contact) or bool(kinematic_contact))
+        return stable and (bool(sensor_contact) or bool(kinematic_contact))
+
+    def update(self, now, sensor_contact, kinematic_contact, vz, roll, pitch):
+        candidate = self.candidate(
+            sensor_contact, kinematic_contact, vz, roll, pitch)
         if not candidate:
             self.candidate_since = None
             self.confirmed = False

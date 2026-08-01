@@ -3,37 +3,73 @@ mission_controller_node:
     mission_mode: hover_test
     target_altitude: 1.0
     altitude_tolerance: 0.1
-    prestream_seconds: 1.0
+    prestream_cycles: 40
     hover_confirm_seconds: 3.0
     hover_test_seconds: 10.0
     dwell_on_car_seconds: 5.0
     mission_timeout_seconds: 90.0
     b_deadline_seconds: 15.0
     stable_seconds: 1.0
+    visual_stable_seconds: 0.5
     simulation_mode: false
     competition_mode: false
     enable_control: false
     enable_auto_arm: false
+    enable_auto_disarm: false
+    auto_start_hover_test: false
+    communication_only: false
     enable_visual_follow: false
     enable_payload_release: false
     enable_dynamic_landing: false
     enable_second_takeoff: false
+    allow_sitl_heading_quality_bypass: false
+    vision_adapter_mode: legacy_array
+    vision_receive_timeout_seconds: 0.3
+    vision_source_age_limit_seconds: 0.3
+    vision_health_required: false
     status_timeout: 1.0
     position_timeout: 0.5
+    odom_gate_min_frames: 20
+    odom_gate_min_source_span_seconds: 1.0
     attitude_timeout: 0.5
     safety_timeout: 1.0
     car_timeout: 2.0
     max_tilt_rad: 0.45
     control_rate_hz: 20.0
     align_error: 0.10
-    descent_speed: 0.25
+    max_horizontal_speed: 0.5
+    high_descent_speed: 0.25
     near_descent_speed: 0.10
+    contact_descent_speed: 0.05
+    max_descent_speed: 0.4
+    dynamic_near_height_m: 0.6
+    min_target_altitude: 0.5
+    max_target_altitude: 2.0
     command_timeout: 1.0
     command_max_attempts: 3
     payload_ack_timeout: 3.0
     target_loss_abort_seconds: 1.0
-    guidance_kp_forward: 0.3
-    guidance_kp_left: 0.3
-    guidance_max_speed: 0.5
-    camera_x_sign: -1.0
-    camera_y_sign: -1.0
+    vision_timeout: 0.5
+    vision_tracked_topic: /vision/target/tracked
+    vision_landing_topic: /vision/landing_error
+    vision_min_confidence: 60.0
+    vision_max_target_age_ms: 300.0
+    vision_receive_timeout_sec: 0.3
+    vision_swap_xy: false
+    vision_x_sign: 1.0
+    vision_y_sign: 1.0
+    vision_target_x_norm: 0.0
+    vision_target_y_norm: 0.0
+    vision_kp_x: 0.25
+    vision_kp_y: 0.25
+    vision_max_speed_mps: 0.18
+    vision_max_accel_mps2: 0.30
+    vision_deadband_norm: 0.05
+    align_tolerance_x_norm: 0.10
+    align_tolerance_y_norm: 0.10
+    align_stable_duration_sec: 0.8
+    vision_loss_hover_sec: 0.20
+    vision_loss_abort_sec: 1.0
+    servo_command_topic: /servo_command
+    servo_result_topic: /servo/result
+    servo_release_timeout_sec: 5.0

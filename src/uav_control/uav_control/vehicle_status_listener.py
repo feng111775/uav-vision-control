@@ -1,10 +1,8 @@
 from px4_msgs.msg import VehicleStatus
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy
-from rclpy.qos import HistoryPolicy
-from rclpy.qos import QoSProfile
-from rclpy.qos import ReliabilityPolicy
+
+from .px4_qos import px4_output_qos
 
 
 class VehicleStatusListener(Node):
@@ -19,12 +17,7 @@ class VehicleStatusListener(Node):
         status_topic = self.get_parameter('vehicle_status_topic').value
 
         # PX4通过DDS发布状态时使用的QoS配置。
-        px4_qos = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
-            durability=DurabilityPolicy.TRANSIENT_LOCAL,
-            history=HistoryPolicy.KEEP_LAST,
-            depth=1,
-        )
+        px4_qos = px4_output_qos()
 
         # PX4状态topic由vehicle_status_topic参数配置。
         self.status_subscription = self.create_subscription(

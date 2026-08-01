@@ -1,7 +1,11 @@
-# d_task_bringup 预留目录
+# d_task_bringup
 
-这里预留最终统一启动包的位置。当前仅建立目录规范，不包含 `package.xml`，
-也不提供尚未完成的任务启动程序，因此不会被 `colcon` 识别为虚假 ROS 包。
+第一题统一正式入口位于
+`launch/competition_first_task.launch.py`。必须显式选择 profile：
 
-待飞控、小车、视觉和地面站的确认提交全部集成并通过接口审计后，再建立真实
-bringup 包。
+- `readonly_bench`
+- `no_prop_control`
+- `real_competition`
+
+真实 profile 由启动前检查 fail-closed；相机安装验收标记、DDS/PX4、UDP 和真实
+舵机条件未满足时不会启动真实任务链路。
