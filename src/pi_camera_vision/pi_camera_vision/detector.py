@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 
 
-INVALID_DETECTION = [0.0] * 9
+INVALID_DETECTION = [0.0] * 7
 
 
 class RedTargetDetector:
@@ -37,7 +37,7 @@ class RedTargetDetector:
             [red2_h_max, 255, 255], dtype=np.uint8)
 
     def detect(self, image):
-        """Return (nine-value detection, annotated BGR image, mask)."""
+        """Return (seven-value detection, annotated BGR image, mask)."""
         if (not isinstance(image, np.ndarray) or image.ndim != 3
                 or image.shape[2] != 3 or image.size == 0):
             return list(INVALID_DETECTION), None, None
@@ -57,10 +57,8 @@ class RedTargetDetector:
         ]
         annotated = image.copy()
         image_height, image_width = image.shape[:2]
-        invalid = list(INVALID_DETECTION)
-        invalid[7:] = [float(image_width), float(image_height)]
         if not contours:
-            return invalid, annotated, mask
+            return list(INVALID_DETECTION), annotated, mask
 
         target = max(contours, key=cv2.contourArea)
         area = float(cv2.contourArea(target))
@@ -84,9 +82,10 @@ class RedTargetDetector:
             (0, 255, 0), 2)
         cv2.circle(
             annotated, (int(round(cx)), int(round(cy))), 4, (255, 0, 0), -1)
+        outer = float(max(width, height))
+        inner = float(min(width, height))
         result = [
-            1.0, float(cx), float(cy), float(width), float(height),
-            area, float(max(0.0, min(100.0, confidence))),
-            float(image_width), float(image_height),
+            1.0, float(cx), float(cy), outer, inner,
+            0.0, float(max(0.0, min(100.0, confidence))),
         ]
         return result, annotated, mask

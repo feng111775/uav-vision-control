@@ -106,7 +106,7 @@ class PiCameraVisionNode(Node):
             % self.detection_topic)
 
     def publish_detection(self, values):
-        """Publish exactly nine normalized-geometry input fields."""
+        """Publish exactly seven normalized-geometry input fields."""
         message = Float32MultiArray()
         message.data = [float(value) for value in values]
         self.publisher.publish(message)
@@ -118,9 +118,7 @@ class PiCameraVisionNode(Node):
         ok, frame = self.source.read()
         if not ok:
             self.finished = True
-            invalid = list(INVALID_DETECTION)
-            invalid[7:] = [self.requested_width, self.requested_height]
-            self.publish_detection(invalid)
+            self.publish_detection(INVALID_DETECTION)
             self.get_logger().info(
                 'Input ended or failed; published invalid detection')
             self.timer.cancel()
