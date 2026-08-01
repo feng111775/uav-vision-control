@@ -145,6 +145,16 @@ def test_wrong_sequence_ack_cannot_advance():
     assert not node.logic.payload_ack
 
 
+def test_dry_run_confirmed_ack_counts_as_success_for_current_sequence():
+    node = fake_controller_for_ack()
+    message = String()
+    message.data = json.dumps({'sequence_id': 7,
+                               'status': 'DRY_RUN_CONFIRMED'})
+    MissionControllerNode._servo_result(node, message)
+    assert node.logic.payload_ack
+    assert node.logic.event == 'SERVO_SUCCESS_THROW'
+
+
 def test_malformed_ack_cannot_advance():
     node = fake_controller_for_ack()
     message = String()

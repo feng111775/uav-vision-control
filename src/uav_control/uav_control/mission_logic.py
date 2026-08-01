@@ -197,6 +197,7 @@ class MissionLogic:
         self.start_signal = False
         self.start_time_hint = None
         self.safety_ready = False
+        self.preflight_ok = False
         self.car_progress = CarProgress.UNKNOWN_OR_IDLE
         self.car_regression = False
         self.last_car_progress_at = None
@@ -312,11 +313,13 @@ class MissionLogic:
         if self.state in (S.PRESTREAM.value, S.SECOND_PRESTREAM.value):
             self.prestream_count += 1
 
-    def update_status(self, armed, nav_state, offboard, failsafe, now=0.0):
+    def update_status(self, armed, nav_state, offboard, failsafe, now=0.0,
+                      preflight_ok=True):
         self.armed = bool(armed)
         self.nav_state = int(nav_state)
         self.offboard = bool(offboard)
         self.failsafe = bool(failsafe)
+        self.preflight_ok = bool(preflight_ok)
         if self.offboard:
             self.ever_offboard = True
         elif self.ever_offboard and self.state not in (
@@ -363,7 +366,8 @@ class MissionLogic:
     def auto_arm_allowed(self):
         base = all((self.enable_control, self.enable_auto_arm,
                     self.start_signal, self.px4_fresh, self.h is not None,
-                    not self.failsafe, not self.abnormal_tilt))
+                    not self.failsafe, not self.abnormal_tilt,
+                    self.preflight_ok))
         if self.simulation_mode:
             return base
         return (base and self.competition_mode and self.safety_ready and

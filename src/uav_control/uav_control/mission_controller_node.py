@@ -356,7 +356,8 @@ class MissionControllerNode(Node):
                                  msg.nav_state,
                                  msg.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD,
                                  msg.failsafe,
-                                 received)
+                                 received,
+                                 msg.pre_flight_checks_pass)
 
     def _position(self, msg):
         received = self.now()
@@ -487,7 +488,7 @@ class MissionControllerNode(Node):
         if sequence_id != self.payload_sequence_id:
             self.logic.event = 'SERVO_RESULT_IGNORED_SEQUENCE'
             return
-        if status == 'SUCCESS':
+        if status in ('SUCCESS', 'DRY_RUN_CONFIRMED'):
             self.payload_ack_seen = True
             self.logic.payload_ack = True
             self.logic.event = 'SERVO_SUCCESS_THROW'
@@ -722,11 +723,17 @@ class MissionControllerNode(Node):
                         'disarm',
                         VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM,
                         now, 0.0)
-            if (self.logic.state == 'FINAL_LAND' and self.logic.armed and
-                    self.logic.nav_state !=
-                    VehicleStatus.NAVIGATION_STATE_AUTO_LAND):
-                self._publish_command(
-                    'land', VehicleCommand.VEHICLE_CMD_NAV_LAND, now)
+            if self.logic.state == 'FINAL_LAND' and self.logic.armed:
+                if (self.px4_landed and
+                        self.get_parameter('enable_auto_disarm').value):
+                    self._publish_command(
+                        'disarm',
+                        VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM,
+                        now, 0.0)
+                elif self.logic.nav_state != \
+                        VehicleStatus.NAVIGATION_STATE_AUTO_LAND:
+                    self._publish_command(
+                        'land', VehicleCommand.VEHICLE_CMD_NAV_LAND, now)
             if self.logic.state in (
                     'VISION_FOLLOW', 'ALIGN_FOR_DROP', 'ALIGN_PLATFORM',
                     'DYNAMIC_DESCENT_HIGH', 'DYNAMIC_DESCENT_NEAR',

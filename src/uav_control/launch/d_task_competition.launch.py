@@ -23,12 +23,15 @@ def generate_launch_description():
         LaunchConfiguration('enable_auto_arm'), value_type=bool)
     enable_payload = ParameterValue(
         LaunchConfiguration('enable_payload_release'), value_type=bool)
+    enable_auto_disarm = ParameterValue(
+        LaunchConfiguration('enable_auto_disarm'), value_type=bool)
     servo_dry_run = ParameterValue(
         LaunchConfiguration('servo_dry_run'), value_type=bool)
     launch_vision = LaunchConfiguration('launch_vision')
     return LaunchDescription([
         DeclareLaunchArgument('enable_control', default_value='false'),
         DeclareLaunchArgument('enable_auto_arm', default_value='false'),
+        DeclareLaunchArgument('enable_auto_disarm', default_value='false'),
         DeclareLaunchArgument('enable_payload_release', default_value='false'),
         DeclareLaunchArgument('servo_dry_run', default_value='true'),
         DeclareLaunchArgument('launch_vision', default_value='false'),
@@ -48,6 +51,7 @@ def generate_launch_description():
              parameters=[mission, {
                  'enable_control': enable_control,
                  'enable_auto_arm': enable_auto_arm,
+                 'enable_auto_disarm': enable_auto_disarm,
                  'enable_payload_release': enable_payload,
              }]),
         Node(package='servo_control', executable='servo_node',

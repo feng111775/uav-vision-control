@@ -60,7 +60,8 @@ def enter_takeoff(logic, now=1.0):
     assert logic.state == S.TAKEOFF.value
 
 
-def request_offboard_logic(mode, simulation_mode, enable_auto_arm):
+def request_offboard_logic(mode, simulation_mode, enable_auto_arm,
+                           preflight_ok=True):
     logic = MissionLogic(
         mode, simulation_mode=simulation_mode, competition_mode=True,
         enable_control=True, enable_auto_arm=enable_auto_arm)
@@ -70,6 +71,7 @@ def request_offboard_logic(mode, simulation_mode, enable_auto_arm):
     logic.h = (0.0, 0.0, 0.0, 0.0)
     logic.safety_ready = True
     logic.attitude_valid = True
+    logic.update_status(False, 0, False, False, 0, preflight_ok)
     logic.offboard = True
     return logic
 
@@ -96,6 +98,20 @@ def test_sitl_hover_test_without_auto_arm_requires_manual_arm():
 @pytest.mark.parametrize('mode', ['drop', 'dynamic_land'])
 def test_non_hover_auto_arm_behavior_is_unchanged(mode):
     logic = request_offboard_logic(mode, False, True)
+    logic.step(1.0)
+    assert logic.state == S.ARMING.value
+
+
+def test_auto_arm_is_blocked_until_preflight_checks_pass():
+    logic = request_offboard_logic('drop', False, True, preflight_ok=False)
+    assert not logic.auto_arm_allowed()
+    logic.step(1.0)
+    assert logic.state == S.WAIT_MANUAL_ARM.value
+
+
+def test_auto_arm_enters_arming_once_preflight_passes():
+    logic = request_offboard_logic('drop', False, True, preflight_ok=True)
+    assert logic.auto_arm_allowed()
     logic.step(1.0)
     assert logic.state == S.ARMING.value
 
