@@ -157,6 +157,9 @@ separate terminals:
 MicroXRCEAgent udp4 -p 8888 -v 4
 ```
 
+Raspberry Pi serial deployment uses `/dev/ttyAMA0` at `460800` baud, with
+the Pixhawk GPS2 port `/dev/ttyS6` also at `460800` baud.
+
 ```bash
 cd /home/a-corn/PX4-Autopilot-1.16.0
 make px4_sitl gz_x500

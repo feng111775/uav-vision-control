@@ -1,3 +1,4 @@
+import json
 import math
 
 import pytest
@@ -114,6 +115,7 @@ def fake_controller_for_ack(state=MissionState.WAIT_RELEASE_ACK.value):
     node.payload_command_sent = True
     node.payload_request_monotonic = 0.0
     node.payload_ack_seen = False
+    node.payload_sequence_id = 7
     node.logic = MissionLogic('drop', payload_ack_timeout=1.0)
     node.logic.state = state
     node.now = lambda: 10.0
@@ -124,7 +126,7 @@ def test_old_or_duplicate_servo_success_cannot_advance():
     node = fake_controller_for_ack()
     node.payload_command_sent = False
     message = String()
-    message.data = 'SUCCESS:throw'
+    message.data = json.dumps({'sequence_id': 7, 'status': 'SUCCESS'})
     MissionControllerNode._servo_result(node, message)
     assert not node.logic.payload_ack
     node.payload_command_sent = True
@@ -135,14 +137,33 @@ def test_old_or_duplicate_servo_success_cannot_advance():
     assert node.logic.state == state
 
 
+def test_wrong_sequence_ack_cannot_advance():
+    node = fake_controller_for_ack()
+    message = String()
+    message.data = json.dumps({'sequence_id': 6, 'status': 'SUCCESS'})
+    MissionControllerNode._servo_result(node, message)
+    assert not node.logic.payload_ack
+
+
+def test_malformed_ack_cannot_advance():
+    node = fake_controller_for_ack()
+    message = String()
+    message.data = 'SUCCESS:throw'
+    MissionControllerNode._servo_result(node, message)
+    assert not node.logic.payload_ack
+
+
 @pytest.mark.parametrize('result', [
-    'FAILED:throw:pigpio', 'REJECTED:throw:busy', 'unexpected'])
+    {'sequence_id': 7, 'status': 'FAILED'},
+    {'sequence_id': 7, 'status': 'REJECTED'},
+    {'sequence_id': 7, 'status': 'DUPLICATE'},
+    {'sequence_id': 7, 'status': 'UNKNOWN'}])
 def test_non_success_servo_results_never_count_as_ack(result):
     node = fake_controller_for_ack()
     message = String()
-    message.data = result
+    message.data = json.dumps(result)
     MissionControllerNode._servo_result(node, message)
-    if result == 'unexpected':
+    if result['status'] == 'UNKNOWN':
         assert not node.logic.payload_ack
     else:
         assert node.logic.state == MissionState.FAILSAFE.value

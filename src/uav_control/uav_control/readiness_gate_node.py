@@ -55,6 +55,8 @@ class ReadinessGateNode(Node):
             self._attitude, qos)
         self.ready_pub = self.create_publisher(
             Bool, '/uav/readiness/ready', 10)
+        self.safety_ready_pub = self.create_publisher(
+            Bool, '/uav/safety/ready', 10)
         self.status_pub = self.create_publisher(
             String, '/uav/readiness/status', 10)
         self.create_timer(0.1, self._tick)
@@ -88,6 +90,7 @@ class ReadinessGateNode(Node):
         ready_msg = Bool()
         ready_msg.data = ready
         self.ready_pub.publish(ready_msg)
+        self.safety_ready_pub.publish(ready_msg)
         status = String()
         status.data = json.dumps({
             'ready': ready, 'reasons': reasons,

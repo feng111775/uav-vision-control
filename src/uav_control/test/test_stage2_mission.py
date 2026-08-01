@@ -123,6 +123,7 @@ def test_hover_test_complete_flow_requires_manual_arm():
     reach_cruise(logic)
     logic.step(4.2)
     assert logic.state == S.FINAL_LAND.value
+    logic.landed = True
     logic.update_status(False, 18, False, False, 4.3)
     logic.step(4.3)
     assert logic.state == S.COMPLETE.value
@@ -165,6 +166,7 @@ def test_drop_complete_flow_and_b_milestone():
     assert logic.state == S.RETURN_HOME.value
     logic.step(6.3)
     assert logic.state == S.FINAL_LAND.value
+    logic.landed = True
     logic.armed = False
     logic.step(6.4)
     assert logic.state == S.COMPLETE.value
@@ -551,7 +553,7 @@ def test_every_installed_launch_uses_only_the_unified_controller():
     launch_text = '\n'.join(
         path.read_text() for path in
         (PACKAGE_ROOT / 'launch').glob('*.launch.py'))
-    assert launch_text.count("executable='mission_controller_node'") == 4
+    assert launch_text.count("executable='mission_controller_node'") == 5
     assert "executable='offboard_control'" not in launch_text
     assert 'vision_offboard_controller' not in launch_text
 
@@ -606,6 +608,18 @@ def test_schema_and_telemetry_are_complete():
     assert STATE_ID[S.WAIT_START.value] >= 0
     assert STATE_ID[S.FAILSAFE.value] >= 0
     assert TELEMETRY_LENGTH >= 35
+
+
+def test_final_land_requires_landed_and_disarmed():
+    logic = MissionLogic('drop')
+    logic.transition('FINAL_LAND', 0.0)
+    logic.update_status(True, 0, False, False)
+    logic.update_landed(True)
+    logic.step(1.0)
+    assert logic.state == 'FINAL_LAND'
+    logic.update_status(False, 0, False, False)
+    logic.step(2.0)
+    assert logic.state == 'COMPLETE'
 
 
 def test_frozen_vision_array_contracts():

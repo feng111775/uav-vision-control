@@ -243,6 +243,10 @@ class CarStartGateway(Node):
             String, '/uav_mission/state', self._state, 10)
         self.create_subscription(
             String, '/uav_mission/readiness', self._readiness, 10)
+        self.create_subscription(
+            Bool, '/uav/safety/ready', self._safety_ready, 10)
+        self.create_subscription(
+            String, '/uav/mission/state', self._mission_state, 10)
         self.create_timer(0.2, self._transport_status)
         self.create_timer(0.02, self._deliver_udp_pending)
         self._setup_udp_transport()
@@ -289,6 +293,17 @@ class CarStartGateway(Node):
             self.manager_ready = bool(status['ready'])
             self.manager_busy = bool(status['busy'])
         except (KeyError, TypeError, json.JSONDecodeError):
+            self.manager_ready = False
+
+    def _safety_ready(self, msg):
+        self.manager_ready = bool(msg.data)
+
+    def _mission_state(self, msg):
+        state = str(msg.data)
+        self.manager_busy = state not in (
+            'WAIT_PX4', 'WAIT_SAFETY', 'WAIT_START', 'COMPLETE',
+            'FAILSAFE', 'DATA_TIMEOUT')
+        if self.manager_busy:
             self.manager_ready = False
 
     def _start(self, msg):

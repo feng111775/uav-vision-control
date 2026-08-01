@@ -218,6 +218,7 @@ class MissionLogic:
         self.completed_before_d = False
         self.second_cycle = False
         self.disarm_confirmed = False
+        self.landed = False
         self.event = 'RESET'
         self.safety_block = 'WAIT_PX4'
         self.stable_since = None
@@ -328,6 +329,10 @@ class MissionLogic:
                     self.disarm_confirmed):
             self.safety_block = 'OFFBOARD_EXIT'
             self.transition(S.FAILSAFE, now, 'PX4_EXITED_OFFBOARD')
+
+    def update_landed(self, landed):
+        """Track PX4 landed state for the final completion gate."""
+        self.landed = bool(landed)
 
     def update_car_progress(self, value):
         return self._update_car_progress(value, None)
@@ -675,7 +680,7 @@ class MissionLogic:
             self.transition(S.FINAL_LAND, now)
 
     def _final_land(self, now):
-        if not self.armed:
+        if self.landed and not self.armed:
             self.transition(S.COMPLETE, now, 'MISSION_COMPLETE')
 
     def at_h(self):

@@ -200,6 +200,8 @@ class MissionControllerNode(Node):
         self.payload_command_sent = False
         self.payload_request_monotonic = None
         self.payload_ack_seen = False
+        self.payload_sequence_id = None
+        self.next_payload_sequence_id = 0
         self.mapped_error = (0.0, 0.0)
         self.target_loss_since = None
         self.last_setpoint_mode = 'position'
@@ -445,6 +447,7 @@ class MissionControllerNode(Node):
 
     def _land_detected(self, msg):
         self.px4_landed = bool(msg.landed)
+        self.logic.update_landed(self.px4_landed)
 
     def _error(self, msg):
         self.last_error = self.now()
@@ -474,17 +477,26 @@ class MissionControllerNode(Node):
         received = time.monotonic()
         if received <= self.payload_request_monotonic:
             return
-        result = str(msg.data).strip()
-        if result == 'SUCCESS:throw':
+        try:
+            result = json.loads(str(msg.data))
+            sequence_id = int(result['sequence_id'])
+            status = str(result['status']).upper()
+        except (TypeError, ValueError, KeyError, json.JSONDecodeError):
+            self.logic.event = 'SERVO_RESULT_IGNORED_MALFORMED'
+            return
+        if sequence_id != self.payload_sequence_id:
+            self.logic.event = 'SERVO_RESULT_IGNORED_SEQUENCE'
+            return
+        if status == 'SUCCESS':
             self.payload_ack_seen = True
             self.logic.payload_ack = True
             self.logic.event = 'SERVO_SUCCESS_THROW'
-        elif result.startswith('FAILED:throw:') or result.startswith(
-                'REJECTED:throw:'):
+        elif status in ('FAILED', 'REJECTED', 'DUPLICATE'):
             self.payload_ack_seen = True
-            self.logic.payload_failure = result
+            self.logic.payload_failure = status
             self.logic.safety_block = 'PAYLOAD_ACK_FAILED'
-            self.logic.transition('FAILSAFE', self.now(), result)
+            self.logic.transition('FAILSAFE', self.now(),
+                                  'SERVO_%s' % status)
         else:
             self.logic.event = 'SERVO_RESULT_IGNORED'
 
@@ -781,11 +793,18 @@ class MissionControllerNode(Node):
             self.logic.payload_failure = None
             self.payload_ack_seen = False
             self.payload_request_monotonic = time.monotonic()
+            self.next_payload_sequence_id = max(
+                self.next_payload_sequence_id + 1, time.time_ns())
+            self.payload_sequence_id = self.next_payload_sequence_id
             self.payload_command_sent = True
             self.logic.transition(
                 'WAIT_RELEASE_ACK', now, 'SERVO_THROW_REQUESTED')
             command = String()
-            command.data = 'throw'
+            command.data = json.dumps({
+                'command': 'throw',
+                'sequence_id': self.payload_sequence_id,
+                'mission_started_at': self.logic.started_at,
+            }, separators=(',', ':'))
             self.servo_command_pub.publish(command)
         self._publish_observability(now)
         self.last_state = self.logic.state
