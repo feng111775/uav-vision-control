@@ -1,0 +1,5 @@
+vision_interface_node:
+  ros__parameters:
+    camera_mount_profile: unverified
+    camera_orientation_verified: false
+    coordinate_mapping_verified: false

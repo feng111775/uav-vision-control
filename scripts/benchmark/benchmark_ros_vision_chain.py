@@ -56,6 +56,10 @@ class VisionChainBenchmark(Node):
         self.tracked_sequences = set()
         self.landing = []; self.health = []; self.status = []
         self.sequences = SequenceTracker(); self.age = []; self.processing = []
+        self.raw_receive_times = []; self.raw_capture_ticks = []
+        self.health_times = []; self.ready_transitions = 0
+        self.ready_true_duration = 0.0; self.ready_false_duration = 0.0
+        self.last_health_time = None; self.last_ready = False
         self.baseline_tracker = SequenceTracker(); self.post_tracker = SequenceTracker()
         self.stale = 0; self.disconnect = 0; self.reconnect = 0
         self.invalid_after_stale = False
@@ -102,6 +106,8 @@ class VisionChainBenchmark(Node):
         except ValueError: return
         if item.get('version') != 2: return
         self.raw.append(item)
+        self.raw_receive_times.append(time.monotonic())
+        self.raw_capture_ticks.append(int(item['ticks']))
         self.raw_by_sequence[item['sequence']] = item
         self.processing.append(item['processing_us'] / 1000.0)
         self.sequences.accept(item['sequence'])
@@ -142,7 +148,19 @@ class VisionChainBenchmark(Node):
             timestamp = time.monotonic(); self.post_landing_times.append(timestamp)
             if self.first_post_landing_timestamp is None:
                 self.first_post_landing_timestamp = timestamp
-    def health_cb(self, msg): self.health.append(msg)
+    def health_cb(self, msg):
+        now = time.monotonic()
+        self.health.append(msg); self.health_times.append(now)
+        ready = bool(msg.ready_for_closed_loop)
+        if ready != self.last_ready:
+            self.ready_transitions += 1
+        if self.last_health_time is not None:
+            elapsed = max(0.0, now - self.last_health_time)
+            if self.last_ready:
+                self.ready_true_duration += elapsed
+            else:
+                self.ready_false_duration += elapsed
+        self.last_health_time = now; self.last_ready = ready
 
     def status_cb(self, msg):
         self.status.append(msg.data)
@@ -259,6 +277,12 @@ class VisionChainBenchmark(Node):
             'processing_p50_ms': self._pct(self.processing, .50),
             'processing_p95_ms': self._pct(self.processing, .95),
             'processing_p99_ms': self._pct(self.processing, .99),
+            'raw_interframe_p50_ms': self._interval_pct(self.raw_receive_times, .50),
+            'raw_interframe_p95_ms': self._interval_pct(self.raw_receive_times, .95),
+            'raw_interframe_p99_ms': self._interval_pct(self.raw_receive_times, .99),
+            'raw_interframe_max_ms': self._interval_pct(self.raw_receive_times, 1.0),
+            'openmv_ticks_first': self.raw_capture_ticks[0] if self.raw_capture_ticks else None,
+            'openmv_ticks_last': self.raw_capture_ticks[-1] if self.raw_capture_ticks else None,
             'stale_transition_count': self.stale,
             'disconnect_transition_count': self.disconnect,
             'reconnect_transition_count': self.reconnect,
@@ -335,11 +359,30 @@ class VisionChainBenchmark(Node):
             'post_duplicate_count': self.post_tracker.duplicate_count,
             'post_gap_count': self.post_tracker.dropped_count,
             'post_out_of_order_count': self.post_tracker.out_of_order_count,
+            'ready_for_closed_loop_ratio': (
+                sum(int(msg.ready_for_closed_loop) for msg in self.health) /
+                len(self.health) if self.health else 0.0),
+            'would_be_ready_ratio': (
+                sum(int(msg.performance_gate_passed and msg.camera_open and
+                        msg.frames_received and msg.algorithm_alive and
+                        msg.protocol_ok)
+                    for msg in self.health) / len(self.health)
+                if self.health else 0.0),
+            'ready_transition_count': self.ready_transitions,
+            'longest_ready_sec': self.ready_true_duration,
+            'longest_not_ready_sec': self.ready_false_duration,
         }
 
     @staticmethod
     def _pct(values, p):
         return sorted(values)[min(len(values) - 1, int(len(values) * p))] if values else 0.0
+
+    @staticmethod
+    def _interval_pct(values, p):
+        if len(values) < 2:
+            return 0.0
+        intervals = [(b - a) * 1000.0 for a, b in zip(values, values[1:])]
+        return sorted(intervals)[min(len(intervals) - 1, int(len(intervals) * p))]
 
     def px4_input_publishers(self):
         count = 0
