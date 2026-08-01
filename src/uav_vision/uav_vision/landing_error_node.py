@@ -3,7 +3,7 @@
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
-from std_msgs.msg import Float32MultiArray
+from std_msgs.msg import Bool, Float32MultiArray
 
 from .d_task_schema import ANGLE, CENTER_X, CENTER_Y, CONFIDENCE
 from .d_task_schema import TARGET_AGE_MS, VALID, invalid_landing_error
@@ -46,6 +46,8 @@ class LandingErrorNode(Node):
         self.publisher = self.create_publisher(
             Float32MultiArray,
             self.get_parameter('landing_error_topic').value, 10)
+        self.health_publisher = self.create_publisher(Bool, '/vision/health', 10)
+        self.create_timer(0.5, lambda: self.health_publisher.publish(Bool(data=True)))
         self.subscription = self.create_subscription(
             Float32MultiArray, self.get_parameter('tracked_topic').value,
             self._callback, 10)

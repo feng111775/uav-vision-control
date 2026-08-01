@@ -131,6 +131,8 @@ class CarStartGateway(Node):
         self.udp_peer_port = int(self.get_parameter('udp_peer_port').value)
         self.udp_require_peer = bool(
             self.get_parameter('udp_require_peer').value)
+        if self.transport.kind == 'udp' and not self.udp_peer_host:
+            raise ValueError('udp_peer_host (ESP32 IP) is required for UDP transport')
         self.max_datagram_bytes = int(
             self.get_parameter('max_datagram_bytes').value)
         self.max_packets_per_tick = int(

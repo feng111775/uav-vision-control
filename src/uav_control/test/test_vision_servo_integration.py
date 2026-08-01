@@ -116,6 +116,8 @@ def fake_controller_for_ack(state=MissionState.WAIT_RELEASE_ACK.value):
     node.payload_request_monotonic = 0.0
     node.payload_ack_seen = False
     node.payload_sequence_id = 7
+    node.payload_request_sent_ns = 100
+    node.task_id = 'task-1'
     node.logic = MissionLogic('drop', payload_ack_timeout=1.0)
     node.logic.state = state
     node.now = lambda: 10.0
@@ -126,7 +128,10 @@ def test_old_or_duplicate_servo_success_cannot_advance():
     node = fake_controller_for_ack()
     node.payload_command_sent = False
     message = String()
-    message.data = json.dumps({'sequence_id': 7, 'status': 'SUCCESS'})
+    message.data = json.dumps({'sequence_id': 7, 'status': 'SUCCESS',
+                               'command': 'throw', 'task_id': 'task-1',
+                               'request_sent_ns': 100, 'ack_stamp_ns': 101,
+                               'physical_action': True})
     MissionControllerNode._servo_result(node, message)
     assert not node.logic.payload_ack
     node.payload_command_sent = True
@@ -145,14 +150,15 @@ def test_wrong_sequence_ack_cannot_advance():
     assert not node.logic.payload_ack
 
 
-def test_dry_run_confirmed_ack_counts_as_success_for_current_sequence():
+def test_dry_run_ack_cannot_count_as_success_for_current_sequence():
     node = fake_controller_for_ack()
     message = String()
-    message.data = json.dumps({'sequence_id': 7,
-                               'status': 'DRY_RUN_CONFIRMED'})
+    message.data = json.dumps({'sequence_id': 7, 'status': 'SUCCESS',
+                               'command': 'throw', 'task_id': 'task-1',
+                               'request_sent_ns': 100, 'ack_stamp_ns': 101,
+                               'physical_action': False})
     MissionControllerNode._servo_result(node, message)
-    assert node.logic.payload_ack
-    assert node.logic.event == 'SERVO_SUCCESS_THROW'
+    assert not node.logic.payload_ack
 
 
 def test_malformed_ack_cannot_advance():
@@ -164,10 +170,18 @@ def test_malformed_ack_cannot_advance():
 
 
 @pytest.mark.parametrize('result', [
-    {'sequence_id': 7, 'status': 'FAILED'},
-    {'sequence_id': 7, 'status': 'REJECTED'},
-    {'sequence_id': 7, 'status': 'DUPLICATE'},
-    {'sequence_id': 7, 'status': 'UNKNOWN'}])
+    {'sequence_id': 7, 'status': 'FAILED', 'command': 'throw',
+     'task_id': 'task-1', 'request_sent_ns': 100, 'ack_stamp_ns': 101,
+     'physical_action': False},
+    {'sequence_id': 7, 'status': 'REJECTED', 'command': 'throw',
+     'task_id': 'task-1', 'request_sent_ns': 100, 'ack_stamp_ns': 101,
+     'physical_action': False},
+    {'sequence_id': 7, 'status': 'DUPLICATE', 'command': 'throw',
+     'task_id': 'task-1', 'request_sent_ns': 100, 'ack_stamp_ns': 101,
+     'physical_action': False},
+    {'sequence_id': 7, 'status': 'UNKNOWN', 'command': 'throw',
+     'task_id': 'task-1', 'request_sent_ns': 100, 'ack_stamp_ns': 101,
+     'physical_action': False}])
 def test_non_success_servo_results_never_count_as_ack(result):
     node = fake_controller_for_ack()
     message = String()

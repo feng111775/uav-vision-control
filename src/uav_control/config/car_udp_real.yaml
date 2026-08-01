@@ -1,0 +1,11 @@
+car_start_gateway:
+  ros__parameters:
+    simulation_mode: false
+    transport: udp
+    real_transport_enabled: true
+    udp_host: 0.0.0.0
+    udp_port: 19001
+    udp_require_peer: true
+    udp_peer_host: ''
+    udp_peer_port: 0
+    max_datagram_bytes: 128

@@ -1,0 +1,29 @@
+mission_controller_node:
+  ros__parameters:
+    mission_mode: drop
+    simulation_mode: false
+    competition_mode: true
+    enable_control: false
+    enable_auto_arm: false
+    enable_auto_disarm: true
+    enable_visual_follow: true
+    enable_payload_release: false
+    flight_authorized: false
+    payload_authorized: false
+    target_altitude: 1.5
+    hover_altitude_m: 1.5
+    hover_altitude_tolerance_m: 0.1
+    hover_max_vertical_speed_mps: 0.15
+    prestream_cycles: 40
+    point_b_progress: 2
+    point_d_progress: 4
+    task_id: ''
+    servo_command_topic: /servo_command
+    servo_result_topic: /servo/result
+servo_node:
+  ros__parameters:
+    gpio_pin: 18
+    servo_dry_run: false
+    payload_authorized: false
+    allow_repeat: false
+    disable_pwm_after_action: true

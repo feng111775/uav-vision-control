@@ -103,10 +103,22 @@ class MissionControllerNode(Node):
             'servo_command_topic': '/servo_command',
             'servo_result_topic': '/servo/result',
             'servo_release_timeout_sec': 5.0,
+            'flight_authorized': False, 'payload_authorized': False,
+            'task_id': '',
         })
         for name, value in defaults.items():
             self.declare_parameter(name, value)
         self._validate_integration_parameters()
+        if (not self.get_parameter('simulation_mode').value and
+                self.get_parameter('flight_authorized').value and
+                not self.get_parameter('competition_mode').value):
+            raise ValueError('real flight authorization requires competition_mode=true')
+        if (self.get_parameter('flight_authorized').value and
+                not self.get_parameter('enable_control').value):
+            raise ValueError('flight_authorized requires enable_control=true')
+        if (self.get_parameter('payload_authorized').value and
+                not self.get_parameter('enable_payload_release').value):
+            raise ValueError('payload_authorized requires enable_payload_release=true')
         logic_names = ('mission_mode', 'target_altitude', 'simulation_mode',
                        'competition_mode', 'enable_control', 'enable_auto_arm',
                        'enable_visual_follow', 'enable_payload_release',
@@ -201,7 +213,9 @@ class MissionControllerNode(Node):
         self.payload_request_monotonic = None
         self.payload_ack_seen = False
         self.payload_sequence_id = None
+        self.payload_request_sent_ns = None
         self.next_payload_sequence_id = 0
+        self.task_id = str(self.get_parameter('task_id').value).strip()
         self.mapped_error = (0.0, 0.0)
         self.target_loss_since = None
         self.last_setpoint_mode = 'position'
@@ -425,6 +439,9 @@ class MissionControllerNode(Node):
                 return
         except (TypeError, json.JSONDecodeError):
             return
+        event_task_id = str(event.get('task_id', '')).strip()
+        if event_task_id:
+            self.task_id = event_task_id
         if self.logic.start_time_hint is None:
             self.logic.start_time_hint = time.monotonic()
 
@@ -482,13 +499,20 @@ class MissionControllerNode(Node):
             result = json.loads(str(msg.data))
             sequence_id = int(result['sequence_id'])
             status = str(result['status']).upper()
+            task_id = str(result['task_id'])
+            command = str(result['command']).lower()
+            ack_stamp_ns = int(result['ack_stamp_ns'])
+            request_sent_ns = int(result['request_sent_ns'])
+            physical_action = bool(result['physical_action'])
         except (TypeError, ValueError, KeyError, json.JSONDecodeError):
             self.logic.event = 'SERVO_RESULT_IGNORED_MALFORMED'
             return
-        if sequence_id != self.payload_sequence_id:
+        if (sequence_id != self.payload_sequence_id or task_id != self.task_id or
+                command != 'throw' or ack_stamp_ns <= request_sent_ns or
+                request_sent_ns != self.payload_request_sent_ns):
             self.logic.event = 'SERVO_RESULT_IGNORED_SEQUENCE'
             return
-        if status in ('SUCCESS', 'DRY_RUN_CONFIRMED'):
+        if status == 'SUCCESS' and physical_action:
             self.payload_ack_seen = True
             self.logic.payload_ack = True
             self.logic.event = 'SERVO_SUCCESS_THROW'
@@ -800,8 +824,12 @@ class MissionControllerNode(Node):
             self.logic.payload_failure = None
             self.payload_ack_seen = False
             self.payload_request_monotonic = time.monotonic()
-            self.next_payload_sequence_id = max(
-                self.next_payload_sequence_id + 1, time.time_ns())
+            self.next_payload_sequence_id += 1
+            if self.next_payload_sequence_id != 1:
+                self.logic.safety_block = 'PAYLOAD_SEQUENCE_REUSED'
+                self.logic.transition('FAILSAFE', now, 'PAYLOAD_SEQUENCE_REUSED')
+                self._publish_observability(now)
+                return
             self.payload_sequence_id = self.next_payload_sequence_id
             self.payload_command_sent = True
             self.logic.transition(
@@ -809,9 +837,11 @@ class MissionControllerNode(Node):
             command = String()
             command.data = json.dumps({
                 'command': 'throw',
+                'task_id': self.task_id,
                 'sequence_id': self.payload_sequence_id,
-                'mission_started_at': self.logic.started_at,
+                'sent_ns': self.get_clock().now().nanoseconds,
             }, separators=(',', ':'))
+            self.payload_request_sent_ns = json.loads(command.data)['sent_ns']
             self.servo_command_pub.publish(command)
         self._publish_observability(now)
         self.last_state = self.logic.state

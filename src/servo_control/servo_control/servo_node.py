@@ -5,7 +5,7 @@ import time
 
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 
 
 class ServoNode(Node):
@@ -22,8 +22,15 @@ class ServoNode(Node):
         self.declare_parameter('return_duration_sec', 0.5)
         self.declare_parameter('min_pulse_us', 1000)
         self.declare_parameter('max_pulse_us', 2000)
+        self.declare_parameter('allow_repeat', False)
+        self.declare_parameter('payload_authorized', False)
+        self.declare_parameter('disable_pwm_after_action', True)
+        self.health_pub = self.create_publisher(Bool, '/servo/health', 10)
         self.pin = int(self.get_parameter('gpio_pin').value)
         self.dry_run = bool(self.get_parameter('servo_dry_run').value)
+        self.payload_authorized = bool(self.get_parameter('payload_authorized').value)
+        if not self.dry_run and not self.payload_authorized:
+            raise RuntimeError('payload_authorized=true is required for GPIO18')
         if self.pin != 18:
             raise ValueError('payload servo must use BCM GPIO18')
         self.result_pub = self.create_publisher(
@@ -41,6 +48,10 @@ class ServoNode(Node):
         self.get_logger().warning(
             'servo dry-run enabled' if self.dry_run else
             'servo GPIO18 real output enabled')
+        self._publish_health(True)
+
+    def _publish_health(self, ready):
+        self.health_pub.publish(Bool(data=bool(ready)))
 
     def _pulse(self, angle):
         low = int(self.get_parameter('min_pulse_us').value)
@@ -51,11 +62,17 @@ class ServoNode(Node):
         if self._pi.set_servo_pulsewidth(self.pin, pulse) != 0:
             raise RuntimeError('pigpio set_servo_pulsewidth failed')
 
-    def _publish(self, sequence_id, status, detail=''):
+    def _publish(self, sequence_id, status, detail='', task_id='',
+                 request_sent_ns=0, physical_action=False):
         message = String()
         message.data = json.dumps({
             'sequence_id': int(sequence_id),
             'status': status,
+            'command': 'throw',
+            'task_id': task_id,
+            'request_sent_ns': int(request_sent_ns),
+            'ack_stamp_ns': self.get_clock().now().nanoseconds,
+            'physical_action': bool(physical_action),
             'detail': detail,
             'stamp_ns': self.get_clock().now().nanoseconds,
         }, separators=(',', ':'))
@@ -65,14 +82,17 @@ class ServoNode(Node):
         try:
             request = json.loads(message.data)
             sequence_id = int(request['sequence_id'])
+            task_id = str(request['task_id'])
+            request_sent_ns = int(request['sent_ns'])
             command = str(request['command']).lower()
         except (TypeError, ValueError, KeyError, json.JSONDecodeError):
             return
         if sequence_id <= 0 or command != 'throw':
-            self._publish(sequence_id, 'REJECTED', 'invalid_request')
+            self._publish(sequence_id, 'REJECTED', 'invalid_request',
+                          task_id, request_sent_ns, False)
             return
-        if sequence_id in self._seen:
-            self._publish(sequence_id, 'DUPLICATE', 'sequence_already_executed')
+        if sequence_id in self._seen and not self.get_parameter('allow_repeat').value:
+            self._publish(sequence_id, 'DUPLICATE', 'sequence_already_executed', task_id, request_sent_ns, False)
             return
         self._seen.add(sequence_id)
         try:
@@ -82,11 +102,12 @@ class ServoNode(Node):
             time.sleep(float(self.get_parameter('release_duration_sec').value))
             self._pulse(float(self.get_parameter('safe_angle_deg').value))
             time.sleep(float(self.get_parameter('return_duration_sec').value))
-            if not self.dry_run:
+            if (not self.dry_run and
+                    self.get_parameter('disable_pwm_after_action').value):
                 self._pi.set_servo_pulsewidth(self.pin, 0)
-            self._publish(sequence_id, 'SUCCESS')
+            self._publish(sequence_id, 'SUCCESS', '', task_id, request_sent_ns, not self.dry_run)
         except Exception as exc:
-            self._publish(sequence_id, 'FAILED', str(exc))
+            self._publish(sequence_id, 'FAILED', str(exc), task_id, request_sent_ns, False)
 
     def destroy_node(self):
         if self._pi is not None:

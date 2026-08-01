@@ -1,0 +1,14 @@
+servo_node:
+  ros__parameters:
+    gpio_pin: 18
+    servo_dry_run: false
+    payload_authorized: false
+    allow_repeat: false
+    disable_pwm_after_action: true
+    safe_angle_deg: 10.0
+    release_angle_deg: 70.0
+    prepare_duration_sec: 0.5
+    release_duration_sec: 0.8
+    return_duration_sec: 0.5
+    min_pulse_us: 1000
+    max_pulse_us: 2000

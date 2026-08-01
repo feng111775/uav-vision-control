@@ -26,9 +26,13 @@ class ReadinessGate:
         self.valid = {name: False for name in self.STREAMS}
         self.stable_since = None
         self.last_reasons = ()
+        self.failsafe = False
+        self.disarmed = False
 
     def update_status(self, now, preflight_ok, failsafe, disarmed):
         self.received['status'] = float(now)
+        self.failsafe = bool(failsafe)
+        self.disarmed = bool(disarmed)
         self.valid['status'] = bool(
             preflight_ok and not failsafe and disarmed)
 
