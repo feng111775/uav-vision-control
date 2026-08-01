@@ -98,6 +98,15 @@ class CarStartGateway(Node):
         self.declare_parameter('serial_baud', 0)
         self.declare_parameter('udp_host', '')
         self.declare_parameter('udp_port', 0)
+        self.declare_parameter('expected_sender_ip', '')
+        self.declare_parameter('allowed_sender_subnet', '')
+        self.declare_parameter('invalid_sender_reject', True)
+        self.declare_parameter('start_message', 'CAR_START')
+        self.declare_parameter('ack_message', 'CAR_START_ACK')
+        self.declare_parameter('receive_timeout', 2.5)
+        self.declare_parameter('duplicate_window', 32)
+        self.declare_parameter('message_sequence', True)
+        self.declare_parameter('start_once', True)
         self.declare_parameter('udp_poll_period_s', 0.05)
         self.declare_parameter('udp_peer_host', '')
         self.declare_parameter('udp_peer_port', 0)
@@ -159,6 +168,23 @@ class CarStartGateway(Node):
         self.udp_peer_port = int(self.get_parameter('udp_peer_port').value)
         self.udp_require_peer = bool(
             self.get_parameter('udp_require_peer').value)
+        self.expected_sender_ip = str(
+            self.get_parameter('expected_sender_ip').value).strip()
+        self.allowed_sender_subnet = str(
+            self.get_parameter('allowed_sender_subnet').value).strip()
+        self.invalid_sender_reject = bool(
+            self.get_parameter('invalid_sender_reject').value)
+        self.start_message = str(
+            self.get_parameter('start_message').value).strip()
+        self.ack_message = str(
+            self.get_parameter('ack_message').value).strip()
+        self.receive_timeout = float(
+            self.get_parameter('receive_timeout').value)
+        self.duplicate_window = int(
+            self.get_parameter('duplicate_window').value)
+        self.message_sequence = bool(
+            self.get_parameter('message_sequence').value)
+        self.start_once = bool(self.get_parameter('start_once').value)
         self.max_datagram_bytes = int(
             self.get_parameter('max_datagram_bytes').value)
         self.max_packets_per_tick = int(
@@ -196,6 +222,27 @@ class CarStartGateway(Node):
                 ipaddress.ip_address(self.udp_peer_host)
             except ValueError as error:
                 raise ValueError('udp_peer_host must be an IP') from error
+        if self.expected_sender_ip:
+            try:
+                ipaddress.ip_address(self.expected_sender_ip)
+            except ValueError as error:
+                raise ValueError('expected_sender_ip must be an IP') from error
+        if self.allowed_sender_subnet:
+            try:
+                self.allowed_sender_network = ipaddress.ip_network(
+                    self.allowed_sender_subnet, strict=False)
+            except ValueError as error:
+                raise ValueError(
+                    'allowed_sender_subnet must be a valid CIDR') from error
+        else:
+            self.allowed_sender_network = None
+        if (not math.isfinite(self.receive_timeout) or
+                self.receive_timeout <= 0.0):
+            raise ValueError('receive_timeout must be positive')
+        if self.duplicate_window < 1:
+            raise ValueError('duplicate_window must be positive')
+        if not self.start_message or not self.ack_message:
+            raise ValueError('start_message and ack_message must not be empty')
         if (self.udp_require_peer and
                 (not self.udp_peer_host or not 1 <= self.udp_peer_port <= 65535)):
             raise ValueError('UDP peer host and port are required')
@@ -235,6 +282,7 @@ class CarStartGateway(Node):
         self.last_frame_source = ''
         self.last_frame_sequence = None
         self.last_frame_stamp_ns = None
+        self.seen_sender_sequences = []
         self.last_valid_udp_monotonic = None
         self.last_link_state = None
         self.last_ping_monotonic = 0.0
@@ -278,7 +326,7 @@ class CarStartGateway(Node):
         self.create_subscription(
             String, '/uav_mission/state', self._state, 10)
         self.create_subscription(
-            String, '/uav_mission/readiness', self._readiness, 10)
+            Bool, '/uav/readiness/ready', self._readiness, 10)
         self.create_timer(0.2, self._transport_status)
         self.create_timer(0.02, self._deliver_udp_pending)
         self._setup_udp_transport()
@@ -319,13 +367,9 @@ class CarStartGateway(Node):
             self.manager_ready = False
 
     def _readiness(self, msg):
-        """Consume the manager's PX4-aware pre-flight readiness gate."""
-        try:
-            status = json.loads(msg.data)
-            self.manager_ready = bool(status['ready'])
-            self.manager_busy = bool(status['busy'])
-        except (KeyError, TypeError, json.JSONDecodeError):
-            self.manager_ready = False
+        """Consume the single formal readiness gate."""
+        self.manager_ready = bool(msg.data)
+        self.manager_busy = False
 
     def _start(self, msg):
         if not self.get_parameter('simulation_mode').value:
@@ -398,14 +442,32 @@ class CarStartGateway(Node):
             if len(payload) > self.max_datagram_bytes:
                 self.get_logger().warning('ignored oversized UDP datagram')
                 continue
+            if not self._sender_allowed(address[0]):
+                self.get_logger().warning(
+                    'ignored UDP datagram from unauthorized sender %s:%d' %
+                    address)
+                continue
             expected_host = self.udp_peer_host or self.esp32_ip
             expected_port = self.udp_peer_port
-            if (address[0] != expected_host or
+            if (self.udp_peer_host and address[0] != expected_host or
                     (expected_port and address[1] != expected_port)):
                 self.get_logger().warning(
                     'ignored UDP datagram from unexpected peer %s:%d' % address)
                 continue
             self._handle_udp_frame(payload, address)
+
+    def _sender_allowed(self, host):
+        """Apply the explicit real-UDP source policy."""
+        if not self.invalid_sender_reject:
+            return True
+        if self.expected_sender_ip and host == self.expected_sender_ip:
+            return True
+        if self.allowed_sender_network is not None:
+            try:
+                return ipaddress.ip_address(host) in self.allowed_sender_network
+            except ValueError:
+                return False
+        return not self.expected_sender_ip
 
     def _handle_udp_frame(self, payload, address):
         source = '%s:%d' % address
@@ -457,6 +519,15 @@ class CarStartGateway(Node):
         self.last_frame_source = source
         self.last_frame_sequence = counter
         self.last_frame_stamp_ns = now_ns
+        if self.message_sequence and counter in self.seen_sender_sequences:
+            self._send_udp_ack(address, 'DUPLICATE', counter)
+            self.get_logger().info(
+                'UDP duplicate ignored from %s seq=%s' % (source, counter))
+            return
+        if self.message_sequence:
+            self.seen_sender_sequences.append(counter)
+            self.seen_sender_sequences = self.seen_sender_sequences[
+                -self.duplicate_window:]
 
         if command == 'HEARTBEAT':
             self.last_heartbeat_ns = now_ns
@@ -469,6 +540,7 @@ class CarStartGateway(Node):
             self.manager_ready, self.manager_busy, counter)
         self._publish_result(status, session_id, start_id)
         self._mark_udp_alive()
+        self._send_udp_ack(address, status, counter)
         self.get_logger().info(
             'UDP %s from %s seq=%s session=%s start=%s' % (
                 status, source, counter, session_id, start_id))
@@ -494,6 +566,16 @@ class CarStartGateway(Node):
                 'communication_only')
         else:
             self.mission_start_publisher.publish(Bool(data=True))
+
+    def _send_udp_ack(self, address, status, sequence):
+        if self.udp_socket is None:
+            return
+        payload = '%s,%s,%s' % (self.ack_message, status, int(sequence))
+        try:
+            self.udp_socket.sendto(payload.encode('ascii'), address)
+        except OSError as error:
+            self.get_logger().warning(
+                'UDP ACK failed to %s: %s' % (address[0], error))
 
     def _mark_udp_alive(self):
         self.last_valid_udp_monotonic = time.monotonic()

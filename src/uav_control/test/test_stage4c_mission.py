@@ -255,7 +255,10 @@ def test_stage4c_topics_use_single_namespace():
         text = (root / name).read_text()
         for line in text.splitlines():
             if "'/" in line and "'/fmu/out/" not in line:
-                assert "'/uav_mission/" in line
+                assert (
+                    "'/uav_mission/" in line or
+                    "'/uav/readiness/ready'" in line
+                )
 
 
 def test_default_and_sitl_control_are_safely_isolated():

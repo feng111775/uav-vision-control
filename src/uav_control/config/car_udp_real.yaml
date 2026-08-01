@@ -1,12 +1,12 @@
 car_start_gateway:
   ros__parameters:
-    simulation_mode: true
+    simulation_mode: false
     transport: udp
     real_transport_enabled: true
-    udp_host: 127.0.0.1
+    udp_host: 0.0.0.0
     udp_port: 19001
-    expected_sender_ip: 127.0.0.1
-    allowed_sender_subnet: 127.0.0.1/32
+    expected_sender_ip: ''
+    allowed_sender_subnet: 192.168.4.0/24
     invalid_sender_reject: true
     start_message: CAR_START
     ack_message: CAR_START_ACK
@@ -14,15 +14,15 @@ car_start_gateway:
     duplicate_window: 32
     message_sequence: true
     start_once: true
-    udp_peer_host: 127.0.0.1
-    udp_peer_port: 19000
-    udp_require_peer: true
-    esp32_ip: 127.0.0.1
+    udp_peer_host: ''
+    udp_peer_port: 0
+    udp_require_peer: false
+    esp32_ip: 192.168.4.1
     ping_period_sec: 1.0
     link_timeout_sec: 2.5
     receive_buffer_size: 512
     allow_state_transition_fallback: true
-    communication_only: true
+    communication_only: false
     max_datagram_bytes: 512
     max_packets_per_tick: 16
     running_fallback_count: 3
@@ -35,4 +35,3 @@ car_start_gateway:
     trigger_repeat_period_s: 0.1
     subscriber_wait_timeout_s: 2.0
     udp_journal_path: /tmp/uav_control_car_udp_journal.json
-    start_state_path: /tmp/uav_control_car_start_gate.json

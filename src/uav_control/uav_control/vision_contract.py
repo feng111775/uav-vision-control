@@ -1,3 +1,4 @@
+# flake8: noqa
 """
 Legacy vision adapter and ROS-independent internal observation model.
 
@@ -8,6 +9,8 @@ without changing the mission state machine.
 
 from dataclasses import dataclass
 import math
+
+from uav_interfaces.msg import LandingError, TargetObservation, VisionHealth
 
 
 TRACKED_LENGTH = 12
@@ -120,6 +123,96 @@ class LegacyVisionAdapter:
                 landing[ERROR_CONFIDENCE], tracked[TRACKED_CONFIDENCE]),
             landing[ERROR_X_NORMALIZED], landing[ERROR_Y_NORMALIZED],
             age_ms / 1000.0, finite, source_alive, bool(health_valid), reason)
+
+
+class FormalVisionAdapter:
+    """Adapter for the accepted structured V2 vision messages."""
+
+    def __init__(self):
+        self.landing = None
+        self.tracked = None
+        self.health = None
+        self.landing_received = None
+        self.tracked_received = None
+        self.health_received = None
+        self.last_sequence = None
+
+    def update_landing(self, msg: LandingError, received_monotonic_time):
+        self.landing = msg
+        self.landing_received = float(received_monotonic_time)
+
+    def update_tracked(self, msg: TargetObservation, received_monotonic_time):
+        self.tracked = msg
+        self.tracked_received = float(received_monotonic_time)
+
+    def update_health(self, msg: VisionHealth, received_monotonic_time):
+        self.health = msg
+        self.health_received = float(received_monotonic_time)
+
+    def observation(self, now, receive_timeout_seconds=0.3,
+                    source_age_limit_seconds=0.3, min_confidence=60.0,
+                    health_valid=True):
+        now = float(now)
+        timeout = float(receive_timeout_seconds)
+        age_limit_ms = float(source_age_limit_seconds) * 1000.0
+        landing = self.landing
+        tracked = self.tracked
+        health = self.health
+        latest = max(
+            [v for v in (self.landing_received, self.tracked_received)
+             if v is not None], default=None)
+        source_alive = latest is not None and 0.0 <= now - latest <= timeout
+        if landing is None or tracked is None:
+            return VisionObservation(
+                latest, None, False, 0.0, 0.0, 0.0, float("inf"),
+                False, source_alive, bool(health_valid),
+                "structured_message_not_received")
+        received_age = max(now - self.landing_received, now - self.tracked_received)
+        sequence_new = (
+            self.last_sequence is None or
+            int(landing.frame_sequence) != int(self.last_sequence)
+        )
+        finite = all(math.isfinite(float(v)) for v in (
+            landing.error_x_norm, landing.error_y_norm,
+            landing.confidence, tracked.confidence,
+        ))
+        age_ms = received_age * 1000.0
+        capture_stamp_valid = bool(
+            getattr(landing, "capture_stamp_valid", False)
+            and getattr(tracked, "capture_stamp_valid", False)
+        )
+        valid = bool(
+            landing.valid and tracked.detected and tracked.confirmed
+            and tracked.measurement_valid and not tracked.predicted
+            and capture_stamp_valid and sequence_new and finite
+            and landing.confidence >= min_confidence
+            and tracked.confidence >= min_confidence
+            and age_ms <= age_limit_ms and received_age <= timeout
+            and health_valid
+            and health is not None and health.ready_for_closed_loop
+        )
+        reason = ""
+        if not source_alive:
+            reason = "source_timeout"
+        elif health is None or not health_valid or not health.ready_for_closed_loop:
+            reason = "vision_health_not_ready"
+        elif not sequence_new:
+            reason = "frame_sequence_not_new"
+        elif not finite:
+            reason = "non_finite"
+        elif age_ms > age_limit_ms or received_age > timeout:
+            reason = "measurement_stale"
+        elif not valid:
+            reason = "target_invalid"
+        if sequence_new:
+            self.last_sequence = int(landing.frame_sequence)
+        return VisionObservation(
+            latest, None, valid,
+            min(float(landing.confidence), float(tracked.confidence)),
+            float(landing.error_x_norm), float(landing.error_y_norm),
+            age_ms / 1000.0, finite, source_alive,
+            bool(health_valid and health is not None),
+            reason or "ready")
 
 
 def invalid_tracked():

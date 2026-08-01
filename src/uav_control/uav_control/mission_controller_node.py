@@ -13,6 +13,7 @@ from px4_msgs.msg import (OffboardControlMode, TrajectorySetpoint,
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Bool, Float32MultiArray, String, UInt8
+from uav_interfaces.msg import LandingError, TargetObservation, VisionHealth
 
 from . import vision_contract as vision_schema
 from .mission_logic import (control_output_allowed, data_loss_action,
@@ -92,7 +93,7 @@ class MissionControllerNode(Node):
         defaults['odom_gate_min_source_span_seconds'] = 1.0
         defaults['payload_ack_timeout'] = 5.0
         defaults['target_loss_abort_seconds'] = 1.0
-        defaults['vision_adapter_mode'] = 'legacy_array'
+        defaults['vision_adapter_mode'] = 'formal_v2'
         defaults['vision_receive_timeout_seconds'] = 0.3
         defaults['vision_source_age_limit_seconds'] = 0.3
         defaults['vision_health_required'] = False
@@ -216,7 +217,7 @@ class MissionControllerNode(Node):
         self.last_safety = self.last_car = None
         self.last_error = self.last_tracked = None
         self.roll = self.pitch = self.yaw = 0.0
-        self.vision_adapter = vision_schema.LegacyVisionAdapter()
+        self.vision_adapter = vision_schema.FormalVisionAdapter()
         self.vision_observation = vision_schema.VisionObservation(
             None, None, False, 0.0, 0.0, 0.0, float('inf'), False, False,
             True, 'not_received')
@@ -275,7 +276,7 @@ class MissionControllerNode(Node):
         self.create_subscription(
             String, '/uav_mission/events/start', self._start_event, 10)
         self.create_subscription(UInt8, '/car/progress', self._car, 10)
-        self.create_subscription(Bool, '/uav/safety/ready', self._safety, 10)
+        self.create_subscription(Bool, '/uav/readiness/ready', self._safety, 10)
         self.create_subscription(
             Bool, '/uav/mission/abort', self._abort, 10)
         self.create_subscription(Bool, '/uav/mission/reset', self._reset, 10)
@@ -284,24 +285,23 @@ class MissionControllerNode(Node):
             String, self.get_parameter('servo_result_topic').value,
             self._servo_result, 10)
         self.create_subscription(
-            Float32MultiArray,
+            LandingError,
             self.get_parameter('vision_landing_topic').value, self._error, 10)
         self.create_subscription(
-            Float32MultiArray,
+            TargetObservation,
             self.get_parameter('vision_tracked_topic').value, self._tracked, 10)
-        self.vision_health_valid = not bool(
-            self.get_parameter('vision_health_required').value)
+        self.vision_health_valid = False
         self.last_vision_health = None
         self.create_subscription(
-            Bool, self.get_parameter('vision_health_topic').value,
+            VisionHealth, self.get_parameter('vision_health_topic').value,
             self._vision_health, 10)
         self.create_timer(1.0 / self.get_parameter('control_rate_hz').value, self._timer)
 
     def _validate_integration_parameters(self):
         """Reject unsafe visual and servo integration settings at startup."""
-        if str(self.get_parameter('vision_adapter_mode').value) != 'legacy_array':
+        if str(self.get_parameter('vision_adapter_mode').value) != 'formal_v2':
             raise ValueError(
-                'unsupported vision_adapter_mode; only legacy_array is implemented')
+                'formal mission requires vision_adapter_mode=formal_v2')
         safety_params = {
             name: self.get_parameter(name).value for name in (
                 'simulation_mode', 'auto_start_hover_test', 'enable_auto_arm',
@@ -519,16 +519,17 @@ class MissionControllerNode(Node):
 
     def _error(self, msg):
         self.last_error = self.now()
-        self.vision_adapter.update_landing(msg.data, self.last_error)
+        self.vision_adapter.update_landing(msg, self.last_error)
 
     def _tracked(self, msg):
         self.last_tracked = self.now()
-        self.vision_adapter.update_tracked(msg.data, self.last_tracked)
+        self.vision_adapter.update_tracked(msg, self.last_tracked)
 
     def _vision_health(self, msg):
-        """Update the optional legacy Bool health input."""
+        """Update formal V2 health; false is the fail-closed default."""
         self.last_vision_health = self.now()
-        self.vision_health_valid = bool(msg.data)
+        self.vision_adapter.update_health(msg, self.last_vision_health)
+        self.vision_health_valid = bool(msg.ready_for_closed_loop)
 
     def _servo_result(self, msg):
         """Accept only a fresh exact ACK for the current servo request."""

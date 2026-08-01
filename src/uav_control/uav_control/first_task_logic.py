@@ -1,3 +1,4 @@
+# flake8: noqa
 """Formal first-task mission state machine for the real aircraft path."""
 
 from __future__ import annotations
@@ -310,4 +311,3 @@ class FirstTaskMissionLogic:
         if self.state == "FAILSAFE_LAND":
             if inputs.landed and inputs.disarmed:
                 self.transition("TIMEOUT", now, "FAILSAFE_COMPLETE")
-

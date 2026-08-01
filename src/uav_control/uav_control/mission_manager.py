@@ -9,7 +9,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import (DurabilityPolicy, HistoryPolicy, QoSProfile,
                        ReliabilityPolicy)
-from std_msgs.msg import Float32MultiArray, String
+from std_msgs.msg import Bool, Float32MultiArray, String
 
 from .stage4c_core import (MarkerObservation, MissionConfig, MissionFlow,
                            MissionState)
@@ -53,7 +53,7 @@ class MissionManager(Node):
         self.state_pub = self.create_publisher(
             String, '/uav_mission/state', 10)
         self.readiness_pub = self.create_publisher(
-            String, '/uav_mission/readiness', 10)
+            Bool, '/uav/readiness/ready', 10)
         self.create_subscription(
             String, '/uav_mission/events/start', self._start, 10)
         self.create_subscription(
@@ -210,18 +210,13 @@ class MissionManager(Node):
             now - self.last_transport_status_time <=
             self.flow.config.px4_data_timeout_s)
         px4_ready = self.px4_ok and not self.failsafe
-        readiness = String()
-        readiness.data = json.dumps({
-            'ready': (
-                self.flow.state == MissionState.WAIT_FOR_START and
-                px4_ready and transport_current and
-                self.heading is not None and
-                all(math.isfinite(value) for value in (
-                    *self.position, self.heading))),
-            'busy': self.flow.state != MissionState.WAIT_FOR_START,
-            'state': self.flow.state.value,
-            'stamp_ns': self.get_clock().now().nanoseconds,
-        }, separators=(',', ':'))
+        readiness = Bool()
+        readiness.data = bool(
+            self.flow.state == MissionState.WAIT_FOR_START and
+            px4_ready and transport_current and
+            self.heading is not None and
+            all(math.isfinite(value) for value in (
+                *self.position, self.heading)))
         self.readiness_pub.publish(readiness)
         if (not self.get_parameter('use_simulated_px4').value and
                 self.flow.state == MissionState.TRANSIT_TO_INTERCEPT):
