@@ -14,6 +14,8 @@ setup(
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/config', glob('config/*.yaml')),
         ('share/' + package_name + '/launch', glob('launch/*.launch.py')),
+        ('share/' + package_name + '/scripts',
+            glob('scripts/*.sh') + glob('scripts/*.py')),
     ],
     install_requires=['setuptools'],
     tests_require=['pytest'],
@@ -35,18 +37,36 @@ setup(
             'uav_control.mission_controller_node:main',
             'mission_dashboard_node = '
             'uav_control.mission_dashboard_node:main',
-            'car_link_bridge_node = '
-            'uav_control.hardware.car_link_bridge_node:main',
-            'car_link_simulator_node = '
-            'uav_control.hardware.car_link_simulator_node:main',
-            'payload_bridge_node = '
-            'uav_control.hardware.payload_bridge_node:main',
-            'payload_mock_node = '
-            'uav_control.hardware.payload_mock_node:main',
-            'system_health_node = '
-            'uav_control.integration.system_health_node:main',
-            'safety_gate_node = '
-            'uav_control.integration.safety_gate_node:main',
+            'sitl_result_recorder = '
+            'uav_control.sitl_result_recorder:main',
+            'sitl_preflight_gate = '
+            'uav_control.sitl_preflight_gate:main',
+            'sitl_mode_recovery = '
+            'uav_control.sitl_mode_recovery:main',
+            'd_task_mock_node = '
+            'uav_control.d_task_mock_node:main',
+            'readiness_gate = '
+            'uav_control.readiness_gate_node:main',
+            'stage_observer = '
+            'uav_control.stage_observer:main',
+            'odom_freeze_relay = '
+            'uav_control.odom_freeze_relay:main',
+            'car_start_gateway = '
+            'uav_control.car_start_gateway:main',
+            'car_udp_trigger_node = '
+            'uav_control.car_udp_trigger_node:main',
+            'mock_vision_node = '
+            'uav_control.mock_vision_node:main',
+            'car_marker_vision = '
+            'uav_control.car_marker_vision:main',
+            'mission_offboard_controller = '
+            'uav_control.mission_offboard_controller:main',
+            'payload_release = '
+            'uav_control.payload_release:main',
+            'mission_manager = '
+            'uav_control.mission_manager:main',
+            'sitl_acceptance_driver = '
+            'uav_control.sitl_acceptance_driver:main',
         ],
     },
 )

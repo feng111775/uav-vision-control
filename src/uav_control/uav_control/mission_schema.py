@@ -1,6 +1,6 @@
 """Central schemas and enums for the 2026 D-task mission controller."""
 
-from enum import IntEnum
+from enum import Enum, IntEnum
 
 
 class MissionMode(IntEnum):
@@ -22,38 +22,76 @@ class CarProgress(IntEnum):
     RETURNED_A = 5
 
 
-STATES = (
-    'WAIT_PX4', 'WAIT_SAFETY', 'WAIT_START', 'PRESTREAM',
-    'REQUEST_OFFBOARD', 'WAIT_MANUAL_ARM', 'ARMING', 'TAKEOFF',
-    'HOVER_CONFIRM', 'HOVER_TEST', 'SEARCH_TARGET', 'FOLLOW_TARGET',
-    'DROP_ALIGN', 'DROP_RELEASE', 'LANDING_ALIGN', 'DESCEND_ON_CAR',
-    'TOUCHDOWN_VERIFY', 'DISARM_ON_CAR', 'DWELL_ON_CAR',
-    'SECOND_PRESTREAM', 'SECOND_ARM', 'SECOND_TAKEOFF', 'RETURN_H',
-    'LAND_H', 'WAIT_DISARM', 'COMPLETE', 'ABORT_RETURN_H',
-    'FAILSAFE_LAND', 'EXTERNAL_CONTROL')
+class MissionState(str, Enum):
+    WAIT_PX4 = 'WAIT_PX4'
+    WAIT_SAFETY = 'WAIT_SAFETY'
+    WAIT_START = 'WAIT_START'
+    PRESTREAM = 'PRESTREAM'
+    REQUEST_OFFBOARD = 'REQUEST_OFFBOARD'
+    ARMING = 'ARMING'
+    WAIT_MANUAL_ARM = 'WAIT_MANUAL_ARM'
+    TAKEOFF = 'TAKEOFF'
+    HOVER_150CM = 'HOVER_150CM'
+    HOVER_3S = 'HOVER_3S'
+    SEARCH_CAR = 'SEARCH_CAR'
+    VISION_FOLLOW = 'VISION_FOLLOW'
+    ALIGN_FOR_DROP = 'ALIGN_FOR_DROP'
+    PAYLOAD_RELEASE = 'PAYLOAD_RELEASE'
+    WAIT_RELEASE_ACK = 'WAIT_RELEASE_ACK'
+    ALIGN_PLATFORM = 'ALIGN_PLATFORM'
+    DYNAMIC_DESCENT_HIGH = 'DYNAMIC_DESCENT_HIGH'
+    DYNAMIC_DESCENT_NEAR = 'DYNAMIC_DESCENT_NEAR'
+    TOUCHDOWN_CHECK = 'TOUCHDOWN_CHECK'
+    LANDED_ON_CAR = 'LANDED_ON_CAR'
+    DWELL_5S = 'DWELL_5S'
+    DISARM_ON_CAR = 'DISARM_ON_CAR'
+    SECOND_PRESTREAM = 'SECOND_PRESTREAM'
+    SECOND_ARM = 'SECOND_ARM'
+    SECOND_TAKEOFF = 'SECOND_TAKEOFF'
+    RETURN_HOME = 'RETURN_HOME'
+    FINAL_LAND = 'FINAL_LAND'
+    COMPLETE = 'COMPLETE'
+    DATA_TIMEOUT = 'DATA_TIMEOUT'
+    FAILSAFE = 'FAILSAFE'
+
+
+STATES = tuple(state.value for state in MissionState)
 STATE_ID = {name: index for index, name in enumerate(STATES)}
 
 TELEMETRY_FIELDS = (
     'mission_active', 'mission_mode', 'state_id', 'elapsed_seconds',
-    'x', 'y', 'z', 'vx', 'vy', 'vz', 'heading', 'target_valid',
-    'target_error_x', 'target_error_y', 'target_confidence', 'car_progress',
-    'armed', 'offboard_active', 'failsafe', 'command_ack_status',
-    'touchdown_confirmed', 'h_distance')
+    'state_elapsed_seconds', 'remaining_seconds',
+    'x', 'y', 'z', 'vx', 'vy', 'vz', 'heading',
+    'relative_h_height', 'h_distance',
+    'target_valid', 'vision_age_ms', 'target_error_x', 'target_error_y',
+    'target_confidence', 'car_progress', 'formed_follow_before_b',
+    'completed_before_d', 'armed', 'nav_state', 'offboard_active',
+    'failsafe', 'px4_fresh', 'payload_sent', 'payload_ack',
+    'touchdown_candidate', 'touchdown_confirmed', 'dwell_progress',
+    'command_ack_status', 'safety_block_code')
 TELEMETRY = {name: index for index, name in enumerate(TELEMETRY_FIELDS)}
 TELEMETRY_LENGTH = len(TELEMETRY_FIELDS)
 
-# PX4 v1.16 VehicleLocalPosition has MESSAGE_VERSION=0, so the DDS runtime
-# does not append the version suffix used by VehicleStatus.
-PX4_LOCAL_POSITION_TOPIC = '/fmu/out/vehicle_local_position'
-
-NO_FLIGHT_SETPOINT_STATES = {
-    'WAIT_PX4', 'WAIT_SAFETY', 'WAIT_START', 'DWELL_ON_CAR',
-    'LAND_H', 'WAIT_DISARM',
-    'COMPLETE', 'FAILSAFE_LAND', 'EXTERNAL_CONTROL'}
-
-
-def state_allows_flight_setpoint(state):
-    return state not in NO_FLIGHT_SETPOINT_STATES
+SAFETY_BLOCK_CODES = {
+    'NONE': 0,
+    'WAIT_PX4': 1,
+    'WAIT_SAFETY': 2,
+    'WAIT_START': 3,
+    'PX4_DATA_TIMEOUT': 4,
+    'PX4_FAILSAFE': 5,
+    'ABNORMAL_TILT': 6,
+    'OFFBOARD_EXIT': 7,
+    'VISION_INVALID': 8,
+    'CAR_PROGRESS_REGRESSION': 9,
+    'D_PASSED_ABORT': 10,
+    'MISSION_DEADLINE_RETURN': 11,
+    'PHYSICAL_TOUCHDOWN_REQUIRED': 12,
+    'AUTO_DISARM_DISABLED': 13,
+    'MISSION_ABORT_REQUESTED': 14,
+    'PAYLOAD_ACK_TIMEOUT': 15,
+    'PAYLOAD_ACK_FAILED': 16,
+}
+SAFETY_BLOCK_NAMES = {value: name for name, value in SAFETY_BLOCK_CODES.items()}
 
 
 def parse_mission_mode(name):
